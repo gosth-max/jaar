@@ -12,293 +12,199 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
 <link rel="stylesheet" href="../../css/mapa.css">
-<style>
-  :root{
-    --papel:#F2F6F7; --blanco:#FFFFFF; --tinta:#15323B; --suave:#5B7078; --linea:#D5E0E3;
-    --agua:#1D6FA3; --agua-claro:#E1EEF6;
-    --ok:#2F8F5B; --warn:#C8901A; --bad:#C0392B;
-  }
-  *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
-  body{font-family:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);background:var(--papel);
-    display:grid;grid-template-columns:320px 1fr;font-size:15px;line-height:1.4}
-  button,input,select,textarea{font:inherit;color:inherit}
-  button{cursor:pointer}
-  a{color:var(--agua)}
-  :focus-visible{outline:3px solid var(--agua);outline-offset:2px}
-
-  /* ---------- Barra lateral ---------- */
-  aside{height:100%;overflow-y:auto;border-right:1px solid var(--linea);padding:18px 16px 24px;background:var(--papel);
-    padding-top:calc(18px + env(safe-area-inset-top,0px))}
-  .marca{display:flex;gap:10px;align-items:center;margin-bottom:12px}
-  .marca .gota{width:34px;height:34px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--agua);flex:none}
-  .marca h1{font-size:19px;margin:0;line-height:1.15}
-  .marca p{margin:0;color:var(--suave);font-size:13px}
-  h2{font-size:14px;margin:22px 0 8px;color:var(--suave);font-weight:700}
-
-  .sync{display:inline-flex;align-items:center;gap:6px;font-size:13px;border-radius:999px;padding:3px 10px;background:#E3F2E9;color:var(--ok);border:0}
-  .sync::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
-  .sync.trabajando{background:var(--agua-claro);color:var(--agua)}
-  .sync.error{background:#F8E1DE;color:var(--bad)}
-
-  .dibujar{display:grid;grid-template-columns:repeat(4,1fr);gap:6px}
-  .dibujar button{background:var(--blanco);border:1px solid var(--linea);border-radius:10px;padding:9px 2px 7px;display:flex;flex-direction:column;align-items:center;gap:3px;font-weight:700;font-size:13px}
-  .dibujar button svg{width:26px;height:26px}
-  .dibujar button:hover{border-color:var(--agua)}
-  .dibujar button.activo{background:var(--agua);color:#fff;border-color:var(--agua)}
-  .pista{font-size:13px;color:var(--suave);margin:8px 2px 0;min-height:1.4em}
-
-  .resumen{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--linea);border:1px solid var(--linea);border-radius:10px;overflow:hidden}
-  .resumen div{background:var(--blanco);padding:9px 11px}
-  .resumen b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
-  .resumen span{font-size:12.5px;color:var(--suave)}
-  .resumen .ancho{grid-column:1/-1}
-  .resumen .deuda b{color:var(--bad)}
-
-  .buscar{display:flex;gap:6px;margin-bottom:8px}
-  .buscar input{flex:1;min-width:0}
-  input[type=text],input[type=number],input[type=tel],input[type=month],input[type=date],select,textarea{
-    background:var(--blanco);border:1px solid var(--linea);border-radius:7px;padding:7px 9px;width:100%}
-  input[type=range]{width:100%;accent-color:var(--agua)}
-  textarea{resize:vertical;min-height:60px}
-  .lista{list-style:none;margin:0;padding:0;background:var(--blanco);border:1px solid var(--linea);border-radius:10px;max-height:300px;overflow-y:auto}
-  .lista li+li{border-top:1px solid var(--linea)}
-  .lista button.item{width:100%;text-align:left;background:none;border:0;padding:9px 11px;display:flex;justify-content:space-between;gap:8px;align-items:center}
-  .lista button.item:hover{background:var(--agua-claro)}
-  .lista small{color:var(--suave);display:block}
-  .vacio{padding:12px;color:var(--suave);font-size:13.5px}
-  .fila-sector{display:flex;align-items:center;gap:6px;padding-right:10px}
-  .fila-sector button.item{flex:1;min-width:0;justify-content:flex-start}
-  .fila-sector .muestra{width:14px;height:14px;border-radius:4px;flex:none}
-
-  .interruptor{position:relative;display:inline-flex;align-items:center;gap:10px;cursor:pointer}
-  .interruptor input{position:absolute;opacity:0;width:1px;height:1px}
-  .interruptor .riel{width:42px;height:24px;border-radius:999px;background:#C5D0D3;position:relative;transition:.15s;flex:none}
-  .interruptor .riel::after{content:"";position:absolute;top:3px;left:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.25)}
-  .interruptor input:checked + .riel{background:var(--agua)}
-  .interruptor input:checked + .riel::after{transform:translateX(18px)}
-  .interruptor input:focus-visible + .riel{outline:3px solid var(--agua);outline-offset:2px}
-  .interruptor.grande{font-weight:700;padding:10px 12px;border:1px solid var(--linea);border-radius:10px;width:100%;background:var(--papel)}
-
-  .pill{border-radius:999px;padding:2px 9px;font-size:12.5px;font-weight:700;white-space:nowrap;font-variant-numeric:tabular-nums}
-  .pill.ok{background:#E3F2E9;color:var(--ok)} .pill.warn{background:#FBF0D8;color:#8A6208} .pill.bad{background:#F8E1DE;color:var(--bad)} .pill.nada{background:#EAEFF0;color:var(--suave)}
-
-  details{border-top:1px solid var(--linea);margin-top:18px;padding-top:8px}
-  summary{cursor:pointer;font-weight:700;padding:6px 0}
-  .campo{display:block;margin:8px 0}
-  .campo>span{display:block;font-size:13px;color:var(--suave);margin-bottom:3px}
-  .check{display:flex;gap:8px;align-items:flex-start;margin:10px 0;font-size:14px}
-  .check input{margin-top:3px}
-  .fila{display:flex;gap:8px;flex-wrap:wrap}
-  .btn{background:var(--blanco);border:1px solid var(--linea);border-radius:8px;padding:7px 12px;font-weight:700;text-decoration:none;color:var(--tinta);display:inline-block}
-  .btn:hover{border-color:var(--agua)}
-  .btn.primario{background:var(--agua);border-color:var(--agua);color:#fff}
-  .btn.peligro{color:var(--bad)} .btn.peligro:hover{border-color:var(--bad)}
-  .btn:disabled{opacity:.6;cursor:default}
-  .nota{font-size:12.5px;color:var(--suave)}
-  .usuario{margin-top:22px;padding-top:12px;border-top:1px solid var(--linea);font-size:13px;color:var(--suave)}
-  .usuario .correo{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;margin-bottom:8px}
-
-  /* ---------- Mapa ---------- */
-  main{position:relative;height:100%;min-width:0}
-  #map{position:absolute;inset:0;background:#cfd8da}
-  #menuBtn{display:none}
-
-  /* ---------- Panel de la forma seleccionada ---------- */
-  #panel{position:absolute;top:0;right:0;bottom:0;width:370px;max-width:100%;background:var(--blanco);border-left:1px solid var(--linea);
-    z-index:1000;overflow-y:auto;transform:translateX(100%);transition:transform .2s ease;box-shadow:-6px 0 24px rgba(21,50,59,.12);
-    padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-  #panel.abierto{transform:none}
-  .p-cab{position:sticky;top:0;background:var(--blanco);padding:14px 16px 10px;border-bottom:1px solid var(--linea);display:flex;gap:10px;align-items:flex-start;z-index:2}
-  .p-cab h3{margin:0;font-size:18px;flex:1;line-height:1.2}
-  .p-cab small{display:block;color:var(--suave);font-weight:400;font-size:13px;margin-top:2px}
-  .cerrar{background:none;border:0;font-size:24px;line-height:1;padding:2px 6px;color:var(--suave)}
-  .p-cuerpo{padding:4px 16px 20px}
-  .p-cuerpo h4{font-size:14px;margin:18px 0 6px;color:var(--suave)}
-  .tipos{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
-  .tipos button{background:var(--blanco);border:1px solid var(--linea);border-radius:8px;padding:7px 4px;font-weight:700;font-size:13.5px}
-  .tipos button.on{background:var(--agua);color:#fff;border-color:var(--agua)}
-  .tipos button:disabled{opacity:.4;cursor:not-allowed}
-  .segmento{display:flex;border:1px solid var(--linea);border-radius:8px;overflow:hidden}
-  .segmento button{flex:1;background:var(--blanco);border:0;padding:8px 4px;font-weight:700;font-size:13.5px}
-  .segmento button+button{border-left:1px solid var(--linea)}
-  .segmento button.on{background:var(--agua);color:#fff}
-  .colores{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .colores button{width:26px;height:26px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px var(--linea);padding:0}
-  .colores button.on{box-shadow:0 0 0 2px var(--tinta)}
-  .colores input[type=color]{width:34px;height:30px;padding:0;border:1px solid var(--linea);border-radius:6px;background:#fff}
-  .dos{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
-  .cuenta{border:1px solid var(--linea);border-radius:10px;padding:10px 12px;margin-top:8px;background:var(--papel)}
-  .cuenta .estado{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;font-weight:700}
-  .cuenta dl{margin:0;display:grid;grid-template-columns:1fr auto;gap:3px 10px;font-size:14px}
-  .cuenta dt{color:var(--suave)} .cuenta dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
-  .cuenta dd.total{font-weight:700}
-  .pago-form{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px}
-  .pago-form .ancho{grid-column:1/-1}
-  .pagos{list-style:none;padding:0;margin:10px 0 0;border:1px solid var(--linea);border-radius:8px}
-  .pagos li{display:flex;justify-content:space-between;gap:8px;padding:7px 10px;align-items:center;font-size:14px}
-  .pagos li+li{border-top:1px solid var(--linea)}
-  .pagos b{font-variant-numeric:tabular-nums}
-  .pagos .x{background:none;border:0;color:var(--suave);font-size:18px;padding:0 4px}
-  .pagos .x:hover{color:var(--bad)}
-  .p-pie{display:flex;gap:8px;flex-wrap:wrap;margin-top:22px;padding-top:14px;border-top:1px solid var(--linea)}
-
-  /* ---------- Incidencias ---------- */
-  .btn.chico{padding:5px 10px;font-size:13.5px}
-  .btn.alerta{background:var(--bad);border-color:var(--bad);color:#fff}
-  .inc{border:1px solid #F1C4BF;background:#FDF3F2;border-radius:10px;padding:10px 12px;margin-top:8px}
-  .inc .inc-cab{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
-  .inc .inc-cab b{color:#A12A1F}
-  .inc p{margin:4px 0;font-size:14px;white-space:pre-wrap}
-  .inc .meta{font-size:12.5px;color:var(--suave);margin:2px 0}
-  .inc .acciones{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center}
-  .inc .acciones select{width:auto;flex:1 1 150px;padding:5px 7px;font-size:13.5px}
-  .inc.resuelta{background:var(--papel);border-color:var(--linea)}
-  .inc.resuelta .inc-cab b{color:var(--tinta)}
-  .inc .origen{background:none;border:0;padding:0;color:var(--agua);text-decoration:underline;cursor:pointer;font-size:12.5px}
-  .inc-form{border:1px solid var(--linea);border-radius:10px;padding:10px 12px;margin-top:8px;background:var(--papel)}
-  fieldset.alcance{border:0;padding:0;margin:8px 0}
-  fieldset.alcance legend{font-size:13px;color:var(--suave);margin-bottom:4px;padding:0}
-  .opcion{display:flex;gap:8px;align-items:flex-start;padding:7px 9px;border:1px solid var(--linea);border-radius:8px;background:var(--blanco);margin-bottom:6px;font-size:14px;cursor:pointer}
-  .opcion input{margin-top:3px;accent-color:var(--bad)}
-  .opcion.off{opacity:.5;cursor:not-allowed}
-  .opcion small{display:block;color:var(--suave)}
-  .conexion{font-size:13.5px;padding:8px 10px;border-radius:8px;background:var(--agua-claro);margin-top:8px}
-  .conexion.no{background:#FBF0D8;color:#6B4D05}
-  .conexion .fila{margin-top:6px}
-  .resumen .alerta b{color:var(--bad)}
-  .lista .ico-inc{color:var(--bad);font-weight:700;margin-right:4px}
-  .tipos-inc li{display:flex;justify-content:space-between;align-items:center;gap:8px;padding:6px 6px 6px 11px;font-size:14px}
-  .tipos-inc .x{background:none;border:0;color:var(--suave);font-size:18px;padding:0 6px;cursor:pointer}
-  .tipos-inc .x:hover{color:var(--bad)}
-  .subtitulo{font-size:13px;color:var(--suave);margin:16px 0 6px;font-weight:700}
-
-  /* ---------- Pantalla de carga ---------- */
-  #acceso{position:fixed;inset:0;z-index:4000;background:rgba(21,50,59,.55);backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);
-    display:grid;place-items:center;padding:16px}
-  #acceso[hidden]{display:none}
-  .tarjeta{background:var(--blanco);border-radius:14px;padding:22px;width:min(400px,100%);box-shadow:0 18px 50px rgba(0,0,0,.25)}
-  .tarjeta h2{color:var(--tinta);font-size:18px;margin:0 0 6px}
-  .tarjeta p{margin:6px 0}
-  .tarjeta code{background:var(--papel);padding:1px 5px;border-radius:4px;font-size:13px}
-  .tarjeta .btn{margin-top:10px}
-
-  #aviso{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;background:var(--tinta);color:#fff;
-    padding:10px 16px;border-radius:8px;z-index:5000;transition:.2s;pointer-events:none;max-width:90vw;font-size:14px}
-  #aviso.ver{opacity:1;transform:translate(-50%,0)}
-
-  @media (max-width:800px){
-    body{grid-template-columns:1fr}
-    aside{position:fixed;inset:0 auto 0 0;width:min(320px,88vw);z-index:2000;transform:translateX(-100%);transition:transform .2s;box-shadow:6px 0 24px rgba(0,0,0,.2)}
-    aside.abierto{transform:none}
-    #menuBtn{display:flex;position:absolute;top:calc(10px + env(safe-area-inset-top,0px));right:10px;z-index:900;background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:8px;padding:7px 12px;font-weight:700;gap:6px;align-items:center}
-    #panel{top:auto;height:72%;width:100%;border-left:0;border-top:1px solid var(--linea);border-radius:14px 14px 0 0;transform:translateY(100%)}
-    #panel.abierto{transform:none}
-  }
-  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-</style>
+<link rel="stylesheet" href="../../css/adm.css">
 </head>
 <body>
 
-<aside id="lateral">
-  <div class="marca">
+<!-- ======================= Barra de navegación ======================= -->
+<header class="barra">
+  <a class="marca" href="#/inicio">
     <div class="gota" aria-hidden="true"></div>
-    <div><h1 id="nombreAcu">Mi acueducto</h1><p>Administración de la red</p></div>
-  </div>
-  <button class="sync" id="sync" title="">Conectando…</button>
+    <div><strong id="nombreAcu">Mi acueducto</strong><small>Administración</small></div>
+  </a>
+  <button id="menuBtn" aria-expanded="false" aria-controls="nav">☰ Menú</button>
 
-  <h2>Dibujar</h2>
-  <div class="dibujar">
-    <button data-dibujar="casa" title="Dibujar una casa">
-      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 15 16 6l11 9"/><path d="M8 13v13h16V13"/><path d="M14 26v-7h4v7"/></svg>Casa</button>
-    <button data-dibujar="tuberia" title="Dibujar una tubería">
-      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 20h9a4 4 0 0 0 4-4V12a4 4 0 0 1 4-4h9"/><circle cx="3" cy="20" r="1.4" fill="currentColor"/><circle cx="29" cy="8" r="1.4" fill="currentColor"/></svg>Tubería</button>
-    <button data-dibujar="llave" title="Marcar una llave">
-      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M4 22V12l10 5-10 5Z"/><path d="M28 22V12l-10 5 10 5Z"/><path d="M16 17V8M11 8h10"/></svg>Llave</button>
-    <button data-dibujar="sector" title="Dibujar un sector o zona">
-      <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 10 14 4l13 5-2 15-15 4-5-8Z" stroke-dasharray="3.5 3"/><path d="M16 11c-2.5 3.2-3.6 5-3.6 6.6a3.6 3.6 0 0 0 7.2 0c0-1.6-1.1-3.4-3.6-6.6Z" fill="currentColor" stroke="none"/></svg>Sector</button>
-  </div>
-  <p class="pista" id="pista"></p>
+  <nav id="nav" aria-label="Secciones de la administración">
+    <ul class="nav-lista">
+      <li class="grupo" data-grupo="inicio">
+        <button class="nav-btn" aria-expanded="false">Inicio <i class="flecha"></i></button>
+        <ul class="submenu">
+          <li><a href="#/inicio" data-ruta="inicio"><span>Dashboard<small>Vista general del acueducto</small></span></a></li>
+          <li><a href="#/resumen" data-ruta="resumen"><span>Resumen<small>Cifras de la red, casas y cobros</small></span></a></li>
+        </ul>
+      </li>
+      <li class="grupo" data-grupo="mapa">
+        <button class="nav-btn" aria-expanded="false">Mapa <i class="flecha"></i></button>
+        <ul class="submenu">
+          <li><a href="#/mapa" data-ruta="mapa"><span>Ver mapa<small>Editar casas, tuberías, llaves y sectores</small></span></a></li>
+          <li class="sep" role="separator"></li>
+          <li class="titulo-sub">Dibujar</li>
+          <li><a href="#/mapa/dibujar/casa"><span>Casa</span></a></li>
+          <li><a href="#/mapa/dibujar/tuberia"><span>Tubería</span></a></li>
+          <li><a href="#/mapa/dibujar/llave"><span>Llave</span></a></li>
+          <li><a href="#/mapa/dibujar/sector"><span>Sector o zona</span></a></li>
+        </ul>
+      </li>
+      <li class="grupo" data-grupo="incidencias">
+        <button class="nav-btn" aria-expanded="false">Incidencias <span class="badge" data-badge-inc hidden></span> <i class="flecha"></i></button>
+        <ul class="submenu">
+          <li><a href="#/incidencias/abiertas" data-ruta="incidencias/abiertas"><span>Incidencias abiertas<small>Lo que está marcado en rojo ahora</small></span><span class="badge" data-badge-inc hidden></span></a></li>
+          <li><a href="#/incidencias/resueltas" data-ruta="incidencias/resueltas"><span>Incidencias resueltas<small>Historial con fechas y duración</small></span></a></li>
+        </ul>
+      </li>
+      <li class="grupo" data-grupo="gestion">
+        <button class="nav-btn" aria-expanded="false">Gestión <i class="flecha"></i></button>
+        <ul class="submenu">
+          <li><a href="#/sectores" data-ruta="sectores"><span>Sectores y flujo de agua<small>Dar o quitar el agua por zona</small></span></a></li>
+          <li><a href="#/casas" data-ruta="casas"><span>Casas y cobros<small>Buscar, filtrar y exportar la lista</small></span></a></li>
+        </ul>
+      </li>
+      <li class="grupo" data-grupo="config">
+        <button class="nav-btn" aria-expanded="false">Configuración <i class="flecha"></i></button>
+        <ul class="submenu">
+          <li><a href="#/configuracion/general"><span>General<small>Nombre, cuota y moneda</small></span></a></li>
+          <li><a href="#/configuracion/tipos"><span>Tipos de incidencia</span></a></li>
+          <li><a href="#/configuracion/copia"><span>Copia de seguridad</span></a></li>
+        </ul>
+      </li>
+    </ul>
+  </nav>
 
-  <h2>Resumen</h2>
-  <div class="resumen">
-    <div><b id="nCasas">0</b><span>Casas</span></div>
-    <div><b id="nLlaves">0</b><span>Llaves</span></div>
-    <div><b id="nTub">0</b><span id="mTub">Tuberías</span></div>
-    <div><b id="nSect">0</b><span id="sSect">Sectores</span></div>
-    <div class="deuda"><b id="nDeben">0</b><span>Casas con deuda</span></div>
-    <div class="deuda"><b id="totDeuda">0</b><span>Por cobrar</span></div>
-    <div class="alerta ancho"><b id="nInc">0</b><span>Incidencias abiertas</span></div>
-  </div>
-
-  <h2>Incidencias abiertas</h2>
-  <ul class="lista" id="listaIncidencias"></ul>
-  <details>
-    <summary>Incidencias resueltas</summary>
-    <ul class="lista" id="listaResueltas"></ul>
-  </details>
-
-  <h2>Sectores y flujo de agua</h2>
-  <ul class="lista" id="listaSectores"></ul>
-
-  <h2>Casas</h2>
-  <div class="buscar">
-    <input type="text" id="busca" placeholder="Buscar responsable o número" aria-label="Buscar casa">
-    <select id="filtro" aria-label="Filtrar casas" style="width:auto">
-      <option value="todas">Todas</option>
-      <option value="deben">Con deuda</option>
-      <option value="aldia">Al día</option>
-    </select>
-  </div>
-  <ul class="lista" id="listaCasas"></ul>
-
-  <details>
-    <summary>Configuración</summary>
-    <label class="campo"><span>Nombre del acueducto</span><input type="text" id="cfgNombre"></label>
-    <div class="dos">
-      <label class="campo"><span>Cuota mensual por núcleo</span><input type="number" id="cfgCuota" min="0" step="0.01"></label>
-      <label class="campo"><span>Moneda</span><input type="text" id="cfgMoneda" maxlength="5"></label>
-    </div>
-    <label class="check"><input type="checkbox" id="cfgColorPago"><span>Colorear las casas según su estado de pago (verde al día, amarillo 1 mes, rojo 2 o más). Solo se ve en esta página, nunca en el mapa público.</span></label>
-    <p class="subtitulo">Tipos de incidencia</p>
-    <ul class="lista tipos-inc" id="listaTiposInc"></ul>
-    <div class="buscar" style="margin-top:8px">
-      <input type="text" id="nuevoTipoInc" placeholder="Nuevo tipo, ej. Fuga en llave" aria-label="Nuevo tipo de incidencia">
-      <button class="btn" id="agregarTipoInc">Añadir</button>
-    </div>
-    <p class="nota">Estos ajustes se comparten con todos los administradores. El nombre del acueducto también aparece en el mapa público.</p>
-  </details>
-
-  <details>
-    <summary>Copia de seguridad</summary>
-    <p class="nota">Todo se guarda en Supabase. Aun así, conviene descargar una copia de vez en cuando. «Cargar copia» sube al mapa compartido las formas de un archivo descargado antes.</p>
-    <div class="fila">
-      <button class="btn primario" id="exportar">Descargar copia</button>
-      <button class="btn" id="importarBtn">Cargar copia</button>
-      <input type="file" id="importar" accept=".json,application/json" hidden>
-    </div>
-    <div class="fila" style="margin-top:10px"><button class="btn peligro" id="borrarTodo">Borrar todo el mapa</button></div>
-  </details>
-
-  <div class="usuario">
-    <span class="correo" id="usuarioCorreo"></span>
-    <div class="fila">
-      <a class="btn" href="../../../index.html" target="_blank" rel="noopener">Ver mapa público</a>
-      <button class="btn" id="salir">Cerrar sesión</button>
+  <div class="barra-der">
+    <button class="sync" id="sync" title="">Conectando…</button>
+    <div class="grupo">
+      <button class="nav-btn avatar" aria-expanded="false" aria-label="Mi cuenta" title="Mi cuenta">👤</button>
+      <ul class="submenu derecha">
+        <li class="correo" data-correo></li>
+        <li><a href="../../../index.html" target="_blank" rel="noopener"><span>Ver mapa público ↗</span></a></li>
+        <li class="sep" role="separator"></li>
+        <li><button data-salir>Cerrar sesión</button></li>
+      </ul>
     </div>
   </div>
-</aside>
+</header>
 
-<main>
-  <div id="map"></div>
-  <button id="menuBtn" aria-controls="lateral">☰ Menú</button>
-  <section id="panel" aria-label="Detalles de la forma seleccionada">
-    <div class="p-cab"><h3 id="pTitulo">—</h3><button class="cerrar" id="pCerrar" aria-label="Cerrar panel">×</button></div>
-    <div class="p-cuerpo" id="pCuerpo"></div>
+<!-- ======================= Secciones ======================= -->
+<main id="vistas">
+
+  <section class="vista" data-vista="inicio" hidden><div id="dash"></div></section>
+
+  <section class="vista" data-vista="resumen" hidden>
+    <div class="cab-vista"><div><h1>Resumen</h1><p>Cifras de la red de agua, las casas, los cobros y las incidencias.</p></div></div>
+    <div id="resumenCont"></div>
+  </section>
+
+  <section class="vista vista-mapa" data-vista="mapa" hidden>
+    <div id="map"></div>
+    <div class="herramientas" role="toolbar" aria-label="Dibujar">
+      <button data-dibujar="casa" title="Dibujar una casa">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 15 16 6l11 9"/><path d="M8 13v13h16V13"/><path d="M14 26v-7h4v7"/></svg>Casa</button>
+      <button data-dibujar="tuberia" title="Dibujar una tubería">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 20h9a4 4 0 0 0 4-4V12a4 4 0 0 1 4-4h9"/><circle cx="3" cy="20" r="1.4" fill="currentColor"/><circle cx="29" cy="8" r="1.4" fill="currentColor"/></svg>Tubería</button>
+      <button data-dibujar="llave" title="Marcar una llave">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M4 22V12l10 5-10 5Z"/><path d="M28 22V12l-10 5 10 5Z"/><path d="M16 17V8M11 8h10"/></svg>Llave</button>
+      <button data-dibujar="sector" title="Dibujar un sector o zona">
+        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 10 14 4l13 5-2 15-15 4-5-8Z" stroke-dasharray="3.5 3"/><path d="M16 11c-2.5 3.2-3.6 5-3.6 6.6a3.6 3.6 0 0 0 7.2 0c0-1.6-1.1-3.4-3.6-6.6Z" fill="currentColor" stroke="none"/></svg>Sector</button>
+    </div>
+    <p class="pista-mapa" id="pista" role="status" hidden></p>
+    <section id="panel" aria-label="Detalles de la forma seleccionada">
+      <div class="p-cab"><h3 id="pTitulo">—</h3><button class="cerrar" id="pCerrar" aria-label="Cerrar panel">×</button></div>
+      <div class="p-cuerpo" id="pCuerpo"></div>
+    </section>
+  </section>
+
+  <section class="vista" data-vista="incidencias/abiertas" hidden>
+    <div class="cab-vista"><div><h1>Incidencias abiertas</h1><p>Todo lo que está marcado en rojo en el mapa.</p></div>
+      <a class="btn" href="#/mapa">Reportar desde el mapa</a></div>
+    <div class="filtros">
+      <input type="text" id="iaBusca" placeholder="Buscar por detalle, tipo o lugar" aria-label="Buscar incidencia">
+      <select id="iaTipo" aria-label="Filtrar por tipo"></select>
+      <span class="conteo" id="iaConteo"></span>
+    </div>
+    <div id="iaLista"></div>
+  </section>
+
+  <section class="vista" data-vista="incidencias/resueltas" hidden>
+    <div class="cab-vista"><div><h1>Incidencias resueltas</h1><p>Historial con la fecha de creación, de solución y cuánto duró cada una.</p></div></div>
+    <div class="filtros">
+      <input type="text" id="irBusca" placeholder="Buscar por detalle, tipo o lugar" aria-label="Buscar incidencia resuelta">
+      <select id="irTipo" aria-label="Filtrar por tipo"></select>
+      <span class="conteo" id="irConteo"></span>
+    </div>
+    <div id="irLista"></div>
+  </section>
+
+  <section class="vista" data-vista="sectores" hidden>
+    <div class="cab-vista"><div><h1>Sectores y flujo de agua</h1><p id="secConteo"></p></div>
+      <div class="fila"><button class="btn" id="secTodosOff">Quitar agua a todos</button><button class="btn primario" id="secTodosOn">Dar agua a todos</button></div></div>
+    <div id="secLista"></div>
+  </section>
+
+  <section class="vista" data-vista="casas" hidden>
+    <div class="cab-vista"><div><h1>Casas y cobros</h1><p>Toca «Ver» para abrir la casa en el mapa y registrar pagos.</p></div>
+      <button class="btn" id="casasCsv">Descargar lista (Excel)</button></div>
+    <div class="filtros">
+      <input type="text" id="busca" placeholder="Buscar número, responsable, teléfono o sector" aria-label="Buscar casa">
+      <select id="filtro" aria-label="Filtrar casas">
+        <option value="todas">Todas</option>
+        <option value="deben">Con deuda</option>
+        <option value="aldia">Al día</option>
+        <option value="sinconexion">Sin conexión a tubería</option>
+        <option value="incidencia">Con incidencia</option>
+      </select>
+      <span class="conteo" id="casasConteo"></span>
+    </div>
+    <div id="casasTabla"></div>
+  </section>
+
+  <section class="vista" data-vista="configuracion" hidden>
+    <div class="cab-vista"><div><h1>Configuración</h1><p>Estos ajustes se comparten con todos los administradores.</p></div></div>
+    <div class="rejilla">
+      <article class="tarjeta" id="cfg-general">
+        <header><h2>General</h2></header>
+        <label class="campo"><span>Nombre del acueducto</span><input type="text" id="cfgNombre"></label>
+        <div class="dos">
+          <label class="campo"><span>Cuota mensual por núcleo</span><input type="number" id="cfgCuota" min="0" step="0.01"></label>
+          <label class="campo"><span>Moneda</span><input type="text" id="cfgMoneda" maxlength="5"></label>
+        </div>
+        <label class="check"><input type="checkbox" id="cfgColorPago"><span>Colorear las casas según su estado de pago (verde al día, amarillo 1 mes, rojo 2 o más). Solo se ve en la administración, nunca en el mapa público.</span></label>
+        <p class="nota">El nombre del acueducto también aparece en el mapa público.</p>
+      </article>
+
+      <article class="tarjeta" id="cfg-tipos">
+        <header><h2>Tipos de incidencia</h2></header>
+        <p class="nota" style="margin-top:0">Aparecen en la lista desplegable al reportar una incidencia.</p>
+        <ul class="lista tipos-inc" id="listaTiposInc"></ul>
+        <div class="agregar">
+          <input type="text" id="nuevoTipoInc" placeholder="Nuevo tipo, ej. Fuga en llave" aria-label="Nuevo tipo de incidencia">
+          <button class="btn" id="agregarTipoInc">Añadir</button>
+        </div>
+      </article>
+
+      <article class="tarjeta" id="cfg-copia">
+        <header><h2>Copia de seguridad</h2></header>
+        <p class="nota" style="margin-top:0">Todo se guarda en Supabase. Aun así, conviene descargar una copia de vez en cuando. «Cargar copia» sube al mapa compartido las formas, pagos e incidencias de un archivo descargado antes.</p>
+        <div class="fila">
+          <button class="btn primario" id="exportar">Descargar copia</button>
+          <button class="btn" id="importarBtn">Cargar copia</button>
+          <input type="file" id="importar" accept=".json,application/json" hidden>
+        </div>
+        <div class="fila" style="margin-top:14px"><button class="btn peligro" id="borrarTodo">Borrar todo el mapa</button></div>
+      </article>
+
+      <article class="tarjeta" id="cfg-cuenta">
+        <header><h2>Cuenta</h2></header>
+        <p>Sesión iniciada como <b data-correo></b>.</p>
+        <div class="fila">
+          <a class="btn" href="../../../index.html" target="_blank" rel="noopener">Ver mapa público ↗</a>
+          <button class="btn" data-salir>Cerrar sesión</button>
+        </div>
+      </article>
+    </div>
   </section>
 </main>
 
-<div id="acceso"><div class="tarjeta" id="accMensaje"><h2>Verificando acceso…</h2></div></div>
+<div id="acceso"><div class="tarjeta-msg" id="accMensaje"><h2>Verificando acceso…</h2></div></div>
 <div id="aviso" role="status"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -306,1463 +212,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="../../js/config.js"></script>
 <script src="../../js/comun.js"></script>
-<script>
-(function(){
-'use strict';
-
-const PAGINA_ACCESO = '../auth/auth.html';
-const TIPOS = Acu.TIPOS;
-const PISTA_BASE = 'Elige qué quieres dibujar, o usa las herramientas del mapa y asigna la función después.';
-const PISTAS = {
-  casa:'Toca el mapa en cada esquina de la casa. Toca el primer punto para cerrarla.',
-  tuberia:'Toca el mapa para trazar la tubería. Toca el último punto otra vez para terminar.',
-  llave:'Toca el mapa donde está la llave.',
-  sector:'Toca el mapa alrededor de la zona. Toca el primer punto para cerrar el sector.',
-  acometida:'Empieza tocando sobre la tubería y termina tocando dentro de la casa. Toca el último punto otra vez para terminar.'
-};
-const ROJO = '#E53935';
-const TOLERANCIA_M = 2.5;   // distancia máxima (metros) para considerar que dos elementos están unidos
-const PALETA = ['#1E88E5','#3B6EA8','#1596C4','#2F8F5B','#C8901A','#C0392B','#8A4FBF','#E0679A','#6F7F85','#15323B'];
-const ESTADO_COLOR = {ok:'#2F8F5B', warn:'#E0A526', bad:'#C0392B'};
-const VISTA_KEY = 'acueducto-vista';
-const LOCAL_V1 = 'acueducto-v1';
-const LOCAL_V1_SUBIDO = 'acueducto-v1-subido';
-
-const state = { settings:{nombre:'Mi acueducto', cuota:5, moneda:'B/.', colorPorPago:true} };
-const capas = new Map();
-let selected = null;
-let pendingTipo = null;
-let sb = null;
-const incidencias = new Map();   // id -> fila de la tabla incidencias
-let tiposInc = [];               // [{id, nombre, orden}]
-let afectados = new Map();       // id de forma -> incidencias abiertas que la afectan
-let versionGeo = 0, grafoCache = null;
-let formIncAbierto = false;
-
-/* ================= Utilidades ================= */
-const $ = s => document.querySelector(s);
-const esc = Acu.esc, num = Acu.num;
-const uid = () => 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
-const CLIENTE_ID = uid();
-const dinero = n => `${state.settings.moneda || ''} ${num(n).toFixed(2)}`.trim();
-const hoyISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
-function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
-function aviso(txt){ const a = $('#aviso'); a.textContent = txt; a.classList.add('ver'); clearTimeout(aviso.t); aviso.t = setTimeout(() => a.classList.remove('ver'), 3500); }
-const esPunto = l => l instanceof L.CircleMarker;
-const esPoligono = l => l instanceof L.Polygon;
-const esLinea = l => l instanceof L.Polyline && !(l instanceof L.Polygon);
-
-function datosBase(tipo){
-  if (tipo === 'casa') return {numero:'', responsable:'', telefono:'', nucleos:1, personas:'', inicioCobro:'', cuotaEspecial:'', deudaAnterior:'', pagos:[], notas:''};
-  if (tipo === 'tuberia') return {nombre:'', clase:'principal', diametro:'', material:'PVC', notas:''};
-  if (tipo === 'llave') return {nombre:'', estado:'abierta', notas:''};
-  if (tipo === 'sector') return {nombre:'', opacidad:0.35, activo:false, activoDesde:'', notas:''};
-  return {notas:''};
-}
-
-/* ================= Guardado en Supabase ================= */
-let canal = null, appIniciada = false;
-const pendientes = new Set();
-let enVuelo = 0, errorSync = null, flushTimer = null, flushEnCurso = null, enVivo = false;
-
-function pintarSync(){
-  const el = $('#sync');
-  let cls = 'ok', txt = enVivo ? 'Guardado y en vivo' : 'Guardado';
-  if (enVuelo || pendientes.size){ cls = 'trabajando'; txt = 'Guardando…'; }
-  if (errorSync){ cls = 'error'; txt = 'Sin guardar, reintentando'; }
-  if (!navigator.onLine){ cls = 'error'; txt = 'Sin internet'; }
-  el.className = 'sync ' + cls; el.textContent = txt; el.title = errorSync || '';
-}
-$('#sync').addEventListener('click', () => { if (errorSync || pendientes.size) flush(); });
-window.addEventListener('online', () => { pintarSync(); flush(); });
-window.addEventListener('offline', pintarSync);
-window.addEventListener('beforeunload', e => { if (pendientes.size || enVuelo){ e.preventDefault(); e.returnValue = ''; } });
-
-async function tarea(consulta, msgError){
-  enVuelo++; pintarSync();
-  try {
-    const {error} = await consulta;
-    if (error) throw error;
-    errorSync = null;
-    return true;
-  } catch (e){
-    console.error(e);
-    errorSync = e.message || String(e);
-    aviso((msgError || 'No se pudo guardar') + '. Revisa tu conexión e inténtalo de nuevo.');
-    return false;
-  } finally { enVuelo--; pintarSync(); }
-}
-
-function fila(layer){
-  const aq = layer.aq;
-  const {pagos, ...datos} = aq.datos;
-  return {id:aq.id, tipo:aq.tipo, color:aq.color, color_manual:!!aq.colorManual,
-    geometria:layer.toGeoJSON().geometry, datos, editado_por:CLIENTE_ID};
-}
-function guardarForma(id, rapido){
-  pendientes.add(id); pintarSync();
-  clearTimeout(flushTimer); flushTimer = setTimeout(flush, rapido ? 50 : 700);
-}
-async function flush(){
-  clearTimeout(flushTimer);
-  if (flushEnCurso) await flushEnCurso;
-  if (!pendientes.size || !sb){ pintarSync(); return; }
-  const ids = [...pendientes]; pendientes.clear();
-  const filas = ids.map(id => capas.get(id)).filter(Boolean).map(fila);
-  if (!filas.length){ pintarSync(); return; }
-  flushEnCurso = (async () => {
-    enVuelo++; pintarSync();
-    const {error} = await sb.from('formas').upsert(filas);
-    enVuelo--;
-    if (error){
-      console.error(error);
-      ids.forEach(id => { if (capas.has(id)) pendientes.add(id); });
-      errorSync = error.message;
-      flushTimer = setTimeout(flush, 10000);
-    } else errorSync = null;
-    pintarSync();
-  })();
-  await flushEnCurso; flushEnCurso = null;
-}
-
-const guardarConfig = debounce(() => {
-  const s = state.settings;
-  tarea(sb.from('configuracion').upsert({id:1, nombre:s.nombre, cuota:num(s.cuota), moneda:s.moneda,
-    color_por_pago:!!s.colorPorPago, editado_por:CLIENTE_ID}), 'No se pudo guardar la configuración');
-}, 600);
-
-const pagoDesdeFila = p => ({id:p.id, fecha:p.fecha, monto:num(p.monto), nota:p.nota || ''});
-function aqDesdeFila(r, pagos){
-  const tipo = TIPOS[r.tipo] ? r.tipo : 'sin';
-  const datos = Object.assign(datosBase(tipo), r.datos || {});
-  datos.pagos = pagos || [];
-  return {id:r.id, tipo, color:r.color || TIPOS[tipo].color, colorManual:!!r.color_manual, datos};
-}
-function aplicarFilaConfig(r){
-  state.settings = {nombre:r.nombre || 'Mi acueducto', cuota:num(r.cuota), moneda:r.moneda ?? 'B/.', colorPorPago:!!r.color_por_pago};
-}
-
-async function cargarTodo(){
-  const [cfg, formas, pagos, incs, tipos] = await Promise.all([
-    sb.from('configuracion').select('*').eq('id', 1).maybeSingle(),
-    Acu.traerTodo(sb, 'formas'),
-    Acu.traerTodo(sb, 'pagos'),
-    Acu.traerTodo(sb, 'incidencias'),
-    sb.from('tipos_incidencia').select('*').order('orden').order('nombre')
-  ]);
-  if (cfg.error) throw cfg.error;
-  if (tipos.error) throw tipos.error;
-  if (cfg.data) aplicarFilaConfig(cfg.data);
-  tiposInc = tipos.data || [];
-  incidencias.clear();
-  incs.forEach(r => incidencias.set(r.id, r));
-  const porForma = {};
-  pagos.forEach(p => (porForma[p.forma_id] = porForma[p.forma_id] || []).push(pagoDesdeFila(p)));
-  cerrarPanel();
-  capa.clearLayers(); capas.clear(); versionGeo++;
-  formas.forEach(r => {
-    const layer = Acu.capaDesdeGeom(r.geometria);
-    if (layer) agregarCapa(layer, aqDesdeFila(r, porForma[r.id]));
-  });
-  ordenarSectores();
-  cargarConfigEnFormulario();
-  renderTiposInc();
-  recalcularIncidencias();
-  renderResumen();
-}
-
-/* --- Cambios en vivo desde otros administradores --- */
-function suscribir(){
-  if (canal) sb.removeChannel(canal);
-  canal = sb.channel('acueducto-adm')
-    .on('postgres_changes', {event:'*', schema:'public', table:'formas'}, p => {
-      if (p.eventType === 'DELETE'){
-        const l = capas.get(p.old.id);
-        if (l){ quitarCapaLocal(l); quitarIncidenciasDe(p.old.id); renderResumenPronto(); }
-        return;
-      }
-      const r = p.new;
-      if (r.editado_por === CLIENTE_ID || pendientes.has(r.id)) return;
-      aplicarFilaForma(r);
-    })
-    .on('postgres_changes', {event:'*', schema:'public', table:'pagos'}, p => {
-      const r = p.eventType === 'DELETE' ? p.old : p.new;
-      const l = capas.get(r.forma_id); if (!l) return;
-      const lista = l.aq.datos.pagos = l.aq.datos.pagos || [];
-      const i = lista.findIndex(x => x.id === r.id);
-      if (p.eventType === 'DELETE'){ if (i >= 0) lista.splice(i, 1); else return; }
-      else if (i >= 0) lista[i] = pagoDesdeFila(r);
-      else lista.push(pagoDesdeFila(r));
-      refrescarForma(l);
-      if (selected === l) renderPagos();
-    })
-    .on('postgres_changes', {event:'*', schema:'public', table:'configuracion'}, p => {
-      if (!p.new || p.new.editado_por === CLIENTE_ID) return;
-      aplicarFilaConfig(p.new);
-      if (!document.activeElement || !document.activeElement.id.startsWith('cfg')) cargarConfigEnFormulario();
-      capa.eachLayer(l => { if (l.aq){ aplicarEstilo(l); actualizarTooltip(l); } });
-      if (selected){ actualizarTituloPanel(); refrescarCuenta(); }
-      renderResumen();
-    })
-    .on('postgres_changes', {event:'*', schema:'public', table:'incidencias'}, p => {
-      if (p.eventType === 'DELETE') incidencias.delete(p.old.id);
-      else incidencias.set(p.new.id, p.new);
-      recalcularPronto();
-    })
-    .on('postgres_changes', {event:'*', schema:'public', table:'tipos_incidencia'}, async () => {
-      const {data} = await sb.from('tipos_incidencia').select('*').order('orden').order('nombre');
-      if (data){ tiposInc = data; renderTiposInc(); }
-    })
-    .subscribe(status => { enVivo = status === 'SUBSCRIBED'; pintarSync(); });
-}
-function aplicarFilaForma(r){
-  const prev = capas.get(r.id);
-  const nueva = Acu.capaDesdeGeom(r.geometria); if (!nueva) return;
-  const pagos = prev ? prev.aq.datos.pagos : [];
-  const eraSel = prev && selected === prev;
-  if (prev){
-    if (eraSel) selected = null;
-    capa.removeLayer(prev); map.removeLayer(prev); capas.delete(r.id);
-  }
-  agregarCapa(nueva, aqDesdeFila(r, pagos));
-  if (eraSel) seleccionar(nueva);
-  renderResumenPronto();
-}
-
-/* ================= Cuotas ================= */
-function cuenta(aq){
-  const d = aq.datos || {};
-  const nuc = Math.max(0, num(d.nucleos));
-  const especial = d.cuotaEspecial !== '' && d.cuotaEspecial != null && isFinite(Number(d.cuotaEspecial));
-  const cuotaMes = especial ? num(d.cuotaEspecial) : nuc * num(state.settings.cuota);
-  let meses = 0;
-  if (d.inicioCobro && /^\d{4}-\d{2}$/.test(d.inicioCobro)){
-    const [y, m] = d.inicioCobro.split('-').map(Number);
-    const h = new Date();
-    meses = Math.max(0, (h.getFullYear()*12 + h.getMonth() + 1) - (y*12 + m) + 1);
-  }
-  const pagado = (d.pagos || []).reduce((s, p) => s + num(p.monto), 0);
-  const esperado = meses * cuotaMes + num(d.deudaAnterior);
-  const saldo = Math.round((esperado - pagado) * 100) / 100;
-  const atraso = saldo > 0 ? (cuotaMes > 0 ? Math.ceil(saldo / cuotaMes - 1e-9) : 1) : 0;
-  const aplica = !!d.inicioCobro || num(d.deudaAnterior) > 0 || (d.pagos || []).length > 0;
-  const nivel = saldo <= 0 ? 'ok' : (atraso <= 1 ? 'warn' : 'bad');
-  return {cuotaMes, meses, pagado, esperado, saldo, atraso, aplica, nivel, especial};
-}
-function textoEstado(c){
-  if (!c.aplica) return {cls:'nada', txt:'Sin cobro'};
-  if (c.saldo < 0) return {cls:'ok', txt:'Adelantado ' + dinero(-c.saldo)};
-  if (c.saldo === 0) return {cls:'ok', txt:'Al día'};
-  return {cls:c.nivel, txt:`Debe ${dinero(c.saldo)}`};
-}
-function longitud(layer){
-  if (!esLinea(layer)) return 0;
-  const pts = layer.getLatLngs().flat(Infinity);
-  let m = 0;
-  for (let i = 1; i < pts.length; i++) m += map.distance(pts[i-1], pts[i]);
-  return m;
-}
-
-/* ================= Mapa ================= */
-const map = Acu.crearMapa('map', {aviso});
-try {
-  const v = JSON.parse(localStorage.getItem(VISTA_KEY) || 'null');
-  if (v) map.setView([v.lat, v.lng], v.zoom);
-} catch (e){}
-map.on('moveend', debounce(() => {
-  const c = map.getCenter();
-  try { localStorage.setItem(VISTA_KEY, JSON.stringify({lat:c.lat, lng:c.lng, zoom:map.getZoom()})); } catch (e){}
-}, 500));
-
-const capa = L.featureGroup().addTo(map);
-map.pm.setLang('es');
-map.pm.addControls({
-  position:'topleft',
-  drawMarker:false, drawCircle:false, drawText:false, drawCircleMarker:true,
-  drawPolyline:true, drawRectangle:true, drawPolygon:true,
-  cutPolygon:false, rotateMode:false
-});
-map.pm.setGlobalOptions({layerGroup:capa, snappable:true, snapDistance:18});
-
-/* ================= Estilo y etiquetas ================= */
-function colorDe(aq){
-  if (aq.tipo === 'casa' && state.settings.colorPorPago){
-    const c = cuenta(aq);
-    if (c.aplica) return ESTADO_COLOR[c.nivel];
-  }
-  return aq.color || TIPOS[aq.tipo].color;
-}
-function marcarClase(layer, cls, si){
-  const el = layer.getElement && layer.getElement();
-  if (el) el.classList.toggle(cls, !!si);
-}
-function aplicarEstilo(layer){
-  const aq = layer.aq; if (!aq) return;
-  const sel = layer === selected;
-  const incs = afectados.get(aq.id);
-  if (incs && incs.length){
-    const inc = incs[0];
-    const col = inc.color || ROJO;
-    const op = Math.min(1, Math.max(0.05, num(inc.opacidad) || 0.75));
-    Acu.quitarClasesSector(layer);
-    if (esPunto(layer)){
-      layer.setStyle({radius: aq.tipo === 'llave' ? 9 : 7, color: sel ? '#FFD23F' : '#fff', weight: sel ? 4 : 2,
-        fillColor: col, fillOpacity: op, opacity:1, dashArray:null});
-    } else if (esPoligono(layer)){
-      layer.setStyle({color: sel ? '#FFD23F' : col, weight: sel ? 4 : 2.5, opacity:1, fillColor: col, fillOpacity: op, dashArray:null});
-    } else {
-      const base = aq.tipo === 'tuberia' && aq.datos.clase === 'acometida' ? 3.5 : 5.5;
-      layer.setStyle({color: col, weight: base + (sel ? 3 : 0), opacity: op, lineCap:'round', dashArray:null});
-    }
-    marcarClase(layer, 'con-incidencia', true);
-    if (aq.tipo === 'sector' && layer._map) layer.bringToBack();
-    return;
-  }
-  marcarClase(layer, 'con-incidencia', false);
-  if (aq.tipo === 'sector' && esPoligono(layer)){
-    Acu.estiloSector(layer, aq.color || TIPOS.sector.color, aq.datos, sel);
-    return;
-  }
-  Acu.quitarClasesSector(layer);
-  const col = colorDe(aq);
-  const sinAsignar = aq.tipo === 'sin';
-  if (esPunto(layer)){
-    const cerrada = aq.tipo === 'llave' && aq.datos.estado === 'cerrada';
-    layer.setStyle({radius: aq.tipo === 'llave' ? 9 : 7, color: sel ? '#FFD23F' : (cerrada ? col : '#fff'),
-      weight: sel ? 4 : (cerrada ? 3 : 2), fillColor: col, fillOpacity: cerrada ? 0.15 : 0.95, dashArray: sinAsignar ? '3 3' : null});
-  } else if (esPoligono(layer)){
-    layer.setStyle({color: sel ? '#FFD23F' : col, weight: sel ? 4 : 2, fillColor: col, opacity:1,
-      fillOpacity: aq.tipo === 'casa' ? 0.45 : 0.2, dashArray: sinAsignar ? '5 5' : null});
-  } else {
-    const acometida = aq.tipo === 'tuberia' && aq.datos.clase === 'acometida';
-    const grosor = aq.tipo === 'tuberia' ? (acometida ? 3 : 5) : 3;
-    layer.setStyle({color: sel ? '#FFD23F' : col, weight: grosor + (sel ? 3 : 0),
-      opacity: 0.95, lineCap:'round', dashArray: sinAsignar ? '7 7' : null});
-  }
-}
-function ordenarSectores(){
-  capa.eachLayer(l => { if (l.aq && l.aq.tipo === 'sector' && l._map) l.bringToBack(); });
-}
-function titulo(aq){
-  const d = aq.datos || {};
-  if (aq.tipo === 'casa') return [d.numero ? 'Casa ' + d.numero : 'Casa', d.responsable].filter(Boolean).join(', ');
-  if (aq.tipo === 'tuberia') return (d.clase === 'acometida' ? 'Acometida' : 'Tubería') + (d.nombre ? ' ' + d.nombre : '');
-  if (aq.tipo === 'llave') return (d.nombre ? 'Llave ' + d.nombre : 'Llave') + (d.estado === 'cerrada' ? ' (cerrada)' : '');
-  if (aq.tipo === 'sector') return d.nombre || 'Sector sin nombre';
-  return 'Forma sin función';
-}
-function textoIncidencias(id){
-  const incs = afectados.get(id);
-  if (!incs || !incs.length) return '';
-  return [...new Set(incs.map(i => i.tipo))].join(', ');
-}
-function actualizarTooltip(layer){
-  const aq = layer.aq;
-  const inc = textoIncidencias(aq.id);
-  if (aq.tipo === 'sector' && esPoligono(layer)){ Acu.ponerEtiquetaSector(layer, aq.datos, inc); return; }
-  let t = esc(titulo(aq));
-  if (aq.tipo === 'casa'){ const c = cuenta(aq); if (c.aplica) t += '<br>' + esc(textoEstado(c).txt); }
-  if (inc) t += `<br><b style="color:${ROJO}">⚠ ${esc(inc)}</b>`;
-  Acu.ponerTooltip(layer, t);
-}
-
-function prepararCapa(layer, aq){
-  layer.aq = aq;
-  layer.on('click', ev => {
-    if (map.pm.globalRemovalModeEnabled && map.pm.globalRemovalModeEnabled()) return;
-    if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
-    L.DomEvent.stopPropagation(ev);
-    seleccionar(layer);
-  });
-  layer.on('pm:edit pm:dragend', () => {
-    guardarForma(layer.aq.id); renderResumenPronto();
-    geometriaCambio();
-    if (selected === layer) renderPanel();
-  });
-  aplicarEstilo(layer);
-  actualizarTooltip(layer);
-}
-function agregarCapa(layer, aq){
-  if (!capa.hasLayer(layer)) capa.addLayer(layer);
-  capas.set(aq.id, layer);
-  prepararCapa(layer, aq);
-  geometriaCambio();
-}
-function quitarCapaLocal(layer){
-  if (selected === layer) cerrarPanel();
-  capa.removeLayer(layer); map.removeLayer(layer);
-  if (layer.aq) capas.delete(layer.aq.id);
-  geometriaCambio();
-}
-function refrescarForma(layer){
-  aplicarEstilo(layer); actualizarTooltip(layer);
-  if (selected === layer){ actualizarTituloPanel(); refrescarCuenta(); }
-  renderResumenPronto();
-}
-async function eliminarForma(layer){
-  const id = layer.aq.id;
-  quitarCapaLocal(layer);
-  quitarIncidenciasDe(id);
-  pendientes.delete(id);
-  renderResumen();
-  await tarea(sb.from('formas').delete().eq('id', id), 'No se pudo eliminar la forma');
-}
-
-/* =====================================================================
-   RED DE TUBERÍAS
-   Dos tramos están conectados si un punto de uno cae sobre el otro
-   (a menos de TOLERANCIA_M metros). Una casa está conectada si algún
-   punto de una tubería cae dentro de ella o sobre su borde.
-   ===================================================================== */
-function geometriaCambio(){ versionGeo++; recalcularPronto(); }
-
-const M_LAT = 110540;
-function aMetros(ll, cosLat){ return {x: ll.lng * 111320 * cosLat, y: ll.lat * M_LAT}; }
-function partesDeLinea(latlngs){ return Array.isArray(latlngs[0]) ? latlngs : [latlngs]; }
-function anilloDe(layer){
-  let a = layer.getLatLngs();
-  while (Array.isArray(a[0])) a = a[0];
-  return a;
-}
-function caja(puntos, margen){
-  let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-  puntos.forEach(p => { if (p.x < x1) x1 = p.x; if (p.y < y1) y1 = p.y; if (p.x > x2) x2 = p.x; if (p.y > y2) y2 = p.y; });
-  return {x1:x1 - margen, y1:y1 - margen, x2:x2 + margen, y2:y2 + margen};
-}
-const cruzan = (a, b) => a.x1 <= b.x2 && b.x1 <= a.x2 && a.y1 <= b.y2 && b.y1 <= a.y2;
-function distSeg(p, a, b){
-  const dx = b.x - a.x, dy = b.y - a.y, l2 = dx*dx + dy*dy;
-  let t = l2 ? ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2 : 0;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(a.x + t*dx - p.x, a.y + t*dy - p.y);
-}
-function distALinea(p, partes){
-  let m = Infinity;
-  for (const pts of partes){
-    if (pts.length === 1) m = Math.min(m, Math.hypot(pts[0].x - p.x, pts[0].y - p.y));
-    for (let i = 1; i < pts.length; i++) m = Math.min(m, distSeg(p, pts[i-1], pts[i]));
-  }
-  return m;
-}
-function dentroDe(p, anillo){
-  let dentro = false;
-  for (let i = 0, j = anillo.length - 1; i < anillo.length; j = i++){
-    const a = anillo[i], b = anillo[j];
-    if ((a.y > p.y) !== (b.y > p.y) && p.x < (b.x - a.x) * (p.y - a.y) / (b.y - a.y) + a.x) dentro = !dentro;
-  }
-  return dentro;
-}
-function cercaDeAnillo(p, anillo, tol){
-  if (dentroDe(p, anillo)) return true;
-  for (let i = 0; i < anillo.length; i++) if (distSeg(p, anillo[i], anillo[(i + 1) % anillo.length]) <= tol) return true;
-  return false;
-}
-
-function grafo(){
-  if (grafoCache && grafoCache.v === versionGeo) return grafoCache;
-  const tubos = [], casas = [], llaves = [], sectores = [];
-  let lat0 = null;
-  capa.eachLayer(l => { if (lat0 === null && l.aq) lat0 = (l.getBounds ? l.getBounds().getCenter() : l.getLatLng()).lat; });
-  const cosLat = Math.cos((lat0 || 8.5) * Math.PI / 180);
-  const M = ll => aMetros(ll, cosLat);
-
-  capa.eachLayer(l => {
-    if (!l.aq) return;
-    const t = l.aq.tipo;
-    if (t === 'tuberia' && esLinea(l)){
-      const partes = partesDeLinea(l.getLatLngs()).map(p => p.map(M));
-      const todos = partes.flat();
-      if (todos.length) tubos.push({id:l.aq.id, partes, todos, caja:caja(todos, TOLERANCIA_M)});
-    } else if (t === 'casa'){
-      if (esPunto(l)){ const p = M(l.getLatLng()); casas.push({id:l.aq.id, punto:p, caja:caja([p], 3)}); }
-      else if (esPoligono(l)){ const an = anilloDe(l).map(M); casas.push({id:l.aq.id, anillo:an, caja:caja(an, TOLERANCIA_M)}); }
-    } else if (t === 'llave' && esPunto(l)){
-      const p = M(l.getLatLng()); llaves.push({id:l.aq.id, punto:p, caja:caja([p], 3)});
-    } else if (t === 'sector' && esPoligono(l)){
-      sectores.push({id:l.aq.id, anillo:anilloDe(l).map(M)});
-    }
-  });
-
-  const adj = new Map(), casasDe = new Map(), tubosDe = new Map(), llavesDe = new Map();
-  const agregar = (m, k, v) => { if (!m.has(k)) m.set(k, new Set()); m.get(k).add(v); };
-  tubos.forEach(t => adj.set(t.id, new Set()));
-
-  // Tramo con tramo
-  for (let i = 0; i < tubos.length; i++){
-    for (let j = i + 1; j < tubos.length; j++){
-      const a = tubos[i], b = tubos[j];
-      if (!cruzan(a.caja, b.caja)) continue;
-      const unidos = a.todos.some(p => distALinea(p, b.partes) <= TOLERANCIA_M) ||
-                     b.todos.some(p => distALinea(p, a.partes) <= TOLERANCIA_M);
-      if (unidos){ agregar(adj, a.id, b.id); agregar(adj, b.id, a.id); }
-    }
-  }
-  // Tramo con casa
-  casas.forEach(c => tubos.forEach(t => {
-    if (!cruzan(c.caja, t.caja)) return;
-    const unida = c.anillo ? t.todos.some(p => cercaDeAnillo(p, c.anillo, TOLERANCIA_M))
-                           : distALinea(c.punto, t.partes) <= 3;
-    if (unida){ agregar(casasDe, t.id, c.id); agregar(tubosDe, c.id, t.id); }
-  }));
-  // Tramo con llave
-  llaves.forEach(k => tubos.forEach(t => {
-    if (cruzan(k.caja, t.caja) && distALinea(k.punto, t.partes) <= 3){ agregar(llavesDe, t.id, k.id); agregar(tubosDe, k.id, t.id); }
-  }));
-
-  grafoCache = {v:versionGeo, adj, casasDe, tubosDe, llavesDe, sectores, M};
-  return grafoCache;
-}
-
-/* Todo lo conectado a un elemento: tramos, casas y llaves */
-function redConectada(id){
-  const g = grafo();
-  const tubos = new Set(), casas = new Set(), llaves = new Set();
-  const origen = capas.get(id);
-  if (!origen) return {tubos, casas, llaves};
-  const cola = [];
-  if (origen.aq.tipo === 'tuberia') cola.push(id);
-  else (g.tubosDe.get(id) || []).forEach(t => cola.push(t));
-  if (origen.aq.tipo === 'casa') casas.add(id);
-  if (origen.aq.tipo === 'llave') llaves.add(id);
-  while (cola.length){
-    const t = cola.pop();
-    if (tubos.has(t)) continue;
-    tubos.add(t);
-    (g.adj.get(t) || []).forEach(n => { if (!tubos.has(n)) cola.push(n); });
-  }
-  tubos.forEach(t => {
-    (g.casasDe.get(t) || []).forEach(c => casas.add(c));
-    (g.llavesDe.get(t) || []).forEach(k => llaves.add(k));
-  });
-  return {tubos, casas, llaves};
-}
-function textoRed(r){
-  const partes = [];
-  partes.push(r.tubos.size === 1 ? '1 tramo' : `${r.tubos.size} tramos`);
-  partes.push(r.casas.size === 1 ? '1 casa' : `${r.casas.size} casas`);
-  if (r.llaves.size) partes.push(r.llaves.size === 1 ? '1 llave' : `${r.llaves.size} llaves`);
-  return partes.join(', ');
-}
-
-/* Sectores que contienen un elemento (según su punto central) */
-function sectoresDe(layer){
-  const g = grafo();
-  let ll;
-  if (esPunto(layer)) ll = layer.getLatLng();
-  else if (esLinea(layer)){ const pts = layer.getLatLngs().flat(Infinity); ll = pts[Math.floor(pts.length / 2)]; }
-  else ll = layer.getBounds().getCenter();
-  if (!ll) return [];
-  const p = g.M(ll);
-  return g.sectores.filter(s => s.id !== layer.aq.id && dentroDe(p, s.anillo)).map(s => s.id);
-}
-function listaSectores(){
-  const out = [];
-  capa.eachLayer(l => { if (l.aq && l.aq.tipo === 'sector' && esPoligono(l)) out.push(l); });
-  return out.sort((a, b) => String(a.aq.datos.nombre).localeCompare(String(b.aq.datos.nombre), 'es', {numeric:true}));
-}
-
-/* =====================================================================
-   INCIDENCIAS
-   ===================================================================== */
-function afectadosPor(inc){
-  const origen = capas.get(inc.forma_id);
-  if (!origen) return [];
-  if (inc.alcance === 'sector' && inc.sector_id && capas.has(inc.sector_id)) return [inc.sector_id];
-  if (inc.alcance === 'red' && origen.aq.tipo !== 'sector'){
-    const r = redConectada(inc.forma_id);
-    return [inc.forma_id, ...r.tubos, ...r.casas, ...r.llaves];
-  }
-  return [inc.forma_id];
-}
-function recalcularIncidencias(){
-  const antes = new Set(afectados.keys());
-  const nuevo = new Map();
-  incidencias.forEach(inc => {
-    if (inc.estado !== 'abierta') return;
-    new Set(afectadosPor(inc)).forEach(id => {
-      if (!nuevo.has(id)) nuevo.set(id, []);
-      nuevo.get(id).push(inc);
-    });
-  });
-  nuevo.forEach(lista => lista.sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en))));
-  afectados = nuevo;
-  new Set([...antes, ...afectados.keys()]).forEach(id => {
-    const l = capas.get(id);
-    if (l){ aplicarEstilo(l); actualizarTooltip(l); }
-  });
-  renderIncidenciasLateral();
-  if (selected){ actualizarTituloPanel(); if (!formIncAbierto) renderIncidenciasPanel(); }
-  $('#nInc').textContent = [...incidencias.values()].filter(i => i.estado === 'abierta').length;
-}
-const recalcularPronto = debounce(recalcularIncidencias, 300);
-
-function quitarIncidenciasDe(formaId){
-  [...incidencias.values()].forEach(i => { if (i.forma_id === formaId) incidencias.delete(i.id); });
-  recalcularPronto();
-}
-
-function textoAlcance(inc){
-  const origen = capas.get(inc.forma_id);
-  if (inc.alcance === 'sector'){
-    const s = inc.sector_id && capas.get(inc.sector_id);
-    return s ? 'Todo el sector ' + (s.aq.datos.nombre || 'sin nombre') : 'Solo el elemento (el sector ya no existe)';
-  }
-  if (inc.alcance === 'red' && origen) return 'Toda la línea conectada (' + textoRed(redConectada(inc.forma_id)) + ')';
-  if (!origen) return '';
-  return 'Solo ' + (origen.aq.tipo === 'casa' ? 'esta casa' : origen.aq.tipo === 'tuberia' ? 'este tramo' : 'este elemento');
-}
-
-async function consultaConFila(consulta, msgError){
-  enVuelo++; pintarSync();
-  try {
-    const {data, error} = await consulta;
-    if (error) throw error;
-    errorSync = null;
-    return data;
-  } catch (e){
-    console.error(e);
-    errorSync = e.message || String(e);
-    aviso((msgError || 'No se pudo guardar') + '. Revisa tu conexión e inténtalo de nuevo.');
-    return null;
-  } finally { enVuelo--; pintarSync(); }
-}
-
-async function crearIncidencia(layer, datos){
-  await flush();   // el elemento debe existir en la base de datos
-  const fila = await consultaConFila(sb.from('incidencias').insert({
-    id:uid(), forma_id:layer.aq.id, tipo:datos.tipo, detalle:datos.detalle, alcance:datos.alcance,
-    sector_id:datos.alcance === 'sector' ? datos.sector_id : null, color:datos.color, opacidad:datos.opacidad,
-    estado:'abierta', editado_por:CLIENTE_ID
-  }).select().single(), 'No se pudo crear la incidencia');
-  if (!fila) return false;
-  incidencias.set(fila.id, fila);
-  recalcularIncidencias();
-  aviso('Incidencia creada: ' + fila.tipo);
-  return true;
-}
-async function actualizarIncidencia(id, cambios, msg){
-  const fila = await consultaConFila(sb.from('incidencias').update({...cambios, editado_por:CLIENTE_ID}).eq('id', id).select().single(),
-    'No se pudo actualizar la incidencia');
-  if (!fila) return;
-  incidencias.set(fila.id, fila);
-  recalcularIncidencias();
-  if (msg) aviso(msg);
-}
-async function borrarIncidencia(id){
-  const ok = await tarea(sb.from('incidencias').delete().eq('id', id), 'No se pudo eliminar la incidencia');
-  if (!ok) return;
-  incidencias.delete(id);
-  recalcularIncidencias();
-  aviso('Incidencia eliminada.');
-}
-
-/* --- Tipos de incidencia --- */
-async function agregarTipoInc(nombre){
-  nombre = (nombre || '').trim();
-  if (!nombre) return null;
-  const existe = tiposInc.find(t => t.nombre.toLowerCase() === nombre.toLowerCase());
-  if (existe) return existe;
-  const orden = tiposInc.reduce((m, t) => Math.max(m, t.orden || 0), 0) + 1;
-  const fila = await consultaConFila(sb.from('tipos_incidencia').insert({id:uid(), nombre, orden}).select().single(),
-    'No se pudo añadir el tipo de incidencia');
-  if (!fila) return null;
-  tiposInc.push(fila);
-  renderTiposInc();
-  return fila;
-}
-function renderTiposInc(){
-  const ul = $('#listaTiposInc');
-  if (!tiposInc.length){ ul.innerHTML = '<li class="vacio">No hay tipos. Añade uno abajo.</li>'; return; }
-  ul.innerHTML = tiposInc.map(t => `<li><span>${esc(t.nombre)}</span><button class="x" data-borrar-tipo="${esc(t.id)}" aria-label="Quitar ${esc(t.nombre)}">×</button></li>`).join('');
-  ul.querySelectorAll('[data-borrar-tipo]').forEach(b => b.addEventListener('click', async () => {
-    const t = tiposInc.find(x => x.id === b.dataset.borrarTipo);
-    if (!t || !confirm(`¿Quitar «${t.nombre}» de la lista? Las incidencias que ya lo usan no cambian.`)) return;
-    const ok = await tarea(sb.from('tipos_incidencia').delete().eq('id', t.id), 'No se pudo quitar el tipo');
-    if (ok){ tiposInc = tiposInc.filter(x => x.id !== t.id); renderTiposInc(); }
-  }));
-}
-$('#agregarTipoInc').addEventListener('click', async () => {
-  const f = await agregarTipoInc($('#nuevoTipoInc').value);
-  if (f){ $('#nuevoTipoInc').value = ''; aviso('Tipo añadido: ' + f.nombre); }
-});
-$('#nuevoTipoInc').addEventListener('keydown', e => { if (e.key === 'Enter'){ e.preventDefault(); $('#agregarTipoInc').click(); } });
-
-/* --- Resaltar temporalmente lo conectado --- */
-function resaltarRed(layer){
-  const r = redConectada(layer.aq.id);
-  const ids = [...r.tubos, ...r.casas, ...r.llaves];
-  if (!ids.length){ aviso('Este elemento no está conectado a ninguna tubería.'); return; }
-  const b = L.latLngBounds([]);
-  ids.forEach(id => {
-    const l = capas.get(id); if (!l) return;
-    b.extend(l.getBounds ? l.getBounds() : l.getLatLng());
-    if (esPunto(l)) l.setStyle({color:'#FFD23F', weight:4});
-    else if (esPoligono(l)) l.setStyle({color:'#FFD23F', weight:4, fillColor:'#FFD23F', fillOpacity:.55});
-    else l.setStyle({color:'#FFD23F', opacity:1});
-  });
-  if (b.isValid()) map.fitBounds(b, {maxZoom:19, padding:[60,60]});
-  aviso('Conectado: ' + textoRed(r));
-  setTimeout(() => ids.forEach(id => { const l = capas.get(id); if (l) aplicarEstilo(l); }), 2800);
-}
-
-/* --- Sección de incidencias dentro del panel --- */
-function renderIncidenciasPanel(){
-  const box = $('#incBox'); if (!box || !selected) return;
-  const layer = selected, aq = layer.aq;
-  const abiertas = afectados.get(aq.id) || [];
-  const historial = [...incidencias.values()]
-    .filter(i => i.forma_id === aq.id && i.estado === 'resuelta')
-    .sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en)));
-
-  const tarjeta = inc => {
-    const esOrigen = inc.forma_id === aq.id;
-    const origen = capas.get(inc.forma_id);
-    const opcAlcance = esOrigen && inc.estado === 'abierta' && aq.tipo !== 'sector'
-      ? `<select data-alcance="${esc(inc.id)}" aria-label="Qué se marca en rojo">
-          <option value="forma" ${inc.alcance === 'forma' ? 'selected' : ''}>Solo ${aq.tipo === 'casa' ? 'esta casa' : 'este tramo'}</option>
-          <option value="red" ${inc.alcance === 'red' ? 'selected' : ''}>Toda la línea conectada</option>
-          ${listaSectores().map(s => `<option value="sector:${esc(s.aq.id)}" ${inc.alcance === 'sector' && inc.sector_id === s.aq.id ? 'selected' : ''}>Sector ${esc(s.aq.datos.nombre || 'sin nombre')}</option>`).join('')}
-        </select>` : '';
-    return `<div class="inc ${inc.estado === 'resuelta' ? 'resuelta' : ''}">
-      <div class="inc-cab"><b>${inc.estado === 'resuelta' ? '✓' : '⚠'} ${esc(inc.tipo)}</b></div>
-      <p class="meta">Creada: ${esc(Acu.fechaHora(inc.creada_en))} (${esc(Acu.hace(inc.creada_en))})</p>
-      ${inc.resuelta_en ? `<p class="meta">Resuelta: ${esc(Acu.fechaHora(inc.resuelta_en))}</p>` : ''}
-      ${inc.detalle ? `<p>${esc(inc.detalle)}</p>` : ''}
-      ${inc.estado === 'abierta' ? `<p class="meta">Marca en rojo: ${esc(textoAlcance(inc))}</p>` : ''}
-      ${!esOrigen && origen ? `<p class="meta">Reportada en: <button class="origen" data-ir="${esc(inc.forma_id)}">${esc(titulo(origen.aq))}</button></p>` : ''}
-      ${inc.estado === 'abierta' ? `<div class="acciones">${opcAlcance}
-        <button class="btn chico primario" data-resolver="${esc(inc.id)}">Marcar resuelta</button>
-        <button class="btn chico peligro" data-borrar-inc="${esc(inc.id)}">Eliminar</button></div>` : ''}
-    </div>`;
-  };
-
-  let html = abiertas.length ? abiertas.map(tarjeta).join('') : '<p class="nota" style="margin:4px 0">No hay incidencias abiertas aquí.</p>';
-  html += `<div id="incFormBox"></div>
-    <div class="fila" style="margin-top:8px"><button class="btn alerta" id="incNueva">⚠ Reportar incidencia</button></div>`;
-  if (historial.length) html += `<details style="margin-top:10px"><summary>Historial (${historial.length})</summary>${historial.map(tarjeta).join('')}</details>`;
-  box.innerHTML = html;
-
-  box.querySelectorAll('[data-resolver]').forEach(b => b.addEventListener('click', () => {
-    if (!confirm('¿Marcar esta incidencia como resuelta?')) return;
-    actualizarIncidencia(b.dataset.resolver, {estado:'resuelta', resuelta_en:new Date().toISOString()}, 'Incidencia resuelta.');
-  }));
-  box.querySelectorAll('[data-borrar-inc]').forEach(b => b.addEventListener('click', () => {
-    if (confirm('¿Eliminar esta incidencia? Si ya se solucionó, es mejor marcarla como resuelta para conservar el historial.')) borrarIncidencia(b.dataset.borrarInc);
-  }));
-  box.querySelectorAll('[data-alcance]').forEach(s => s.addEventListener('change', () => {
-    const v = s.value;
-    if (v.startsWith('sector:')) actualizarIncidencia(s.dataset.alcance, {alcance:'sector', sector_id:v.slice(7)});
-    else actualizarIncidencia(s.dataset.alcance, {alcance:v, sector_id:null});
-  }));
-  box.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => {
-    const l = capas.get(b.dataset.ir); if (l){ enfocar(l); seleccionar(l); }
-  }));
-  $('#incNueva').addEventListener('click', () => abrirFormIncidencia(layer));
-}
-
-function abrirFormIncidencia(layer){
-  const aq = layer.aq;
-  const box = $('#incFormBox'); if (!box) return;
-  formIncAbierto = true;
-  $('#incNueva').hidden = true;
-  const r = aq.tipo !== 'sector' ? redConectada(aq.id) : null;
-  const conectado = r && r.tubos.size > 0;
-  const sectores = listaSectores();
-  const propios = aq.tipo === 'sector' ? [aq.id] : sectoresDe(layer);
-  const sectorDefecto = propios[0] || (sectores[0] && sectores[0].aq.id) || '';
-  const nombreElem = aq.tipo === 'casa' ? 'esta casa' : aq.tipo === 'tuberia' ? 'este tramo' : 'este elemento';
-  const defecto = aq.tipo === 'sector' ? 'sector' : (aq.tipo === 'tuberia' ? 'red' : 'forma');
-
-  const opcion = (valor, titulo, detalle, activo) => `
-    <label class="opcion ${activo ? '' : 'off'}"><input type="radio" name="incAlcance" value="${valor}" ${valor === defecto && activo ? 'checked' : ''} ${activo ? '' : 'disabled'}>
-      <span>${titulo}<small>${detalle}</small></span></label>`;
-
-  let opciones = '';
-  if (aq.tipo !== 'sector'){
-    opciones += opcion('forma', 'Solo ' + nombreElem, 'Únicamente se marca el elemento donde ocurrió.', true);
-    opciones += opcion('red', 'Toda la línea conectada',
-      conectado ? esc(textoRed(r)) : 'No está conectado a ninguna tubería.', conectado);
-  }
-  opciones += opcion('sector', aq.tipo === 'sector' ? 'Todo este sector' : 'Todo el sector',
-    sectores.length ? (propios.length ? 'Se marca el sector completo en rojo.' : 'Este elemento no está dentro de ningún sector; elige uno abajo.') : 'Todavía no hay sectores dibujados.',
-    sectores.length > 0);
-
-  box.innerHTML = `<div class="inc-form">
-    <label class="campo"><span>Tipo de incidencia</span>
-      <select id="incTipo">${tiposInc.map(t => `<option>${esc(t.nombre)}</option>`).join('')}<option value="__nuevo">＋ Añadir nuevo tipo…</option></select></label>
-    <label class="campo"><span>Detalle</span><textarea id="incDetalle" rows="3" placeholder="Qué pasó, dónde exactamente, quién lo reportó…"></textarea></label>
-    <fieldset class="alcance"><legend>¿Qué se marca en rojo?</legend>${opciones}</fieldset>
-    ${aq.tipo !== 'sector' && sectores.length ? `<label class="campo" id="incSectorBox" hidden><span>Sector</span>
-      <select id="incSector">${sectores.map(s => `<option value="${esc(s.aq.id)}" ${s.aq.id === sectorDefecto ? 'selected' : ''}>${esc(s.aq.datos.nombre || 'Sector sin nombre')}</option>`).join('')}</select></label>` : ''}
-    <div class="dos">
-      <label class="campo"><span>Color</span><input type="color" id="incColor" value="${ROJO}" style="width:100%;height:34px;padding:0;border:1px solid var(--linea);border-radius:7px"></label>
-      <label class="campo"><span>Opacidad: <output id="incOpVal">75%</output></span><input type="range" id="incOp" min="10" max="100" step="5" value="75"></label>
-    </div>
-    <p class="nota">Se guardará la fecha y hora de creación automáticamente.</p>
-    <div class="fila"><button class="btn alerta" id="incCrear">Crear incidencia</button><button class="btn" id="incCancelar">Cancelar</button></div>
-  </div>`;
-
-  const selTipo = $('#incTipo');
-  let ultimoTipo = selTipo.value;
-  selTipo.addEventListener('change', async () => {
-    if (selTipo.value !== '__nuevo'){ ultimoTipo = selTipo.value; return; }
-    const nombre = prompt('Nombre del nuevo tipo de incidencia:');
-    const t = await agregarTipoInc(nombre);
-    if (!t){ selTipo.value = ultimoTipo; return; }
-    selTipo.innerHTML = tiposInc.map(x => `<option>${esc(x.nombre)}</option>`).join('') + '<option value="__nuevo">＋ Añadir nuevo tipo…</option>';
-    selTipo.value = t.nombre; ultimoTipo = t.nombre;
-  });
-  const mostrarSector = () => {
-    const v = (box.querySelector('input[name="incAlcance"]:checked') || {}).value;
-    const sBox = $('#incSectorBox'); if (sBox) sBox.hidden = v !== 'sector';
-  };
-  box.querySelectorAll('input[name="incAlcance"]').forEach(i => i.addEventListener('change', mostrarSector));
-  if (!box.querySelector('input[name="incAlcance"]:checked')){
-    const primero = box.querySelector('input[name="incAlcance"]:not([disabled])'); if (primero) primero.checked = true;
-  }
-  mostrarSector();
-  $('#incOp').addEventListener('input', () => { $('#incOpVal').textContent = $('#incOp').value + '%'; });
-  const cerrarForm = () => { formIncAbierto = false; renderIncidenciasPanel(); };
-  $('#incCancelar').addEventListener('click', cerrarForm);
-  $('#incCrear').addEventListener('click', async () => {
-    const alcance = (box.querySelector('input[name="incAlcance"]:checked') || {}).value;
-    if (!selTipo.value || selTipo.value === '__nuevo'){ aviso('Elige el tipo de incidencia.'); return; }
-    if (!alcance){ aviso('Elige qué se marca en rojo.'); return; }
-    const sector_id = aq.tipo === 'sector' ? aq.id : ($('#incSector') ? $('#incSector').value : '');
-    if (alcance === 'sector' && !sector_id){ aviso('Elige el sector.'); return; }
-    const btn = $('#incCrear'); btn.disabled = true;
-    const ok = await crearIncidencia(layer, {
-      tipo:selTipo.value, detalle:$('#incDetalle').value.trim(), alcance, sector_id,
-      color:$('#incColor').value, opacidad:Number($('#incOp').value) / 100
-    });
-    if (ok) cerrarForm(); else btn.disabled = false;
-  });
-  setTimeout(() => $('#incDetalle').focus(), 50);
-}
-
-/* --- Lista de incidencias en la barra lateral --- */
-function renderIncidenciasLateral(){
-  const todas = [...incidencias.values()].sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en)));
-  const abiertas = todas.filter(i => i.estado === 'abierta');
-  const resueltas = todas.filter(i => i.estado === 'resuelta').slice(0, 30);
-  const item = (i, idx, grupo) => {
-    const o = capas.get(i.forma_id);
-    return `<li><button class="item" data-${grupo}="${idx}"><span><span class="ico-inc">${grupo === 'ab' ? '⚠' : '✓'}</span>${esc(i.tipo)}
-      <small>${esc(o ? titulo(o.aq) : 'Elemento eliminado')} · ${esc(grupo === 'ab' ? Acu.hace(i.creada_en) : Acu.fechaHora(i.resuelta_en || i.creada_en))}</small></span></button></li>`;
-  };
-  const ulA = $('#listaIncidencias'), ulR = $('#listaResueltas');
-  ulA.innerHTML = abiertas.length ? abiertas.map((i, n) => item(i, n, 'ab')).join('') : '<li class="vacio">No hay incidencias abiertas.</li>';
-  ulR.innerHTML = resueltas.length ? resueltas.map((i, n) => item(i, n, 're')).join('') : '<li class="vacio">Todavía no hay incidencias resueltas.</li>';
-  const ir = inc => {
-    const o = capas.get(inc.forma_id); if (!o) return;
-    const ids = inc.estado === 'abierta' ? afectadosPor(inc) : [inc.forma_id];
-    const b = L.latLngBounds([]);
-    ids.forEach(id => { const l = capas.get(id); if (l) b.extend(l.getBounds ? l.getBounds() : l.getLatLng()); });
-    if (b.isValid()) map.fitBounds(b, {maxZoom:19, padding:[60,60]});
-    seleccionar(o);
-  };
-  ulA.querySelectorAll('[data-ab]').forEach(b => b.addEventListener('click', () => ir(abiertas[Number(b.dataset.ab)])));
-  ulR.querySelectorAll('[data-re]').forEach(b => b.addEventListener('click', () => ir(resueltas[Number(b.dataset.re)])));
-}
-
-/* Encender o apagar el flujo de agua de un sector */
-function ponerFlujo(layer, activo){
-  const d = layer.aq.datos;
-  if (!!d.activo === activo) return;
-  d.activo = activo;
-  d.activoDesde = new Date().toISOString();
-  refrescarForma(layer);
-  guardarForma(layer.aq.id, true);
-  if (selected === layer) renderPanel();
-  aviso(`${d.nombre || 'Sector'}: ${activo ? 'con agua' : 'sin agua'}`);
-}
-
-/* ================= Dibujo ================= */
-document.querySelectorAll('[data-dibujar]').forEach(b => b.addEventListener('click', () => {
-  const t = b.dataset.dibujar;
-  if (pendingTipo === t){ map.pm.disableDraw(); pendingTipo = null; marcarBotones(); return; }
-  map.pm.disableDraw();
-  pendingTipo = t;
-  map.pm.enableDraw(TIPOS[t].dibujo, {snappable:true});
-  marcarBotones();
-  cerrarLateralMovil();
-}));
-function marcarBotones(){
-  document.querySelectorAll('[data-dibujar]').forEach(b => b.classList.toggle('activo', b.dataset.dibujar === pendingTipo));
-  $('#pista').textContent = pendingTipo ? PISTAS[pendingTipo] : PISTA_BASE;
-}
-map.on('pm:drawend', () => setTimeout(() => { pendingTipo = null; marcarBotones(); }, 0));
-
-map.on('pm:create', e => {
-  const layer = e.layer;
-  let tipo = pendingTipo || 'sin';
-  const esAcometida = tipo === 'acometida';
-  if (esAcometida) tipo = esLinea(layer) ? 'tuberia' : 'sin';
-  if (tipo === 'sector' && !esPoligono(layer)) tipo = 'sin';
-  const aq = {id:uid(), tipo, color:TIPOS[tipo].color, colorManual:false, datos:datosBase(tipo)};
-  if (esAcometida && tipo === 'tuberia'){ aq.datos.clase = 'acometida'; aq.datos.diametro = '1/2'; }
-  agregarCapa(layer, aq);
-  guardarForma(aq.id);
-  renderResumen();
-  seleccionar(layer);
-  if (tipo === 'sin') aviso('Forma creada. Elige su función en el panel.');
-  if (esAcometida && tipo === 'tuberia'){
-    const r = redConectada(aq.id);
-    aviso(r.casas.size && r.tubos.size > 1 ? 'Acometida creada y conectada: ' + textoRed(r) : 'Acometida creada. Revisa que toque la tubería y la casa.');
-  }
-  if (tipo === 'sector') setTimeout(() => { const n = document.querySelector('#pCuerpo [data-k="nombre"]'); if (n) n.focus(); }, 250);
-});
-map.on('pm:remove', e => { if (e.layer && e.layer.aq) eliminarForma(e.layer); });
-map.on('click', () => {
-  if (map.pm.globalDrawModeEnabled && map.pm.globalDrawModeEnabled()) return;
-  if (selected) cerrarPanel();
-});
-
-/* ================= Selección y panel ================= */
-function seleccionar(layer){
-  const prev = selected;
-  selected = layer;
-  if (prev && prev !== layer) aplicarEstilo(prev);
-  aplicarEstilo(layer);
-  if (!esPunto(layer) && layer.aq.tipo !== 'sector') layer.bringToFront();
-  renderPanel();
-  $('#panel').classList.add('abierto');
-  cerrarLateralMovil();
-}
-function cerrarPanel(){
-  const prev = selected; selected = null;
-  if (prev) aplicarEstilo(prev);
-  $('#panel').classList.remove('abierto');
-}
-$('#pCerrar').addEventListener('click', cerrarPanel);
-document.addEventListener('keydown', e => { if (e.key === 'Escape') cerrarPanel(); });
-
-function enfocar(layer){
-  if (esPunto(layer)) map.setView(layer.getLatLng(), Math.max(map.getZoom(), 18));
-  else map.fitBounds(layer.getBounds(), {maxZoom:19, padding:[60,60]});
-}
-
-function campo(label, k, val, type = 'text', extra = ''){
-  return `<label class="campo"><span>${label}</span><input data-k="${k}" type="${type}" value="${esc(val)}" ${extra}></label>`;
-}
-const areaNotas = val => `<label class="campo"><span>Notas</span><textarea data-k="notas" rows="3">${esc(val)}</textarea></label>`;
-
-function renderPanel(){
-  if (!selected) return;
-  const aq = selected.aq, d = aq.datos;
-  actualizarTituloPanel();
-
-  const tipos = ['casa','tuberia','llave','sector','sin'].map(t => {
-    const bloqueado = t === 'sector' && !esPoligono(selected);
-    return `<button data-tipo="${t}" class="${aq.tipo === t ? 'on' : ''}" ${bloqueado ? 'disabled title="Un sector debe ser un área cerrada"' : ''}>${TIPOS[t].nombre}</button>`;
-  }).join('');
-  const colorActual = aq.color || TIPOS[aq.tipo].color;
-  const swatches = PALETA.map(c =>
-    `<button data-color="${c}" style="background:${c}" class="${c.toLowerCase() === colorActual.toLowerCase() ? 'on' : ''}" aria-label="Color ${c}"></button>`).join('');
-  let avisoColor = '';
-  if (aq.tipo === 'casa' && state.settings.colorPorPago) avisoColor = '<p class="nota">Ahora el color lo decide el estado de pago. Puedes desactivarlo en Configuración.</p>';
-  if (aq.tipo === 'sector') avisoColor = '<p class="nota">Este color se ve cuando el sector tiene agua. Sin agua se muestra en gris.</p>';
-
-  let html = `
-    <h4>Función</h4>
-    <div class="tipos" role="group" aria-label="Función de la forma">${tipos}</div>
-    <h4>Color</h4>
-    <div class="colores">${swatches}<input type="color" id="colorLibre" value="${esc(colorActual)}" aria-label="Otro color"></div>
-    ${avisoColor}
-    ${['casa','tuberia','sector'].includes(aq.tipo) ? '<h4>Incidencias</h4><div id="incBox"></div>' : ''}`;
-
-  if (aq.tipo === 'sector'){
-    const op = Math.round(Acu.opacidadSector(d) * 100);
-    const estadoTxt = d.activoDesde ? (d.activo ? 'Con agua ' : 'Sin agua ') + Acu.desde(d.activoDesde) + '.' : 'Aún no se ha cambiado el estado.';
-    html += `
-      <h4>Datos del sector</h4>
-      ${campo('Nombre del sector o zona','nombre',d.nombre,'text','placeholder="Ej. Sector La Loma"')}
-      <label class="campo"><span>Opacidad del relleno: <output id="opVal">${op}%</output></span>
-        <input type="range" id="opRange" min="5" max="90" step="5" value="${op}"></label>
-      <h4>Flujo de agua</h4>
-      <label class="interruptor grande"><input type="checkbox" id="secFlujo" ${d.activo ? 'checked' : ''}><span class="riel"></span><span>${d.activo ? 'Con agua ahora' : 'Sin agua ahora'}</span></label>
-      <p class="nota">${esc(estadoTxt)} El mapa público muestra este estado en tiempo real.</p>
-      ${areaNotas(d.notas)}`;
-  } else if (aq.tipo === 'casa'){
-    const r = redConectada(aq.id);
-    const conexion = r.tubos.size
-      ? `<div class="conexion">Conectada a la red: ${esc(textoRed(r))}.
-          <div class="fila"><button class="btn chico" id="verRed">Resaltar lo conectado</button><button class="btn chico" id="conectarCasa">Añadir otra acometida</button></div></div>`
-      : `<div class="conexion no">⚠ Esta casa no está conectada a ninguna tubería.
-          <div class="fila"><button class="btn chico primario" id="conectarCasa">Conectar a una tubería</button></div></div>`;
-    html += `
-      <h4>Conexión</h4>
-      ${conexion}
-      <h4>Datos de la casa</h4>
-      <div class="dos">${campo('Número de casa','numero',d.numero)}${campo('Teléfono','telefono',d.telefono,'tel')}</div>
-      ${campo('Responsable de la casa','responsable',d.responsable)}
-      <div class="dos">${campo('Núcleos familiares','nucleos',d.nucleos,'number','min="0" step="1"')}${campo('Personas','personas',d.personas,'number','min="0" step="1"')}</div>
-      <h4>Cuotas</h4>
-      <div class="dos">${campo('Cobrar desde','inicioCobro',d.inicioCobro,'month')}${campo('Deuda anterior','deudaAnterior',d.deudaAnterior,'number','min="0" step="0.01" placeholder="0.00"')}</div>
-      <label class="campo"><span>Cuota mensual especial (opcional)</span><input data-k="cuotaEspecial" type="number" min="0" step="0.01" value="${esc(d.cuotaEspecial)}" id="inCuotaEsp"></label>
-      <div class="cuenta" id="cuentaBox"></div>
-      <h4>Registrar pago</h4>
-      <div class="pago-form">
-        <label class="campo" style="margin:0"><span>Fecha</span><input type="date" id="pgFecha" value="${hoyISO()}"></label>
-        <label class="campo" style="margin:0"><span>Monto</span><input type="number" id="pgMonto" min="0" step="0.01"></label>
-        <label class="campo ancho" style="margin:0"><span>Detalle</span><input type="text" id="pgNota" placeholder="Ej. cuota de septiembre"></label>
-        <button class="btn primario ancho" id="pgAgregar">Registrar pago</button>
-      </div>
-      <ul class="pagos" id="listaPagos"></ul>
-      ${areaNotas(d.notas)}`;
-  } else if (aq.tipo === 'tuberia'){
-    const m = longitud(selected);
-    const r = redConectada(aq.id);
-    const materiales = ['PVC','PEAD / polietileno','Hierro galvanizado','Otro'];
-    html += `
-      <h4>Línea conectada</h4>
-      <div class="conexion ${r.tubos.size > 1 || r.casas.size ? '' : 'no'}">${r.tubos.size > 1 || r.casas.size
-        ? 'Este tramo forma parte de una línea con ' + esc(textoRed(r)) + '.'
-        : '⚠ Este tramo no está unido a otras tuberías ni casas. Para unirlo, empieza o termina el trazo sobre otra tubería.'}
-        <div class="fila"><button class="btn chico" id="verRed">Resaltar lo conectado</button></div></div>
-      <h4>Datos de la tubería</h4>
-      <label class="campo"><span>Clase</span><select data-k="clase">
-        <option value="principal" ${d.clase !== 'acometida' ? 'selected' : ''}>Línea principal</option>
-        <option value="acometida" ${d.clase === 'acometida' ? 'selected' : ''}>Acometida (conexión a una casa)</option>
-      </select></label>
-      ${campo('Nombre o tramo','nombre',d.nombre,'text','placeholder="Ej. Línea principal"')}
-      <div class="dos">
-        ${campo('Diámetro (pulgadas)','diametro',d.diametro,'text','placeholder="Ej. 2"')}
-        <label class="campo"><span>Material</span><select data-k="material">${materiales.map(x => `<option ${x === d.material ? 'selected' : ''}>${x}</option>`).join('')}</select></label>
-      </div>
-      ${m ? `<p class="nota">Largo aproximado: <b>${m >= 1000 ? (m/1000).toFixed(2) + ' km' : Math.round(m) + ' m'}</b></p>` : ''}
-      ${areaNotas(d.notas)}`;
-  } else if (aq.tipo === 'llave'){
-    html += `
-      <h4>Datos de la llave</h4>
-      ${campo('Nombre o ubicación','nombre',d.nombre,'text','placeholder="Ej. Llave del sector norte"')}
-      <label class="campo"><span>Estado</span></label>
-      <div class="segmento" role="group" aria-label="Estado de la llave">
-        <button data-estado="abierta" class="${d.estado !== 'cerrada' ? 'on' : ''}">Abierta</button>
-        <button data-estado="cerrada" class="${d.estado === 'cerrada' ? 'on' : ''}">Cerrada</button>
-      </div>
-      ${areaNotas(d.notas)}`;
-  } else {
-    html += `<p class="nota" style="margin-top:14px">Elige arriba si esta forma es una casa, una tubería, una llave o un sector para ver sus datos. Las formas sin función no aparecen en el mapa público.</p>`;
-  }
-
-  html += `<div class="p-pie">
-      <button class="btn" id="pCentrar">Centrar en el mapa</button>
-      <button class="btn peligro" id="pEliminar">Eliminar forma</button>
-    </div>`;
-
-  const cuerpo = $('#pCuerpo');
-  cuerpo.innerHTML = html;
-
-  cuerpo.querySelectorAll('[data-k]').forEach(el => el.addEventListener('input', () => {
-    aq.datos[el.dataset.k] = el.value;
-    cambio();
-  }));
-  cuerpo.querySelectorAll('[data-tipo]').forEach(b => b.addEventListener('click', () => cambiarTipo(b.dataset.tipo)));
-  cuerpo.querySelectorAll('[data-color]').forEach(b => b.addEventListener('click', () => ponerColor(b.dataset.color)));
-  $('#colorLibre').addEventListener('input', e => ponerColor(e.target.value, true));
-  cuerpo.querySelectorAll('[data-estado]').forEach(b => b.addEventListener('click', () => {
-    aq.datos.estado = b.dataset.estado;
-    cuerpo.querySelectorAll('[data-estado]').forEach(x => x.classList.toggle('on', x === b));
-    cambio();
-  }));
-  const rango = $('#opRange');
-  if (rango) rango.addEventListener('input', () => {
-    aq.datos.opacidad = Number(rango.value) / 100;
-    $('#opVal').textContent = rango.value + '%';
-    cambio();
-  });
-  const flujo = $('#secFlujo');
-  if (flujo) flujo.addEventListener('change', () => ponerFlujo(selected, flujo.checked));
-  $('#pCentrar').addEventListener('click', () => enfocar(selected));
-  const verRed = $('#verRed');
-  if (verRed) verRed.addEventListener('click', () => resaltarRed(selected));
-  const conectar = $('#conectarCasa');
-  if (conectar) conectar.addEventListener('click', () => {
-    map.pm.disableDraw();
-    pendingTipo = 'acometida';
-    map.pm.enableDraw('Line', {snappable:true});
-    marcarBotones();
-    cerrarPanel();
-    aviso(PISTAS.acometida);
-  });
-  formIncAbierto = false;
-  renderIncidenciasPanel();
-  $('#pEliminar').addEventListener('click', () => {
-    if (!confirm('¿Eliminar esta forma y todos sus datos? Se borra para todos, también del mapa público.')) return;
-    eliminarForma(selected);
-    aviso('Forma eliminada.');
-  });
-
-  if (aq.tipo === 'casa'){
-    refrescarCuenta();
-    renderPagos();
-    $('#pgAgregar').addEventListener('click', () => registrarPago(selected));
-  }
-}
-
-async function registrarPago(layer){
-  const aq = layer.aq;
-  const monto = Math.round(num($('#pgMonto').value) * 100) / 100;
-  const fecha = $('#pgFecha').value || hoyISO();
-  if (monto <= 0){ aviso('Escribe un monto mayor que cero.'); $('#pgMonto').focus(); return; }
-  const btn = $('#pgAgregar'); btn.disabled = true;
-  const pago = {id:uid(), fecha, monto, nota:$('#pgNota').value.trim()};
-  await flush();
-  const ok = await tarea(sb.from('pagos').insert({id:pago.id, forma_id:aq.id, fecha, monto, nota:pago.nota}), 'No se pudo registrar el pago');
-  if (ok){
-    aq.datos.pagos = aq.datos.pagos || [];
-    if (!aq.datos.pagos.some(p => p.id === pago.id)) aq.datos.pagos.push(pago);
-    refrescarForma(layer);
-    if (selected === layer){ $('#pgNota').value = ''; $('#pgMonto').value = ''; renderPagos(); }
-    aviso('Pago registrado: ' + dinero(monto));
-  }
-  if (btn.isConnected) btn.disabled = false;
-}
-
-function actualizarTituloPanel(){
-  if (!selected) return;
-  const aq = selected.aq;
-  let sub = TIPOS[aq.tipo].nombre;
-  if (aq.tipo === 'casa') sub = textoEstado(cuenta(aq)).txt;
-  if (aq.tipo === 'sector') sub = aq.datos.activo ? 'Sector con agua' : 'Sector sin agua';
-  const inc = textoIncidencias(aq.id);
-  if (inc) sub = '⚠ Incidencia: ' + inc;
-  $('#pTitulo').innerHTML = `${esc(titulo(aq))}<small${inc ? ` style="color:${ROJO};font-weight:700"` : ''}>${esc(sub)}</small>`;
-}
-
-function refrescarCuenta(){
-  const box = $('#cuentaBox'); if (!box || !selected) return;
-  const aq = selected.aq, c = cuenta(aq), est = textoEstado(c);
-  const auto = Math.max(0, num(aq.datos.nucleos)) * num(state.settings.cuota);
-  const inEsp = $('#inCuotaEsp'); if (inEsp) inEsp.placeholder = 'Automática: ' + dinero(auto);
-  box.innerHTML = `
-    <div class="estado"><span>Estado de cuenta</span><span class="pill ${est.cls}">${esc(est.txt)}</span></div>
-    ${c.aplica ? `<dl>
-      <dt>Cuota mensual${c.especial ? ' (especial)' : ''}</dt><dd>${dinero(c.cuotaMes)}</dd>
-      <dt>Meses cobrados</dt><dd>${c.meses}</dd>
-      <dt>Total a pagar</dt><dd>${dinero(c.esperado)}</dd>
-      <dt>Pagado</dt><dd>${dinero(c.pagado)}</dd>
-      <dt>Saldo</dt><dd class="total">${dinero(c.saldo)}</dd>
-      ${c.atraso ? `<dt>Cuotas atrasadas</dt><dd class="total">${c.atraso}</dd>` : ''}
-    </dl>` : '<p class="nota" style="margin:0">Indica desde qué mes se cobra para calcular lo que debe.</p>'}`;
-  const pm = $('#pgMonto'); if (pm && c.cuotaMes) pm.placeholder = c.cuotaMes.toFixed(2);
-}
-
-function renderPagos(){
-  const ul = $('#listaPagos'); if (!ul || !selected) return;
-  const layer = selected;
-  const pagos = [...(layer.aq.datos.pagos || [])].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-  if (!pagos.length){ ul.innerHTML = '<li class="nota">Todavía no hay pagos registrados.</li>'; return; }
-  ul.innerHTML = pagos.map(p => `<li><span>${esc(p.fecha)}${p.nota ? '<br><small class="nota">' + esc(p.nota) + '</small>' : ''}</span>
-    <span><b>${dinero(p.monto)}</b> <button class="x" data-borrar="${esc(p.id)}" aria-label="Borrar pago">×</button></span></li>`).join('');
-  ul.querySelectorAll('[data-borrar]').forEach(b => b.addEventListener('click', async () => {
-    if (!confirm('¿Borrar este pago?')) return;
-    const id = b.dataset.borrar;
-    const ok = await tarea(sb.from('pagos').delete().eq('id', id), 'No se pudo borrar el pago');
-    if (!ok) return;
-    layer.aq.datos.pagos = layer.aq.datos.pagos.filter(p => p.id !== id);
-    refrescarForma(layer);
-    if (selected === layer) renderPagos();
-  }));
-}
-
-function cambio(){
-  if (!selected) return;
-  refrescarForma(selected);
-  guardarForma(selected.aq.id);
-}
-
-async function cambiarTipo(nuevo){
-  const layer = selected, aq = layer.aq;
-  if (nuevo === aq.tipo) return;
-  if (nuevo === 'sector' && !esPoligono(layer)){ aviso('Un sector debe ser un área cerrada.'); return; }
-  const tienePagos = aq.tipo === 'casa' && (aq.datos.pagos || []).length;
-  if (tienePagos && !confirm('Esta casa tiene pagos registrados. Si cambias su función se borrarán. ¿Continuar?')) return;
-  if (tienePagos){
-    const ok = await tarea(sb.from('pagos').delete().eq('forma_id', aq.id), 'No se pudieron borrar los pagos');
-    if (!ok) return;
-  }
-  const base = datosBase(nuevo);
-  Object.keys(base).forEach(k => { if (k in aq.datos && k !== 'pagos') base[k] = aq.datos[k]; });
-  aq.tipo = nuevo;
-  aq.datos = base;
-  if (!aq.colorManual) aq.color = TIPOS[nuevo].color;
-  geometriaCambio();
-  aplicarEstilo(layer); actualizarTooltip(layer);
-  if (nuevo !== 'sector' && layer._map) layer.bringToFront();
-  guardarForma(aq.id); renderResumen();
-  if (selected === layer) renderPanel();
-}
-
-function ponerColor(c, desdeSelector){
-  const aq = selected.aq;
-  aq.color = c; aq.colorManual = true;
-  aplicarEstilo(selected);
-  document.querySelectorAll('#pCuerpo [data-color]').forEach(b => b.classList.toggle('on', b.dataset.color.toLowerCase() === c.toLowerCase()));
-  if (!desdeSelector) $('#colorLibre').value = c;
-  guardarForma(aq.id);
-  renderResumenPronto();
-}
-
-/* ================= Barra lateral ================= */
-function renderResumen(){
-  let casas = 0, tubs = 0, llaves = 0, deben = 0, total = 0, metros = 0;
-  const lista = [], sectores = [];
-  capa.eachLayer(l => {
-    if (!l.aq) return;
-    const t = l.aq.tipo;
-    if (t === 'casa'){
-      casas++;
-      const c = cuenta(l.aq);
-      if (c.saldo > 0){ deben++; total += c.saldo; }
-      lista.push({l, c});
-    } else if (t === 'tuberia'){ tubs++; metros += longitud(l); }
-    else if (t === 'llave') llaves++;
-    else if (t === 'sector') sectores.push(l);
-  });
-  const conAgua = sectores.filter(l => l.aq.datos.activo).length;
-  $('#nCasas').textContent = casas;
-  $('#nLlaves').textContent = llaves;
-  $('#nTub').textContent = tubs;
-  $('#mTub').textContent = tubs ? `Tuberías, ${metros >= 1000 ? (metros/1000).toFixed(2) + ' km' : Math.round(metros) + ' m'}` : 'Tuberías';
-  $('#nSect').textContent = sectores.length;
-  $('#sSect').textContent = sectores.length ? `Sectores, ${conAgua} con agua` : 'Sectores';
-  $('#nDeben').textContent = deben;
-  $('#totDeuda').textContent = dinero(total);
-  $('#nombreAcu').textContent = state.settings.nombre || 'Mi acueducto';
-  document.title = 'Administración: ' + (state.settings.nombre || 'acueducto');
-
-  renderSectores(sectores);
-
-  const q = $('#busca').value.trim().toLowerCase();
-  const f = $('#filtro').value;
-  const visibles = lista
-    .filter(({l}) => !q || [l.aq.datos.numero, l.aq.datos.responsable].join(' ').toLowerCase().includes(q))
-    .filter(({c}) => f === 'todas' || (f === 'deben' ? c.saldo > 0 : c.saldo <= 0))
-    .sort((a, b) => b.c.saldo - a.c.saldo || String(a.l.aq.datos.numero).localeCompare(String(b.l.aq.datos.numero), 'es', {numeric:true}));
-
-  const ul = $('#listaCasas');
-  if (!casas){ ul.innerHTML = '<li class="vacio">Aún no hay casas. Toca «Casa» arriba y dibuja la primera en el mapa.</li>'; return; }
-  if (!visibles.length){ ul.innerHTML = '<li class="vacio">Ninguna casa coincide con la búsqueda.</li>'; return; }
-  ul.innerHTML = visibles.map(({l, c}, i) => {
-    const d = l.aq.datos, est = textoEstado(c);
-    return `<li><button class="item" data-i="${i}"><span>${esc(d.numero ? 'Casa ' + d.numero : 'Casa sin número')}<small>${esc(d.responsable || 'Sin responsable')}</small></span>
-      <span class="pill ${est.cls}">${esc(est.txt)}</span></button></li>`;
-  }).join('');
-  ul.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', () => {
-    const l = visibles[Number(b.dataset.i)].l; enfocar(l); seleccionar(l);
-  }));
-}
-
-function renderSectores(sectores){
-  const ul = $('#listaSectores');
-  if (!sectores.length){ ul.innerHTML = '<li class="vacio">Aún no hay sectores. Toca «Sector» arriba y dibuja una zona.</li>'; return; }
-  sectores.sort((a, b) => String(a.aq.datos.nombre).localeCompare(String(b.aq.datos.nombre), 'es', {numeric:true}));
-  ul.innerHTML = sectores.map((l, i) => {
-    const d = l.aq.datos;
-    const muestra = d.activo ? (l.aq.color || TIPOS.sector.color) : Acu.SIN_FLUJO.relleno;
-    const detalle = (d.activo ? 'Con agua' : 'Sin agua') + (d.activoDesde ? ' ' + Acu.desde(d.activoDesde) : '');
-    return `<li class="fila-sector">
-      <button class="item" data-foco="${i}"><i class="muestra" style="background:${esc(muestra)}"></i>
-        <span>${esc(d.nombre || 'Sector sin nombre')}<small>${esc(detalle)}</small></span></button>
-      <label class="interruptor" title="Flujo de agua"><input type="checkbox" data-flujo="${i}" ${d.activo ? 'checked' : ''} aria-label="Agua en ${esc(d.nombre || 'sector')}"><span class="riel"></span></label>
-    </li>`;
-  }).join('');
-  ul.querySelectorAll('[data-foco]').forEach(b => b.addEventListener('click', () => {
-    const l = sectores[Number(b.dataset.foco)]; enfocar(l); seleccionar(l);
-  }));
-  ul.querySelectorAll('[data-flujo]').forEach(c => c.addEventListener('change', () => {
-    ponerFlujo(sectores[Number(c.dataset.flujo)], c.checked);
-  }));
-}
-
-const renderResumenPronto = debounce(renderResumen, 250);
-$('#busca').addEventListener('input', renderResumenPronto);
-$('#filtro').addEventListener('change', renderResumen);
-
-function cargarConfigEnFormulario(){
-  $('#cfgNombre').value = state.settings.nombre;
-  $('#cfgCuota').value = state.settings.cuota;
-  $('#cfgMoneda').value = state.settings.moneda;
-  $('#cfgColorPago').checked = !!state.settings.colorPorPago;
-}
-function alCambiarConfig(){
-  state.settings.nombre = $('#cfgNombre').value;
-  state.settings.cuota = num($('#cfgCuota').value);
-  state.settings.moneda = $('#cfgMoneda').value;
-  state.settings.colorPorPago = $('#cfgColorPago').checked;
-  capa.eachLayer(l => { if (l.aq){ aplicarEstilo(l); actualizarTooltip(l); } });
-  if (selected){ actualizarTituloPanel(); refrescarCuenta(); }
-  renderResumen(); guardarConfig();
-}
-['#cfgNombre','#cfgCuota','#cfgMoneda'].forEach(s => $(s).addEventListener('input', alCambiarConfig));
-$('#cfgColorPago').addEventListener('change', () => { alCambiarConfig(); if (selected) renderPanel(); });
-
-$('#menuBtn').addEventListener('click', () => $('#lateral').classList.toggle('abierto'));
-function cerrarLateralMovil(){ if (window.innerWidth <= 800) $('#lateral').classList.remove('abierto'); }
-
-/* ================= Copias de seguridad ================= */
-function empaquetar(){
-  const features = [];
-  capa.eachLayer(l => {
-    if (!l.aq) return;
-    const gj = l.toGeoJSON();
-    gj.properties = JSON.parse(JSON.stringify(l.aq));
-    features.push(gj);
-  });
-  return {app:'mapa-acueducto', version:4, guardado:new Date().toISOString(), settings:state.settings,
-    tiposIncidencia:tiposInc, incidencias:[...incidencias.values()],
-    geojson:{type:'FeatureCollection', features}};
-}
-
-async function subirCopia(data){
-  const feats = (data.geojson && data.geojson.features) || [];
-  const filas = [], pagos = [];
-  feats.forEach(f => {
-    const g = f.geometry;
-    if (!g || !['Point','Polygon','LineString','MultiLineString'].includes(g.type)) return;
-    const p = f.properties || {};
-    const id = p.id || uid();
-    let tipo = TIPOS[p.tipo] ? p.tipo : 'sin';
-    if (tipo === 'sector' && g.type !== 'Polygon') tipo = 'sin';
-    const datos = Object.assign({}, p.datos || {});
-    const lista = Array.isArray(datos.pagos) ? datos.pagos : [];
-    delete datos.pagos;
-    filas.push({id, tipo, color:p.color || TIPOS[tipo].color, color_manual:!!p.colorManual, geometria:g, datos, editado_por:CLIENTE_ID});
-    lista.forEach(x => { if (num(x.monto) > 0) pagos.push({id:x.id || uid(), forma_id:id, fecha:x.fecha || hoyISO(), monto:num(x.monto), nota:x.nota || ''}); });
-  });
-  for (let i = 0; i < filas.length; i += 500){
-    const {error} = await sb.from('formas').upsert(filas.slice(i, i + 500)); if (error) throw error;
-  }
-  for (let i = 0; i < pagos.length; i += 500){
-    const {error} = await sb.from('pagos').upsert(pagos.slice(i, i + 500)); if (error) throw error;
-  }
-  if (Array.isArray(data.tiposIncidencia) && data.tiposIncidencia.length){
-    const existentes = new Set(tiposInc.map(t => t.nombre.toLowerCase()));
-    const nuevos = data.tiposIncidencia.filter(t => t && t.nombre && !existentes.has(String(t.nombre).toLowerCase()))
-      .map(t => ({id:t.id || uid(), nombre:t.nombre, orden:t.orden || 100}));
-    if (nuevos.length){ const {error} = await sb.from('tipos_incidencia').upsert(nuevos); if (error) throw error; }
-  }
-  if (Array.isArray(data.incidencias) && data.incidencias.length){
-    const ids = new Set(filas.map(f => f.id));
-    const incs = data.incidencias.filter(i => i && ids.has(i.forma_id)).map(i => ({
-      id:i.id || uid(), forma_id:i.forma_id, tipo:i.tipo || 'Incidencia', detalle:i.detalle || '',
-      alcance:['forma','red','sector'].includes(i.alcance) ? i.alcance : 'forma',
-      sector_id:i.sector_id && ids.has(i.sector_id) ? i.sector_id : null,
-      color:i.color || ROJO, opacidad:num(i.opacidad) || 0.75, estado:i.estado === 'resuelta' ? 'resuelta' : 'abierta',
-      creada_en:i.creada_en || new Date().toISOString(), resuelta_en:i.resuelta_en || null, editado_por:CLIENTE_ID}));
-    for (let i = 0; i < incs.length; i += 500){
-      const {error} = await sb.from('incidencias').upsert(incs.slice(i, i + 500)); if (error) throw error;
-    }
-  }
-  if (data.settings){
-    const s = data.settings;
-    const {error} = await sb.from('configuracion').upsert({id:1, nombre:s.nombre || 'Mi acueducto', cuota:num(s.cuota),
-      moneda:s.moneda ?? 'B/.', color_por_pago:!!s.colorPorPago, editado_por:CLIENTE_ID});
-    if (error) throw error;
-  }
-  await cargarTodo();
-  if (capa.getLayers().length) map.fitBounds(capa.getBounds(), {maxZoom:19, padding:[40,40]});
-  return {formas:filas.length, pagos:pagos.length};
-}
-
-$('#exportar').addEventListener('click', () => {
-  const blob = new Blob([JSON.stringify(empaquetar(), null, 2)], {type:'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `acueducto-${hoyISO()}.json`;
-  document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  aviso('Copia descargada.');
-});
-$('#importarBtn').addEventListener('click', () => $('#importar').click());
-$('#importar').addEventListener('change', e => {
-  const file = e.target.files[0]; if (!file) return;
-  const r = new FileReader();
-  r.onload = async () => {
-    e.target.value = '';
-    let data;
-    try { data = JSON.parse(r.result); if (!data.geojson) throw new Error('formato'); }
-    catch (err){ aviso('Ese archivo no es una copia válida del mapa del acueducto.'); return; }
-    if (!confirm('Se subirán al mapa compartido las formas de esta copia. Las que ya existan con el mismo identificador se reemplazan. ¿Continuar?')) return;
-    try { const n = await subirCopia(data); aviso(`Copia cargada: ${n.formas} formas y ${n.pagos} pagos.`); }
-    catch (err){ console.error(err); aviso('No se pudo cargar la copia: ' + (err.message || err)); }
-  };
-  r.readAsText(file);
-});
-$('#borrarTodo').addEventListener('click', async () => {
-  const t = prompt('Esto borra todas las casas, tuberías, llaves, sectores y pagos para todos, también del mapa público. Escribe BORRAR para confirmar.');
-  if (t !== 'BORRAR') return;
-  const ok = await tarea(sb.from('formas').delete().neq('id', ''), 'No se pudo borrar el mapa');
-  if (!ok) return;
-  cerrarPanel(); capa.clearLayers(); capas.clear(); pendientes.clear(); incidencias.clear(); geometriaCambio(); renderResumen();
-  aviso('Mapa borrado.');
-});
-
-async function revisarDatosLocales(){
-  let d = null;
-  try {
-    if (localStorage.getItem(LOCAL_V1_SUBIDO)) return;
-    d = JSON.parse(localStorage.getItem(LOCAL_V1) || 'null');
-  } catch (e){ return; }
-  const n = (d && d.geojson && d.geojson.features || []).length;
-  if (!n) return;
-  if (!confirm(`Este navegador tiene ${n} formas guardadas de la primera versión del mapa. ¿Subirlas a Supabase?`)) return;
-  try {
-    const r = await subirCopia(d);
-    localStorage.setItem(LOCAL_V1_SUBIDO, new Date().toISOString());
-    aviso(`Se subieron ${r.formas} formas y ${r.pagos} pagos.`);
-  } catch (err){ console.error(err); aviso('No se pudieron subir los datos anteriores: ' + (err.message || err)); }
-}
-
-/* ================= Acceso e inicio ================= */
-function mensaje(html){ $('#acceso').hidden = false; $('#accMensaje').innerHTML = html; }
-function irAlAcceso(){ location.replace(PAGINA_ACCESO); }
-
-$('#salir').addEventListener('click', async () => {
-  await flush();
-  await sb.auth.signOut();
-  irAlAcceso();
-});
-
-async function iniciarApp(session){
-  if (appIniciada) return;
-  appIniciada = true;
-  $('#usuarioCorreo').textContent = session.user.email || '';
-  mensaje('<h2>Cargando el mapa…</h2><p class="nota">Descargando casas, tuberías, llaves, sectores y pagos.</p>');
-  try {
-    await cargarTodo();
-    let vista = null; try { vista = localStorage.getItem(VISTA_KEY); } catch (e){}
-    if (!vista && capa.getLayers().length) map.fitBounds(capa.getBounds(), {maxZoom:19, padding:[40,40]});
-    suscribir();
-    $('#acceso').hidden = true;
-    pintarSync();
-    revisarDatosLocales();
-  } catch (err){
-    console.error(err);
-    appIniciada = false;
-    const tablasFaltan = /relation|does not exist|schema cache|violates check/i.test(err.message || '');
-    mensaje(`<h2>No se pudo cargar el mapa</h2>
-      <p>${tablasFaltan ? 'Parece que la base de datos no está actualizada. Ejecuta el archivo <code>supabase.sql</code> en el SQL Editor de tu proyecto.' : 'Revisa tu conexión a internet.'}</p>
-      <p class="nota">${esc(err.message || err)}</p>
-      <button class="btn primario" id="reintentar">Reintentar</button>`);
-    $('#reintentar').addEventListener('click', () => iniciarApp(session));
-  }
-}
-
-async function arrancar(){
-  marcarBotones();
-  renderResumen();
-  try { sb = Acu.cliente(); }
-  catch (e){ mensaje(`<h2>No se pudo conectar</h2><p>${esc(e.message)}</p>`); return; }
-  sb.auth.onAuthStateChange(evento => { if (evento === 'SIGNED_OUT') irAlAcceso(); });
-  const {data:{session}} = await sb.auth.getSession();
-  if (!session){ irAlAcceso(); return; }
-  iniciarApp(session);
-}
-arrancar();
-})();
-</script>
+<script src="../../js/adm.js"></script>
 </body>
 </html>
