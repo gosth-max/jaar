@@ -37,7 +37,23 @@ const CLIENTE_ID = uid();
 const dinero = n => `${state.settings.moneda || ''} ${num(n).toFixed(2)}`.trim();
 const hoyISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
 function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
-function aviso(txt){ const a = $('#aviso'); a.textContent = txt; a.classList.add('ver'); clearTimeout(aviso.t); aviso.t = setTimeout(() => a.classList.remove('ver'), 3500); }
+function aviso(txt, ms){ const a = $('#aviso'); a.textContent = txt; a.classList.add('ver'); clearTimeout(aviso.t); aviso.t = setTimeout(() => a.classList.remove('ver'), ms || 3500); }
+
+/* Traduce los errores de Supabase a una explicación útil */
+const MSG_BD_VIEJA = 'La base de datos no está actualizada: ejecuta el archivo supabase.sql en el SQL Editor de Supabase y recarga esta página.';
+function explicarError(e){
+  const code = e && e.code;
+  const m = String((e && (e.message || e.details || e.hint)) || e || '');
+  if (code === 'PGRST204' || code === 'PGRST205' || code === '42703' || code === '42P01' ||
+      /could not find the .* (column|table)|column .* does not exist|relation .* does not exist|schema cache/i.test(m)) return MSG_BD_VIEJA;
+  if (code === '42501' || /row-level security|permission denied/i.test(m)) return 'Tu usuario no tiene permiso para guardar esto. Cierra sesión y vuelve a entrar.';
+  if (code === 'PGRST301' || code === 'PGRST303' || /jwt|token.*expired|invalid claim/i.test(m)) return 'Tu sesión expiró. Cierra sesión y vuelve a entrar.';
+  if (/failed to fetch|networkerror|network request failed|load failed/i.test(m) || !navigator.onLine) return 'No hay conexión a internet. Revisa tu conexión e inténtalo de nuevo.';
+  if (code === '23503') return 'El elemento ya no existe en la base de datos. Recarga la página.';
+  if (code === '23505') return 'Ya existe un registro igual.';
+  if (code === '23514') return 'Algún dato no es válido (' + m + ').';
+  return 'Detalle del error: ' + m;
+}
 const esPunto = l => l instanceof L.CircleMarker;
 const esPoligono = l => l instanceof L.Polygon;
 const esLinea = l => l instanceof L.Polyline && !(l instanceof L.Polygon);
@@ -78,7 +94,8 @@ async function tarea(consulta, msgError){
   } catch (e){
     console.error(e);
     errorSync = e.message || String(e);
-    aviso((msgError || 'No se pudo guardar') + '. Revisa tu conexión e inténtalo de nuevo.');
+    aviso((msgError || 'No se pudo guardar') + '. ' + explicarError(e), 9000);
+    if (explicarError(e) === MSG_BD_VIEJA) mostrarAlertaBD();
     return false;
   } finally { enVuelo--; pintarSync(); }
 }
@@ -107,6 +124,8 @@ async function flush(){
     if (error){
       console.error(error);
       ids.forEach(id => { if (capas.has(id)) pendientes.add(id); });
+      if (errorSync !== error.message) aviso('No se pudieron guardar los cambios del mapa. ' + explicarError(error), 9000);
+      if (explicarError(error) === MSG_BD_VIEJA) mostrarAlertaBD();
       errorSync = error.message;
       flushTimer = setTimeout(flush, 10000);
     } else errorSync = null;
@@ -559,7 +578,8 @@ async function consultaConFila(consulta, msgError){
   } catch (e){
     console.error(e);
     errorSync = e.message || String(e);
-    aviso((msgError || 'No se pudo guardar') + '. Revisa tu conexión e inténtalo de nuevo.');
+    aviso((msgError || 'No se pudo guardar') + '. ' + explicarError(e), 9000);
+    if (explicarError(e) === MSG_BD_VIEJA) mostrarAlertaBD();
     return null;
   } finally { enVuelo--; pintarSync(); }
 }
@@ -1947,6 +1967,28 @@ document.querySelectorAll('[data-salir]').forEach(b => b.addEventListener('click
   irAlAcceso();
 }));
 
+/* Comprueba que la base de datos tenga todo lo que usa esta versión */
+function mostrarAlertaBD(detalle){
+  const el = $('#alertaBD');
+  el.innerHTML = `<b>⚠ ${esc(MSG_BD_VIEJA)}</b>${detalle ? `<small>Falta: ${esc(detalle)}</small>` : ''}`;
+  el.hidden = false;
+}
+async function verificarBaseDatos(){
+  const pruebas = [
+    ['incidencias', 'id,ubicacion,punto_a,punto_b,propagar,sectores_enlazados'],
+    ['incidencias_publicas', 'id'],
+    ['tipos_incidencia', 'id'],
+    ['mapa_publico', 'id']
+  ];
+  const faltan = [];
+  for (const [tabla, cols] of pruebas){
+    const {error} = await sb.from(tabla).select(cols).limit(1);
+    if (error && explicarError(error) === MSG_BD_VIEJA) faltan.push(tabla === 'incidencias' ? 'columnas nuevas de incidencias' : 'tabla ' + tabla);
+  }
+  if (faltan.length) mostrarAlertaBD(faltan.join(', '));
+  else $('#alertaBD').hidden = true;
+}
+
 async function iniciarApp(session){
   if (appIniciada) return;
   appIniciada = true;
@@ -1957,6 +1999,7 @@ async function iniciarApp(session){
     suscribir();
     $('#acceso').hidden = true;
     router();
+    verificarBaseDatos();
     pintarSync();
     revisarDatosLocales();
   } catch (err){
