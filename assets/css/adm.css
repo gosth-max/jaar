@@ -49,7 +49,7 @@ a{color:var(--agua)}
 
 .barra-der{margin-left:auto;display:flex;align-items:center;gap:8px}
 .avatar{width:36px;height:36px;border-radius:50%;background:#2A5A68;justify-content:center;padding:0;font-size:16px}
-#menuBtn{display:none;background:rgba(255,255,255,.1);border:0;color:#fff;border-radius:8px;padding:7px 11px;font-weight:700}
+#menuBtn{display:none;background:rgba(255,255,255,.1);border:0;color:#fff;border-radius:8px;padding:7px 11px;font-weight:700;white-space:nowrap;flex:none}
 
 .sync{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;border-radius:999px;padding:4px 10px;background:rgba(47,143,91,.2);color:#9FE0B9;border:0;white-space:nowrap}
 .sync::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
@@ -99,10 +99,10 @@ a{color:var(--agua)}
 .stat.rojo b{color:var(--bad)} .stat.naranja b{color:#A56F00}
 
 .barras{display:flex;align-items:flex-end;gap:10px;height:180px;padding:6px 2px 0}
-.barra{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px}
-.barra i{display:block;width:100%;max-width:46px;min-height:2px;background:var(--agua);border-radius:6px 6px 2px 2px}
-.barra .valor{font-size:12px;color:var(--suave);font-variant-numeric:tabular-nums}
-.barra small{font-size:12.5px;color:var(--suave)}
+.barra-mes{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:4px}
+.barra-mes i{display:block;width:100%;max-width:46px;min-height:2px;background:var(--agua);border-radius:6px 6px 2px 2px}
+.barra-mes .valor{font-size:12px;color:var(--suave);font-variant-numeric:tabular-nums}
+.barra-mes small{font-size:12.5px;color:var(--suave)}
 .barras-h{list-style:none;margin:0;padding:0;display:grid;gap:8px}
 .barras-h li{display:grid;grid-template-columns:minmax(110px,40%) 1fr auto;gap:8px;align-items:center;font-size:14px}
 .barras-h i{display:block;height:12px;background:#E57373;border-radius:6px;min-width:4px}
@@ -300,3 +300,60 @@ fieldset.alcance legend{font-size:13px;color:var(--suave);margin-bottom:4px;padd
   .dos{grid-template-columns:1fr}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+/* =================== Tuberías: dirección, sectores y puntos =================== */
+.checks-sectores{display:grid;gap:2px}
+.checks-sectores .check{margin:4px 0}
+.checks-sectores .muestra{display:inline-block;width:12px;height:12px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.extremo-tubo span{display:inline-block;transform:translate(-50%,-150%);background:#004E6B;color:#fff;font:700 11.5px/1 system-ui,sans-serif;
+  padding:4px 7px;border-radius:6px;white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.35)}
+.puntos-inc{display:grid;gap:6px;margin:-2px 0 8px}
+.fila-punto{display:flex;align-items:center;gap:10px}
+.vista-previa{background:#FDECEA;border-radius:8px;padding:8px 10px;font-size:13.5px;color:#7A1F1A;margin:8px 0}
+.vista-previa:empty{display:none}
+.vista-previa small{color:var(--suave)}
+.eligiendo-punto,.eligiendo-punto .leaflet-interactive{cursor:crosshair!important}
+
+/* =================== Calendario =================== */
+.calendario{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.cal-dow{font-size:12.5px;font-weight:700;color:var(--suave);text-align:center;padding:4px 0}
+.cal-dia{position:relative;min-height:92px;background:var(--papel);border:1px solid var(--linea);border-radius:10px;padding:6px 8px;
+  text-align:left;display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.cal-dia:hover{border-color:var(--agua);background:var(--agua-claro)}
+.cal-dia .num{font-weight:700;font-variant-numeric:tabular-nums}
+.cal-dia.fuera{opacity:.45}
+.cal-dia.hoy{box-shadow:inset 0 0 0 2px var(--agua)}
+.cal-dia.hoy .num{color:var(--agua)}
+.cal-dia .cuenta-dia{position:absolute;top:6px;right:7px;min-width:22px;height:22px;border-radius:999px;display:grid;place-items:center;font-size:12px;font-weight:700;color:#fff;background:var(--suave);padding:0 6px}
+.cal-dia.con-abiertas{background:#FDF0EE;border-color:#F1C4BF}
+.cal-dia.con-abiertas .cuenta-dia{background:var(--bad)}
+.cal-dia.todas-resueltas .cuenta-dia{background:var(--ok)}
+.cal-dia .tipos-dia{font-size:12px;color:var(--suave);line-height:1.25;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.leyenda-cal{display:flex;gap:16px;flex-wrap:wrap;margin-top:12px;font-size:13px;color:var(--suave)}
+.leyenda-cal .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:-1px}
+.dot.abierta{background:var(--bad)} .dot.resuelta{background:var(--ok)} .dot.hoy{background:none;box-shadow:inset 0 0 0 2px var(--agua)}
+
+.modal{border:0;border-radius:16px;padding:0;width:min(560px,94vw);max-height:86vh;box-shadow:0 24px 60px rgba(0,0,0,.35);color:var(--tinta)}
+.modal::backdrop{background:rgba(21,50,59,.5)}
+.modal>header{position:sticky;top:0;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:14px 18px;background:var(--blanco);border-bottom:1px solid var(--linea)}
+.modal>header h2{font-size:17px;margin:0}
+.modal-cuerpo{padding:12px 18px 18px;overflow-y:auto}
+.dlg-sub{font-size:14px;color:var(--suave);margin:18px 0 6px}
+.evento{display:grid;grid-template-columns:62px 1fr;gap:12px;padding:12px 0;border-bottom:1px solid var(--linea)}
+.evento:last-child{border-bottom:0}
+.ev-hora{text-align:right;border-right:3px solid var(--bad);padding-right:10px}
+.evento.resuelta .ev-hora{border-right-color:var(--ok)}
+.ev-hora b{display:block;font-size:15px;font-variant-numeric:tabular-nums}
+.ev-hora small{color:var(--suave);font-size:12px}
+.ev-cab{display:flex;justify-content:space-between;gap:8px;align-items:center}
+.ev-cuerpo p{margin:4px 0;font-size:14px}
+.ev-cuerpo .meta{color:var(--suave);font-size:13px}
+.ev-tiempos{background:var(--papel);border-radius:8px;padding:7px 9px;font-size:13.5px!important}
+
+@media (max-width:700px){
+  .calendario{gap:3px}
+  .cal-dia{min-height:54px;padding:4px 5px;border-radius:8px}
+  .cal-dia .tipos-dia{display:none}
+  .cal-dia .cuenta-dia{top:auto;bottom:4px;right:4px;min-width:18px;height:18px;font-size:11px}
+  .cal-dow{font-size:11.5px}
+}

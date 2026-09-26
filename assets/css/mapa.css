@@ -21,7 +21,7 @@ path.sector-flujo{stroke-dasharray:16 10;animation:acu-flujo 1.1s linear infinit
 
 /* Elementos afectados por una incidencia: parpadeo suave del borde */
 path.con-incidencia{animation:acu-alerta 1.6s ease-in-out infinite}
-@keyframes acu-alerta{0%,100%{stroke-opacity:1}50%{stroke-opacity:.35}}
+@keyframes acu-alerta{0%,100%{stroke-opacity:1}50%{stroke-opacity:.6}}
 .etq-sector small.inc{display:block;color:#C0392B;margin-top:1px}
 
 @media (prefers-reduced-motion:reduce){
@@ -29,3 +29,23 @@ path.con-incidencia{animation:acu-alerta 1.6s ease-in-out infinite}
   path.con-incidencia{animation:none}
   .etq-sector small.con i{animation:none}
 }
+
+/* Flechas de dirección del agua */
+.flecha-flujo{pointer-events:none}
+.flecha-flujo i{display:block;width:0;height:0;margin:3px 2px;border-left:11px solid #004E6B;border-top:5px solid transparent;border-bottom:5px solid transparent;
+  filter:drop-shadow(0 0 1.5px #fff) drop-shadow(0 0 1px #fff);transform-origin:50% 50%}
+
+/* Marcador del lugar exacto de una incidencia */
+.pin-inc span{display:grid;place-items:center;width:26px;height:26px;border-radius:50%;background:#E53935;color:#fff;font:700 13px/1 system-ui,sans-serif;
+  border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.45);animation:acu-pin 1.6s ease-in-out infinite}
+@keyframes acu-pin{0%,100%{box-shadow:0 0 0 0 rgba(229,57,53,.6),0 2px 6px rgba(0,0,0,.45)}50%{box-shadow:0 0 0 9px rgba(229,57,53,0),0 2px 6px rgba(0,0,0,.45)}}
+@media (prefers-reduced-motion:reduce){.pin-inc span{animation:none}}
+
+/* Ventanita al tocar un elemento en el mapa */
+.popup-acu .leaflet-popup-content{margin:12px 14px;font:14px/1.4 "Atkinson Hyperlegible",system-ui,sans-serif;color:#15323B;min-width:200px}
+.popup-acu h3{margin:0 0 4px;font-size:15.5px}
+.popup-acu .meta{color:#5B7078;font-size:12.5px;margin:0 0 6px}
+.popup-acu .estado{margin:8px 0 0;padding:7px 9px;border-radius:8px;font-weight:700}
+.popup-acu .estado.ok{background:#E3F2E9;color:#2F8F5B}
+.popup-acu .estado.mal{background:#FDECEA;color:#B3261E}
+.popup-acu .estado small{display:block;font-weight:400;color:#5B7078}

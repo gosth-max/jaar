@@ -50,6 +50,7 @@
         <ul class="submenu">
           <li><a href="#/incidencias/abiertas" data-ruta="incidencias/abiertas"><span>Incidencias abiertas<small>Lo que está marcado en rojo ahora</small></span><span class="badge" data-badge-inc hidden></span></a></li>
           <li><a href="#/incidencias/resueltas" data-ruta="incidencias/resueltas"><span>Incidencias resueltas<small>Historial con fechas y duración</small></span></a></li>
+          <li><a href="#/incidencias/calendario" data-ruta="incidencias/calendario"><span>Calendario<small>Qué pasó cada día, con horas</small></span></a></li>
         </ul>
       </li>
       <li class="grupo" data-grupo="gestion">
@@ -134,6 +135,16 @@
     <div id="irLista"></div>
   </section>
 
+  <section class="vista" data-vista="incidencias/calendario" hidden>
+    <div class="cab-vista"><div><h1>Calendario de incidencias</h1><p>Toca un día para ver qué pasó, a qué hora ocurrió y cuándo se resolvió.</p></div>
+      <div class="fila"><button class="btn" id="calPrev" aria-label="Mes anterior">‹ Anterior</button><button class="btn" id="calHoy">Hoy</button><button class="btn" id="calNext" aria-label="Mes siguiente">Siguiente ›</button></div></div>
+    <article class="tarjeta">
+      <header><h2 id="calTitulo"></h2><span class="nota" id="calResumen"></span></header>
+      <div class="calendario" id="calGrid"></div>
+      <div class="leyenda-cal"><span><i class="dot abierta"></i>Con incidencias abiertas</span><span><i class="dot resuelta"></i>Todas resueltas</span><span><i class="dot hoy"></i>Hoy</span></div>
+    </article>
+  </section>
+
   <section class="vista" data-vista="sectores" hidden>
     <div class="cab-vista"><div><h1>Sectores y flujo de agua</h1><p id="secConteo"></p></div>
       <div class="fila"><button class="btn" id="secTodosOff">Quitar agua a todos</button><button class="btn primario" id="secTodosOn">Dar agua a todos</button></div></div>
@@ -204,6 +215,10 @@
   </section>
 </main>
 
+<dialog id="dlgDia" class="modal" aria-labelledby="dlgTitulo">
+  <header><h2 id="dlgTitulo"></h2><button class="cerrar" id="dlgCerrar" aria-label="Cerrar">×</button></header>
+  <div class="modal-cuerpo" id="dlgCuerpo"></div>
+</dialog>
 <div id="acceso"><div class="tarjeta-msg" id="accMensaje"><h2>Verificando acceso…</h2></div></div>
 <div id="aviso" role="status"></div>
 
