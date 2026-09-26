@@ -167,11 +167,11 @@ function estilo(layer){
   } else if (layer instanceof L.Polygon){
     layer.setStyle({color: col, weight: 1.5, fillColor: col, fillOpacity: 0.5});
   } else {
-    layer.setStyle({color: col, weight: r.tipo === 'tuberia' ? 5 : 3, opacity: .95, lineCap:'round'});
+    layer.setStyle({color: col, weight: r.tipo === 'tuberia' ? (d.clase === 'acometida' ? 3 : 5) : 3, opacity: .95, lineCap:'round'});
   }
   if (r.tipo === 'casa') tip = d.numero ? 'Casa ' + esc(d.numero) : 'Casa';
   if (r.tipo === 'tuberia'){
-    tip = esc(d.nombre ? 'Tubería ' + d.nombre : 'Tubería');
+    tip = esc((d.clase === 'acometida' ? 'Acometida' : 'Tubería') + (d.nombre ? ' ' + d.nombre : ''));
     const extra = [d.diametro ? d.diametro + '"' : '', d.material].filter(Boolean).join(', ');
     if (extra) tip += '<br><small>' + esc(extra) + '</small>';
   }
