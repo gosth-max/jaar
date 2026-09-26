@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Acceso de administración</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💧</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  :root{--papel:#F2F6F7;--blanco:#fff;--tinta:#15323B;--suave:#5B7078;--linea:#D5E0E3;--agua:#1D6FA3;--bad:#C0392B;--ok:#2F8F5B}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  body{font-family:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);font-size:15px;line-height:1.45;
+    background:
+      radial-gradient(1200px 600px at 85% -10%, rgba(94,170,214,.45), transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, rgba(21,150,196,.35), transparent 60%),
+      #15323B;
+    display:grid;place-items:center;padding:20px}
+  button,input{font:inherit;color:inherit}
+  a{color:var(--agua)}
+  :focus-visible{outline:3px solid #7EC3EA;outline-offset:2px}
+
+  .tarjeta{background:var(--blanco);border-radius:16px;padding:26px 24px 22px;width:min(390px,100%);box-shadow:0 24px 60px rgba(0,0,0,.35)}
+  .marca{display:flex;gap:12px;align-items:center;margin-bottom:18px}
+  .gota{width:38px;height:38px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--agua);flex:none}
+  .marca h1{font-size:19px;margin:0;line-height:1.15}
+  .marca p{margin:0;color:var(--suave);font-size:13px}
+  h2{font-size:17px;margin:0 0 4px}
+  .intro{color:var(--suave);font-size:14px;margin:0 0 10px}
+  .campo{display:block;margin:12px 0}
+  .campo span{display:block;font-size:13px;color:var(--suave);margin-bottom:4px}
+  .campo input{width:100%;background:var(--blanco);border:1px solid var(--linea);border-radius:8px;padding:10px 11px}
+  .campo input:focus{border-color:var(--agua)}
+  .btn{width:100%;border:0;border-radius:9px;padding:11px;font-weight:700;background:var(--agua);color:#fff;cursor:pointer;margin-top:6px}
+  .btn:disabled{opacity:.65;cursor:default}
+  .enlace{background:none;border:0;padding:0;color:var(--agua);cursor:pointer;text-decoration:underline;font-size:14px}
+  .pie{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:16px;font-size:14px}
+  .error{color:var(--bad);font-size:14px;min-height:1.3em;margin:8px 0 0}
+  .exito{color:var(--ok);font-size:14px;margin:8px 0 0}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+
+<main class="tarjeta">
+  <div class="marca">
+    <div class="gota" aria-hidden="true"></div>
+    <div><h1 id="nombreAcu">Acueducto</h1><p>Acceso de administración</p></div>
+  </div>
+
+  <!-- Inicio de sesión -->
+  <form id="v-login" hidden>
+    <h2>Entrar</h2>
+    <label class="campo"><span>Correo</span><input type="email" id="lgCorreo" autocomplete="username" required></label>
+    <label class="campo"><span>Contraseña</span><input type="password" id="lgClave" autocomplete="current-password" required></label>
+    <p class="error" id="lgError" role="alert"></p>
+    <button class="btn" id="lgBoton">Entrar</button>
+    <div class="pie">
+      <button type="button" class="enlace" data-ir="olvido">¿Olvidaste tu contraseña?</button>
+      <a href="../../../index.html">Ver mapa público</a>
+    </div>
+  </form>
+
+  <!-- Pedir enlace de recuperación -->
+  <form id="v-olvido" hidden>
+    <h2>Recuperar contraseña</h2>
+    <p class="intro">Escribe tu correo y te enviaremos un enlace para crear una contraseña nueva.</p>
+    <label class="campo"><span>Correo</span><input type="email" id="olCorreo" autocomplete="username" required></label>
+    <p class="error" id="olError" role="alert"></p>
+    <p class="exito" id="olExito" role="status" hidden></p>
+    <button class="btn" id="olBoton">Enviar enlace</button>
+    <div class="pie"><button type="button" class="enlace" data-ir="login">Volver a entrar</button></div>
+  </form>
+
+  <!-- Crear contraseña nueva (al llegar desde el enlace del correo) -->
+  <form id="v-nueva" hidden>
+    <h2>Contraseña nueva</h2>
+    <p class="intro">Escribe tu nueva contraseña. Debe tener al menos 8 caracteres.</p>
+    <label class="campo"><span>Contraseña nueva</span><input type="password" id="nvClave" autocomplete="new-password" minlength="8" required></label>
+    <label class="campo"><span>Repite la contraseña</span><input type="password" id="nvClave2" autocomplete="new-password" minlength="8" required></label>
+    <p class="error" id="nvError" role="alert"></p>
+    <button class="btn" id="nvBoton">Guardar y entrar</button>
+  </form>
+
+  <!-- Mensajes -->
+  <section id="v-mensaje" hidden>
+    <h2 id="msgTitulo">Un momento…</h2>
+    <p class="intro" id="msgTexto"></p>
+    <div class="pie"><button type="button" class="enlace" data-ir="login" id="msgVolver" hidden>Volver a entrar</button></div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="../../js/config.js"></script>
+<script>
+(function(){
+'use strict';
+const DESTINO = '../adm/jaar.html';
+const $ = s => document.querySelector(s);
+
+// Se revisa antes de crear el cliente, porque Supabase limpia la dirección al procesar el enlace
+const hash = location.hash || '';
+const esRecuperacion = /type=recovery/.test(hash) || new URLSearchParams(location.search).get('modo') === 'nueva';
+const errorEnlace = /error_code=|error=/.test(hash) ? decodeURIComponent((hash.match(/error_description=([^&]+)/) || [])[1] || '').replace(/\+/g, ' ') : '';
+
+function vista(nombre){
+  ['login','olvido','nueva','mensaje'].forEach(v => $('#v-' + v).hidden = v !== nombre);
+  const primero = document.querySelector('#v-' + nombre + ' input');
+  if (primero) setTimeout(() => primero.focus(), 30);
+}
+function mensaje(titulo, texto, volver){
+  $('#msgTitulo').textContent = titulo;
+  $('#msgTexto').textContent = texto || '';
+  $('#msgVolver').hidden = !volver;
+  vista('mensaje');
+}
+document.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.ir === 'olvido') $('#olCorreo').value = $('#lgCorreo').value;
+  vista(b.dataset.ir);
+}));
+function ocupado(boton, si, texto){ boton.disabled = si; if (texto) boton.textContent = texto; }
+
+const cfg = window.ACU_CONFIG || {};
+if (!window.supabase || !cfg.SUPABASE_URL){
+  mensaje('No se pudo conectar', 'Revisa tu conexión a internet y la configuración en assets/js/config.js.');
+  return;
+}
+const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
+
+// Nombre del acueducto (lectura pública)
+sb.from('configuracion').select('nombre').eq('id', 1).maybeSingle().then(({data}) => {
+  if (data && data.nombre){ $('#nombreAcu').textContent = data.nombre; document.title = 'Acceso: ' + data.nombre; }
+});
+
+sb.auth.onAuthStateChange(evento => { if (evento === 'PASSWORD_RECOVERY') vista('nueva'); });
+
+/* --- Entrar --- */
+$('#v-login').addEventListener('submit', async e => {
+  e.preventDefault();
+  const boton = $('#lgBoton');
+  ocupado(boton, true, 'Entrando…'); $('#lgError').textContent = '';
+  const {error} = await sb.auth.signInWithPassword({email:$('#lgCorreo').value.trim(), password:$('#lgClave').value});
+  if (error){
+    ocupado(boton, false, 'Entrar');
+    $('#lgError').textContent = /invalid/i.test(error.message) ? 'Correo o contraseña incorrectos.'
+      : /confirm/i.test(error.message) ? 'Este usuario aún no está confirmado en Supabase.'
+      : 'No se pudo entrar: ' + error.message;
+    return;
+  }
+  location.replace(DESTINO);
+});
+
+/* --- Pedir enlace de recuperación --- */
+$('#v-olvido').addEventListener('submit', async e => {
+  e.preventDefault();
+  const boton = $('#olBoton');
+  ocupado(boton, true, 'Enviando…'); $('#olError').textContent = ''; $('#olExito').hidden = true;
+  const volverA = location.origin + location.pathname + '?modo=nueva';
+  const {error} = await sb.auth.resetPasswordForEmail($('#olCorreo').value.trim(), {redirectTo: volverA});
+  ocupado(boton, false, 'Enviar enlace');
+  if (error){
+    $('#olError').textContent = /rate|seconds/i.test(error.message)
+      ? 'Se enviaron demasiados correos. Espera unos minutos e inténtalo de nuevo.'
+      : 'No se pudo enviar: ' + error.message;
+    return;
+  }
+  $('#olExito').textContent = 'Si el correo está registrado, te llegará un enlace en unos minutos. Revisa también la carpeta de spam.';
+  $('#olExito').hidden = false;
+});
+
+/* --- Guardar contraseña nueva --- */
+$('#v-nueva').addEventListener('submit', async e => {
+  e.preventDefault();
+  const c1 = $('#nvClave').value, c2 = $('#nvClave2').value;
+  $('#nvError').textContent = '';
+  if (c1.length < 8){ $('#nvError').textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
+  if (c1 !== c2){ $('#nvError').textContent = 'Las contraseñas no coinciden.'; return; }
+  const boton = $('#nvBoton');
+  ocupado(boton, true, 'Guardando…');
+  const {error} = await sb.auth.updateUser({password:c1});
+  if (error){ ocupado(boton, false, 'Guardar y entrar'); $('#nvError').textContent = 'No se pudo guardar: ' + error.message; return; }
+  mensaje('Contraseña actualizada', 'Entrando a la administración…');
+  setTimeout(() => location.replace(DESTINO), 900);
+});
+
+/* --- Inicio --- */
+(async () => {
+  if (errorEnlace){
+    mensaje('El enlace no es válido', 'Puede que haya expirado o ya se haya usado. Pide un enlace nuevo desde «¿Olvidaste tu contraseña?».', true);
+    return;
+  }
+  mensaje('Un momento…', '');
+  const {data:{session}} = await sb.auth.getSession();
+  if (esRecuperacion){
+    if (session) vista('nueva');
+    else mensaje('El enlace no es válido', 'Puede que haya expirado o ya se haya usado. Pide un enlace nuevo desde «¿Olvidaste tu contraseña?».', true);
+    return;
+  }
+  if (session){ location.replace(DESTINO); return; }
+  vista('login');
+})();
+})();
+</script>
+</body>
+</html>

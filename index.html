@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Mapa del acueducto</title>
+<meta name="description" content="Mapa de la red de agua y estado del servicio por sector en tiempo real.">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💧</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="assets/css/mapa.css">
+<style>
+  :root{--papel:#F2F6F7;--blanco:#fff;--tinta:#15323B;--suave:#5B7078;--linea:#D5E0E3;--agua:#1D6FA3;--agua-claro:#E1EEF6;--gris:#8C989C}
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{font-family:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);font-size:15px;line-height:1.4;background:#cfd8da}
+  button,input{font:inherit;color:inherit}
+  a{color:var(--agua)}
+  :focus-visible{outline:3px solid var(--agua);outline-offset:2px}
+  #map{position:fixed;inset:0}
+
+  /* ---------- Panel informativo ---------- */
+  .info{position:absolute;z-index:1000;top:calc(12px + env(safe-area-inset-top,0px));right:12px;width:330px;max-height:calc(100% - 24px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
+    background:var(--blanco);border-radius:14px;box-shadow:0 10px 30px rgba(21,50,59,.22);display:flex;flex-direction:column;overflow:hidden}
+  .cab{display:flex;gap:11px;align-items:center;padding:14px 16px 12px;border-bottom:1px solid var(--linea)}
+  .gota{width:32px;height:32px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--agua);flex:none}
+  .cab h1{font-size:18px;margin:0;line-height:1.15}
+  .cab p{margin:1px 0 0;color:var(--suave);font-size:13px}
+  .cab .txt{flex:1;min-width:0}
+  #plegar{display:none;background:none;border:0;font-size:20px;padding:4px 6px;color:var(--suave);cursor:pointer}
+  .cuerpo{overflow-y:auto;padding:4px 16px 16px}
+  h2{font-size:13.5px;margin:16px 0 8px;color:var(--suave)}
+
+  .vivo{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--suave);margin-top:10px}
+  .vivo i{width:8px;height:8px;border-radius:50%;background:var(--gris)}
+  .vivo.on{color:#2F8F5B} .vivo.on i{background:#2F8F5B;animation:acu-latido-verde 1.6s infinite}
+  @keyframes acu-latido-verde{0%,100%{box-shadow:0 0 0 0 rgba(47,143,91,.5)}50%{box-shadow:0 0 0 5px rgba(47,143,91,0)}}
+
+  .resumen-agua{background:var(--agua-claro);border-radius:10px;padding:10px 12px;font-size:14px}
+  .resumen-agua b{font-size:20px;display:block;line-height:1.1}
+
+  .sectores{list-style:none;margin:8px 0 0;padding:0;border:1px solid var(--linea);border-radius:10px;overflow:hidden}
+  .sectores li+li{border-top:1px solid var(--linea)}
+  .sectores button{width:100%;background:none;border:0;text-align:left;padding:9px 11px;display:flex;gap:10px;align-items:center;cursor:pointer}
+  .sectores button:hover{background:var(--agua-claro)}
+  .sectores .muestra{width:14px;height:14px;border-radius:4px;flex:none}
+  .sectores .nom{flex:1;min-width:0}
+  .sectores small{display:block;color:var(--suave);font-size:12.5px}
+  .pill{border-radius:999px;padding:2px 9px;font-size:12.5px;font-weight:700;white-space:nowrap}
+  .pill.con{background:var(--agua-claro);color:var(--agua)}
+  .pill.sin{background:#EAEFF0;color:#5F6D72}
+  .vacio{padding:11px;color:var(--suave);font-size:13.5px}
+
+  .buscar{display:flex;gap:6px}
+  .buscar input{flex:1;min-width:0;border:1px solid var(--linea);border-radius:8px;padding:8px 10px;background:var(--blanco)}
+  .buscar button{border:0;background:var(--agua);color:#fff;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}
+  .nota{font-size:12.5px;color:var(--suave);margin:6px 0 0}
+
+  .capas{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .capas label{display:flex;align-items:center;gap:8px;border:1px solid var(--linea);border-radius:8px;padding:7px 9px;cursor:pointer;font-size:14px}
+  .capas svg{width:22px;height:16px;flex:none}
+  .capas input{accent-color:var(--agua)}
+
+  .pie{margin-top:18px;padding-top:10px;border-top:1px solid var(--linea);font-size:12.5px;color:var(--suave);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+
+  #aviso{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;background:var(--tinta);color:#fff;
+    padding:10px 16px;border-radius:8px;z-index:5000;transition:.2s;pointer-events:none;max-width:90vw;font-size:14px}
+  #aviso.ver{opacity:1;transform:translate(-50%,0)}
+
+  #cargando{position:fixed;inset:0;z-index:3000;display:grid;place-items:center;background:rgba(21,50,59,.35)}
+  #cargando[hidden]{display:none}
+  #cargando div{background:#fff;border-radius:12px;padding:16px 22px;font-weight:700;box-shadow:0 10px 30px rgba(0,0,0,.2);max-width:90vw;text-align:center}
+
+  @media (max-width:700px){
+    .info{top:auto;right:0;left:0;bottom:0;width:100%;max-height:62%;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}
+    #plegar{display:block}
+    .info.plegado .cuerpo{display:none}
+    .leaflet-bottom.leaflet-left{bottom:auto;top:calc(120px + env(safe-area-inset-top,0px))}
+    .leaflet-bottom.leaflet-right{display:none}
+  }
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+
+<div id="map" aria-label="Mapa de la red de agua"></div>
+
+<section class="info" id="info">
+  <div class="cab">
+    <div class="gota" aria-hidden="true"></div>
+    <div class="txt"><h1 id="nombreAcu">Acueducto</h1><p>Mapa de la red de agua</p></div>
+    <button id="plegar" aria-expanded="true" aria-controls="cuerpo" aria-label="Mostrar u ocultar información">▾</button>
+  </div>
+  <div class="cuerpo" id="cuerpo">
+    <span class="vivo" id="vivo"><i></i><span>Conectando…</span></span>
+
+    <h2>Agua por sector</h2>
+    <div class="resumen-agua" id="resumenAgua"><b>—</b>Cargando estado del servicio…</div>
+    <ul class="sectores" id="listaSectores"></ul>
+
+    <h2>Buscar mi casa</h2>
+    <form class="buscar" id="formBuscar">
+      <input type="text" id="buscaCasa" placeholder="Número de casa" aria-label="Número de casa" inputmode="text">
+      <button>Buscar</button>
+    </form>
+
+    <h2>Mostrar en el mapa</h2>
+    <div class="capas">
+      <label><input type="checkbox" data-capa="sector" checked>
+        <svg viewBox="0 0 22 16"><rect x="1.5" y="1.5" width="19" height="13" rx="2" fill="#1E88E5" fill-opacity=".35" stroke="#1E88E5" stroke-width="2" stroke-dasharray="4 3"/></svg>Sectores</label>
+      <label><input type="checkbox" data-capa="tuberia" checked>
+        <svg viewBox="0 0 22 16"><path d="M1 12h7c2 0 3-1 3-3V7c0-2 1-3 3-3h7" fill="none" stroke="#1596C4" stroke-width="3.5" stroke-linecap="round"/></svg>Tuberías</label>
+      <label><input type="checkbox" data-capa="llave" checked>
+        <svg viewBox="0 0 22 16"><circle cx="11" cy="8" r="6" fill="#8A4FBF" stroke="#fff" stroke-width="2"/></svg>Llaves</label>
+      <label><input type="checkbox" data-capa="casa" checked>
+        <svg viewBox="0 0 22 16"><rect x="5" y="2" width="12" height="12" fill="#3B6EA8" fill-opacity=".5" stroke="#3B6EA8" stroke-width="1.5"/></svg>Casas</label>
+    </div>
+    <p class="nota">Los sectores en color tienen agua ahora. Los sectores en gris con borde punteado están sin agua.</p>
+
+    <div class="pie"><span id="actualizado"></span><a href="assets/pages/auth/auth.html">Administración</a></div>
+  </div>
+</section>
+
+<div id="cargando"><div>Cargando el mapa…</div></div>
+<div id="aviso" role="status"></div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/comun.js"></script>
+<script>
+(function(){
+'use strict';
+const $ = s => document.querySelector(s);
+const esc = Acu.esc;
+const TIPOS = Acu.TIPOS;
+
+function aviso(txt){ const a = $('#aviso'); a.textContent = txt; a.classList.add('ver'); clearTimeout(aviso.t); aviso.t = setTimeout(() => a.classList.remove('ver'), 3500); }
+function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
+
+const map = Acu.crearMapa('map', {aviso});
+const grupos = {
+  sector:  L.layerGroup().addTo(map),
+  tuberia: L.layerGroup().addTo(map),
+  llave:   L.layerGroup().addTo(map),
+  casa:    L.layerGroup().addTo(map)
+};
+const capas = new Map();
+let sb = null, primeraCarga = true, canal = null;
+
+/* ---------- Estilo de cada forma ---------- */
+function estilo(layer){
+  const r = layer.fila, d = r.datos || {};
+  const col = r.color || (TIPOS[r.tipo] || TIPOS.sin).color;
+  if (r.tipo === 'sector' && layer instanceof L.Polygon){
+    Acu.estiloSector(layer, col, d, false);
+    Acu.ponerEtiquetaSector(layer, d);
+    return;
+  }
+  let tip = '';
+  if (layer instanceof L.CircleMarker){
+    const cerrada = r.tipo === 'llave' && d.estado === 'cerrada';
+    layer.setStyle({radius: r.tipo === 'llave' ? 8 : 6, color: cerrada ? col : '#fff', weight: cerrada ? 3 : 2,
+      fillColor: col, fillOpacity: cerrada ? 0.15 : 0.95});
+  } else if (layer instanceof L.Polygon){
+    layer.setStyle({color: col, weight: 1.5, fillColor: col, fillOpacity: 0.5});
+  } else {
+    layer.setStyle({color: col, weight: r.tipo === 'tuberia' ? 5 : 3, opacity: .95, lineCap:'round'});
+  }
+  if (r.tipo === 'casa') tip = d.numero ? 'Casa ' + esc(d.numero) : 'Casa';
+  if (r.tipo === 'tuberia'){
+    tip = esc(d.nombre ? 'Tubería ' + d.nombre : 'Tubería');
+    const extra = [d.diametro ? d.diametro + '"' : '', d.material].filter(Boolean).join(', ');
+    if (extra) tip += '<br><small>' + esc(extra) + '</small>';
+  }
+  if (r.tipo === 'llave') tip = esc(d.nombre ? 'Llave ' + d.nombre : 'Llave') + '<br><small>' + (d.estado === 'cerrada' ? 'Cerrada' : 'Abierta') + '</small>';
+  if (tip) Acu.ponerTooltip(layer, tip);
+}
+
+function quitar(id){
+  const l = capas.get(id);
+  if (!l) return;
+  Object.values(grupos).forEach(g => g.removeLayer(l));
+  capas.delete(id);
+}
+function agregar(r){
+  quitar(r.id);
+  const grupo = grupos[r.tipo];
+  if (!grupo) return;
+  const layer = Acu.capaDesdeGeom(r.geometria);
+  if (!layer) return;
+  layer.fila = r;
+  layer.addTo(grupo);
+  capas.set(r.id, layer);
+  estilo(layer);
+}
+function ordenarSectores(){ grupos.sector.eachLayer(l => { if (l._map) l.bringToBack(); }); }
+
+/* ---------- Lista de sectores ---------- */
+function renderSectores(){
+  const sectores = [...capas.values()].filter(l => l.fila.tipo === 'sector');
+  sectores.sort((a, b) => String(a.fila.datos.nombre || '').localeCompare(String(b.fila.datos.nombre || ''), 'es', {numeric:true}));
+  const conAgua = sectores.filter(l => l.fila.datos.activo).length;
+  const res = $('#resumenAgua'), ul = $('#listaSectores');
+  if (!sectores.length){
+    res.innerHTML = '<b>—</b>Todavía no hay sectores publicados.';
+    ul.innerHTML = '';
+    ul.hidden = true;
+    return;
+  }
+  ul.hidden = false;
+  res.innerHTML = `<b>${conAgua} de ${sectores.length}</b>${sectores.length === 1 ? 'sector' : 'sectores'} con agua en este momento`;
+  ul.innerHTML = sectores.map((l, i) => {
+    const d = l.fila.datos || {}, activo = !!d.activo;
+    const muestra = activo ? (l.fila.color || TIPOS.sector.color) : Acu.SIN_FLUJO.relleno;
+    return `<li><button data-i="${i}"><i class="muestra" style="background:${esc(muestra)}"></i>
+      <span class="nom">${esc(d.nombre || 'Sector sin nombre')}${d.activoDesde ? '<small>' + esc(Acu.desde(d.activoDesde)) + '</small>' : ''}</span>
+      <span class="pill ${activo ? 'con' : 'sin'}">${activo ? 'Con agua' : 'Sin agua'}</span></button></li>`;
+  }).join('');
+  ul.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', () => {
+    const l = sectores[Number(b.dataset.i)];
+    if (!map.hasLayer(grupos.sector)) mostrarGrupo('sector', true);
+    map.fitBounds(l.getBounds(), {maxZoom:18, padding:[40,40]});
+    plegarEnMovil();
+  }));
+}
+const renderSectoresPronto = debounce(renderSectores, 150);
+
+function marcarActualizado(){
+  $('#actualizado').textContent = 'Actualizado a las ' + new Date().toLocaleTimeString('es', {hour:'numeric', minute:'2-digit'});
+}
+function ponerNombre(nombre){
+  if (!nombre) return;
+  $('#nombreAcu').textContent = nombre;
+  document.title = 'Mapa del acueducto ' + nombre;
+}
+
+/* ---------- Carga y tiempo real ---------- */
+async function cargar(){
+  const [cfg, filas] = await Promise.all([
+    sb.from('configuracion').select('nombre').eq('id', 1).maybeSingle(),
+    Acu.traerTodo(sb, 'mapa_publico')
+  ]);
+  if (cfg.data) ponerNombre(cfg.data.nombre);
+  const vistos = new Set(filas.map(r => r.id));
+  [...capas.keys()].forEach(id => { if (!vistos.has(id)) quitar(id); });
+  filas.forEach(agregar);
+  ordenarSectores();
+  renderSectores();
+  marcarActualizado();
+  if (primeraCarga){
+    primeraCarga = false;
+    const b = L.latLngBounds([]);
+    capas.forEach(l => b.extend(l.getBounds ? l.getBounds() : l.getLatLng()));
+    if (b.isValid()) map.fitBounds(b, {maxZoom:18, padding:[30,30]});
+  }
+}
+
+function pintarVivo(on){
+  const v = $('#vivo');
+  v.classList.toggle('on', on);
+  v.querySelector('span').textContent = on ? 'En vivo' : 'Sin conexión en vivo, se actualiza cada 2 minutos';
+}
+
+function suscribir(){
+  canal = sb.channel('mapa-publico')
+    .on('postgres_changes', {event:'*', schema:'public', table:'mapa_publico'}, p => {
+      if (p.eventType === 'DELETE') quitar(p.old.id);
+      else agregar(p.new);
+      ordenarSectores();
+      renderSectoresPronto();
+      marcarActualizado();
+    })
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'configuracion'}, p => { if (p.new) ponerNombre(p.new.nombre); })
+    .subscribe(status => pintarVivo(status === 'SUBSCRIBED'));
+}
+
+/* ---------- Controles ---------- */
+function mostrarGrupo(tipo, visible){
+  const g = grupos[tipo];
+  if (visible){ g.addTo(map); g.eachLayer(estilo); ordenarSectores(); }
+  else map.removeLayer(g);
+  const c = document.querySelector(`[data-capa="${tipo}"]`); if (c) c.checked = visible;
+}
+document.querySelectorAll('[data-capa]').forEach(c => c.addEventListener('change', () => mostrarGrupo(c.dataset.capa, c.checked)));
+
+$('#formBuscar').addEventListener('submit', e => {
+  e.preventDefault();
+  const q = $('#buscaCasa').value.trim().toLowerCase().replace(/^casa\s*/, '');
+  if (!q) return;
+  const l = [...capas.values()].find(x => x.fila.tipo === 'casa' && String(x.fila.datos.numero || '').trim().toLowerCase() === q);
+  if (!l){ aviso('No encontramos la casa ' + $('#buscaCasa').value.trim() + '.'); return; }
+  if (!map.hasLayer(grupos.casa)) mostrarGrupo('casa', true);
+  if (l.getBounds) map.fitBounds(l.getBounds(), {maxZoom:19, padding:[60,60]});
+  else map.setView(l.getLatLng(), 19);
+  setTimeout(() => l.openTooltip(), 400);
+  plegarEnMovil();
+});
+
+$('#plegar').addEventListener('click', () => {
+  const plegado = $('#info').classList.toggle('plegado');
+  $('#plegar').textContent = plegado ? '▴' : '▾';
+  $('#plegar').setAttribute('aria-expanded', String(!plegado));
+});
+function plegarEnMovil(){
+  if (window.innerWidth <= 700 && !$('#info').classList.contains('plegado')) $('#plegar').click();
+}
+
+/* ---------- Inicio ---------- */
+(async () => {
+  try { sb = Acu.cliente(); }
+  catch (e){ $('#cargando div').textContent = e.message; return; }
+  try {
+    await cargar();
+    $('#cargando').hidden = true;
+    suscribir();
+  } catch (err){
+    console.error(err);
+    $('#cargando div').innerHTML = 'No se pudo cargar el mapa.<br><small>Revisa tu conexión e inténtalo de nuevo.</small>';
+    setTimeout(() => location.reload(), 20000);
+    return;
+  }
+  // Respaldo por si se corta la conexión en vivo
+  setInterval(() => cargar().catch(() => {}), 120000);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) cargar().catch(() => {}); });
+})();
+})();
+</script>
+</body>
+</html>

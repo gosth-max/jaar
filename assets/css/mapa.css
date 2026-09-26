@@ -1,0 +1,25 @@
+/* Estilos del mapa compartidos por la página pública y la administración */
+.leaflet-container{font:inherit}
+.btn-ubic{width:34px;height:34px;background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:4px;display:grid;place-items:center;padding:0;cursor:pointer}
+.btn-ubic svg{width:18px;height:18px}
+
+/* Sector con agua: el borde "corre" como agua en movimiento */
+path.sector-flujo{stroke-dasharray:16 10;animation:acu-flujo 1.1s linear infinite}
+@keyframes acu-flujo{to{stroke-dashoffset:-26}}
+
+/* Etiqueta fija de cada sector */
+.leaflet-tooltip.etq-sector{background:rgba(255,255,255,.94);border:0;border-radius:8px;box-shadow:0 2px 8px rgba(0,0,0,.25);
+  padding:4px 10px;color:#15323B;text-align:center;line-height:1.2;font-size:13px}
+.leaflet-tooltip.etq-sector::before{display:none}
+.etq-sector b{display:block;font-size:13.5px}
+.etq-sector small{display:inline-flex;align-items:center;gap:5px;font-size:12px;font-weight:700}
+.etq-sector small i{width:8px;height:8px;border-radius:50%;background:currentColor;display:inline-block}
+.etq-sector small.con{color:#1D6FA3}
+.etq-sector small.con i{animation:acu-latido 1.4s ease-in-out infinite}
+.etq-sector small.sin{color:#6B777B}
+@keyframes acu-latido{0%,100%{box-shadow:0 0 0 0 rgba(29,111,163,.55)}50%{box-shadow:0 0 0 5px rgba(29,111,163,0)}}
+
+@media (prefers-reduced-motion:reduce){
+  path.sector-flujo{animation:none}
+  .etq-sector small.con i{animation:none}
+}
