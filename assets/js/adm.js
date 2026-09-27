@@ -2316,6 +2316,97 @@ async function cargarUsuarios(){
 }
 const cargarUsuariosPronto = debounce(cargarUsuarios, 400);
 
+/* =====================================================================
+   CONTRASEÑAS SIN CORREO
+   ===================================================================== */
+const PALABRAS_CLAVE = ['Agua','Tubo','Llave','Rio','Casa','Sol','Lluvia','Pozo','Monte','Valle','Cerro','Nube','Hoja','Roca','Brisa','Luna'];
+function generarClave(){
+  const r = n => crypto.getRandomValues(new Uint32Array(1))[0] % n;
+  return `${PALABRAS_CLAVE[r(16)]}-${1000 + r(9000)}-${PALABRAS_CLAVE[r(16)]}`;
+}
+/* Número para WhatsApp: si el celular no trae código de país, se toma el del WhatsApp del acueducto */
+function numeroWhatsapp(cel){
+  let dig = String(cel || '').replace(/\D/g, '');
+  const propio = String(state.settings.whatsapp || '').replace(/\D/g, '');
+  if (dig.length <= 8 && propio.length > 8) dig = propio.slice(0, propio.length - 8) + dig;
+  return dig.length >= 8 ? dig : '';
+}
+/* Ventana con los datos de acceso para entregarlos a la persona */
+function mostrarCredenciales({nombre, email, clave, celular}){
+  const url = URL_ACCESO();
+  const texto = `Hola${nombre ? ' ' + nombre.split(' ')[0] : ''}, tu cuenta del ${state.settings.nombre || 'acueducto'} está lista.\n` +
+    `Entra en: ${url}\nCorreo: ${email}\nContraseña temporal: ${clave}\nAl entrar te pediremos cambiarla por una tuya.`;
+  const wa = numeroWhatsapp(celular);
+  $('#credCuerpo').innerHTML = `
+    <p>Entrega estos datos a <b>${esc(nombre || email)}</b>. La contraseña es temporal: al entrar se le pedirá cambiarla.</p>
+    <dl class="credenciales">
+      <dt>Página de acceso</dt><dd>${esc(url)}</dd>
+      <dt>Correo</dt><dd>${esc(email)}</dd>
+      <dt>Contraseña</dt><dd class="clave">${esc(clave)}</dd>
+    </dl>
+    <div class="fila">
+      <button class="btn primario" id="credCopiar">Copiar mensaje</button>
+      ${wa ? `<a class="btn" href="https://wa.me/${wa}?text=${encodeURIComponent(texto)}" target="_blank" rel="noopener">Enviar por WhatsApp</a>` : ''}
+    </div>
+    <p class="nota">Esta contraseña no se guarda en ningún lugar visible: si cierras esta ventana sin copiarla, puedes crear otra con «Nueva contraseña».</p>`;
+  $('#credCopiar').addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(texto); aviso('Mensaje copiado.'); }
+    catch (e){ prompt('Copia este mensaje:', texto); }
+  });
+  $('#dlgCredenciales').showModal();
+}
+/* Campo de contraseña con botón "Generar" */
+function campoClave(attr, etiqueta){
+  return `<label class="campo"><span>${etiqueta}</span><span class="clave-fila">
+    <input type="text" ${attr} value="${esc(generarClave())}" autocomplete="off" spellcheck="false" maxlength="72">
+    <button type="button" class="btn chico" data-generar title="Crear otra contraseña">Generar</button></span></label>`;
+}
+function enlazarGenerar(cont){
+  cont.querySelectorAll('[data-generar]').forEach(b => b.addEventListener('click', () => { b.previousElementSibling.value = generarClave(); }));
+}
+
+/* --- Mi perfil (administradores) --- */
+async function guardarMiPerfil(){
+  const {data, error} = await sb.rpc('actualizar_mi_perfil', {p_nombre:$('#miNombre').value, p_celular:$('#miCelular').value});
+  if (error){ aviso(explicarError(error)); return; }
+  aviso(data.mensaje);
+  if (data.ok){ miPerfil.nombre = $('#miNombre').value.trim(); miPerfil.celular = $('#miCelular').value.trim();
+    document.querySelectorAll('[data-rol]').forEach(e => { e.textContent = miPerfil.nombre + ' · ' + NOMBRE_ROL[miPerfil.rol]; }); cargarUsuarios(); }
+}
+async function cambiarMiClave(){
+  const a = $('#miClave').value, b = $('#miClave2').value, msg = $('#miClaveMsg');
+  msg.hidden = false; msg.className = 'mensaje-form mal';
+  if (a.length < 8){ msg.textContent = 'La contraseña debe tener al menos 8 caracteres.'; return; }
+  if (a !== b){ msg.textContent = 'Las dos contraseñas no coinciden.'; return; }
+  const {error} = await sb.auth.updateUser({password:a});
+  if (error){
+    msg.textContent = /reauthent|recent/i.test(error.message) ? 'Por seguridad, cierra sesión, vuelve a entrar e inténtalo de nuevo.'
+      : /same|different/i.test(error.message) ? 'La contraseña nueva debe ser distinta de la actual.' : 'No se pudo cambiar: ' + error.message;
+    return;
+  }
+  await sb.rpc('marcar_clave_cambiada');
+  miPerfil.debe_cambiar_clave = false;
+  $('#miClave').value = ''; $('#miClave2').value = '';
+  $('#miAvisoTemporal').hidden = true;
+  msg.className = 'mensaje-form ok'; msg.textContent = 'Contraseña cambiada. Úsala la próxima vez que entres.';
+}
+function abrirMiPerfil(){
+  $('#miNombre').value = miPerfil.nombre || '';
+  $('#miCelular').value = miPerfil.celular || '';
+  $('#miCorreo').textContent = miPerfil.email || '';
+  $('#miAvisoTemporal').hidden = !miPerfil.debe_cambiar_clave;
+  $('#miClaveMsg').hidden = true;
+  $('#dlgPerfil').showModal();
+}
+['#dlgCredenciales', '#dlgPerfil'].forEach(sel => {
+  const dl = $(sel);
+  dl.querySelectorAll('[data-cerrar]').forEach(x => x.addEventListener('click', () => dl.close()));
+  dl.addEventListener('click', e => { if (e.target === dl) dl.close(); });
+});
+$('#miGuardar').addEventListener('click', guardarMiPerfil);
+$('#miCambiarClave').addEventListener('click', cambiarMiClave);
+document.querySelectorAll('[data-mi-perfil]').forEach(b => b.addEventListener('click', abrirMiPerfil));
+
 /* --- Solicitudes de registro --- */
 function opcionesCasas(seleccion){
   const casas = datosGenerales().casas.sort((a, b) => String(a.aq.datos.numero).localeCompare(String(b.aq.datos.numero), 'es', {numeric:true}));
@@ -2353,16 +2444,33 @@ function renderSolicitudes(){
       <p class="verificacion ${coinciden.length ? 'ok' : 'no'}">${verif}</p>
       ${pendiente ? `
         <label class="campo"><span>Vincular a la casa</span><select data-casa-sol="${esc(s.id)}">${opcionesCasas(coinciden[0] && coinciden[0].aq.id)}</select></label>
-        <div class="fila"><button class="btn primario" data-aprobar="${esc(s.id)}">Aprobar y enviar acceso</button><button class="btn peligro" data-rechazar="${esc(s.id)}">Rechazar</button></div>`
+        <div class="modo-acceso">
+          <label class="check"><input type="radio" name="modo-${esc(s.id)}" value="clave" checked><span><b>Crear su contraseña ahora</b> (no se envía correo)</span></label>
+          <div data-caja-clave="${esc(s.id)}">${campoClave(`data-clave-sol="${esc(s.id)}"`, 'Contraseña temporal')}</div>
+          <label class="check"><input type="radio" name="modo-${esc(s.id)}" value="correo"><span>Enviarle un correo para que la cree</span></label>
+        </div>
+        <div class="fila"><button class="btn primario" data-aprobar="${esc(s.id)}">Aprobar</button><button class="btn peligro" data-rechazar="${esc(s.id)}">Rechazar</button></div>`
       : `<p class="nota">${s.estado === 'aprobada' ? 'Aprobada' : 'Rechazada'} ${s.revisada_en ? 'el ' + esc(Acu.fechaHora(s.revisada_en)) : ''}${s.motivo ? ' · Motivo: ' + esc(s.motivo) : ''}</p>`}
     </article>`;
   }).join('');
+  enlazarGenerar(cont);
+  cont.querySelectorAll('input[type=radio][name^="modo-"]').forEach(r => r.addEventListener('change', () => {
+    const id = r.name.slice(5);
+    cont.querySelector(`[data-caja-clave="${id}"]`).hidden = cont.querySelector(`input[name="modo-${id}"]:checked`).value !== 'clave';
+  }));
   cont.querySelectorAll('[data-aprobar]').forEach(b => b.addEventListener('click', async () => {
     const s = solicitudes.find(x => x.id === b.dataset.aprobar); if (!s) return;
-    if (!confirm(`¿Aprobar a ${s.nombre}? Se le enviará un correo a ${s.email} para que cree su contraseña.`)) return;
+    const conClave = cont.querySelector(`input[name="modo-${s.id}"]:checked`).value === 'clave';
+    const clave = conClave ? cont.querySelector(`[data-clave-sol="${s.id}"]`).value.trim() : '';
+    if (conClave && clave.length < 8){ aviso('La contraseña debe tener al menos 8 caracteres.'); return; }
+    if (!confirm(conClave ? `¿Aprobar a ${s.nombre} con la contraseña «${clave}»?` : `¿Aprobar a ${s.nombre}? Se le enviará un correo a ${s.email}.`)) return;
     b.disabled = true;
-    const r = await llamarFuncion({accion:'aprobar_solicitud', id:s.id, casa_id:cont.querySelector(`[data-casa-sol="${s.id}"]`).value});
-    if (r && r.ok){ aviso(r.mensaje, 8000); cargarUsuarios(); } else b.disabled = false;
+    const r = await llamarFuncion({accion:'aprobar_solicitud', id:s.id, casa_id:cont.querySelector(`[data-casa-sol="${s.id}"]`).value, clave});
+    if (r && r.ok){
+      if (r.con_clave) mostrarCredenciales({nombre:s.nombre, email:s.email, clave, celular:s.celular});
+      else aviso(r.mensaje, 8000);
+      cargarUsuarios();
+    } else b.disabled = false;
   }));
   cont.querySelectorAll('[data-rechazar]').forEach(b => b.addEventListener('click', async () => {
     const s = solicitudes.find(x => x.id === b.dataset.rechazar); if (!s) return;
@@ -2386,7 +2494,7 @@ function accionesCuenta(p, puedeGestionar){
     ${p.estado === 'activo'
       ? `<button class="btn chico" data-suspender="${esc(p.id)}">Suspender</button>`
       : `<button class="btn chico" data-reactivar="${esc(p.id)}">Reactivar</button>`}
-    <button class="btn chico" data-reenviar="${esc(p.id)}" title="Envía un correo para crear o cambiar la contraseña">Reenviar acceso</button>
+    <button class="btn chico" data-nueva-clave="${esc(p.id)}" title="Pone una contraseña temporal, sin enviar correos">Nueva contraseña</button>
     <button class="btn chico peligro" data-eliminar-cuenta="${esc(p.id)}">Eliminar</button></div>`;
 }
 function enlazarCuentas(cont){
@@ -2396,10 +2504,13 @@ function enlazarCuentas(cont){
     if (p && confirm(`¿Suspender la cuenta de ${p.nombre || p.email}? No podrá entrar hasta que la reactives.`)) cambiarPerfil(p.id, {estado:'suspendido'}, 'Cuenta suspendida.');
   }));
   cont.querySelectorAll('[data-reactivar]').forEach(b => b.addEventListener('click', () => cambiarPerfil(b.dataset.reactivar, {estado:'activo'}, 'Cuenta reactivada.')));
-  cont.querySelectorAll('[data-reenviar]').forEach(b => b.addEventListener('click', async () => {
-    const p = buscar(b.dataset.reenviar); if (!p) return;
-    const {error} = await sb.auth.resetPasswordForEmail(p.email, {redirectTo:URL_ACCESO() + '?modo=nueva'});
-    aviso(error ? 'No se pudo enviar el correo. ' + explicarError(error) : `Se envió a ${p.email} un enlace para crear su contraseña.`, 7000);
+  cont.querySelectorAll('[data-nueva-clave]').forEach(b => b.addEventListener('click', async () => {
+    const p = buscar(b.dataset.nuevaClave); if (!p) return;
+    const clave = prompt(`Contraseña temporal para ${p.nombre || p.email} (mínimo 8 caracteres). Podrá cambiarla al entrar:`, generarClave());
+    if (clave === null) return;
+    if (clave.trim().length < 8){ aviso('La contraseña debe tener al menos 8 caracteres.'); return; }
+    const r = await llamarFuncion({accion:'nueva_clave', id:p.id, clave:clave.trim()});
+    if (r && r.ok){ mostrarCredenciales({nombre:p.nombre, email:p.email, clave:clave.trim(), celular:p.celular}); cargarUsuarios(); }
   }));
   cont.querySelectorAll('[data-eliminar-cuenta]').forEach(b => b.addEventListener('click', async () => {
     const p = buscar(b.dataset.eliminarCuenta); if (!p) return;
@@ -2467,10 +2578,19 @@ function formInvitar(formSel, rolFijo){
     const d = Object.fromEntries(new FormData(f).entries());
     const rol = rolFijo || d.rol;
     const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
-    const r = await llamarFuncion({accion:'invitar', rol, email:d.email, nombre:d.nombre, celular:d.celular, numero_casa:d.numero_casa, casa_id:d.casa_id || ''});
+    const clave = (d.clave || '').trim();
+    if (clave && clave.length < 8){ aviso('La contraseña debe tener al menos 8 caracteres (o déjala vacía para enviar un correo).'); btn.disabled = false; return; }
+    const r = await llamarFuncion({accion:'invitar', rol, email:d.email, nombre:d.nombre, celular:d.celular, numero_casa:d.numero_casa, casa_id:d.casa_id || '', clave});
     btn.disabled = false;
-    if (r && r.ok){ aviso(r.mensaje, 8000); f.reset(); cargarUsuarios(); }
+    if (r && r.ok){
+      if (r.con_clave) mostrarCredenciales({nombre:d.nombre, email:d.email, clave, celular:d.celular});
+      else aviso(r.mensaje, 8000);
+      f.reset(); f.querySelector('[name=clave]').value = generarClave(); cargarUsuarios();
+    }
   });
+  const hueco = f.querySelector('.fila');
+  hueco.insertAdjacentHTML('beforebegin', campoClave('name="clave"', 'Contraseña temporal (déjala vacía para enviar un correo)'));
+  enlazarGenerar(f);
 }
 formInvitar('#formInvitarAdm', null);
 formInvitar('#formInvitarVec', 'vecino');
@@ -2740,6 +2860,7 @@ async function iniciarApp(session){
     return;
   }
   miPerfil = perfil;
+  if (perfil.debe_cambiar_clave) setTimeout(() => { abrirMiPerfil(); aviso('Estás usando una contraseña temporal: cámbiala por una tuya.', 7000); }, 800);
   document.querySelectorAll('[data-rol]').forEach(e => { e.textContent = (perfil.nombre ? perfil.nombre + ' · ' : '') + NOMBRE_ROL[perfil.rol]; });
   mensaje('<h2>Cargando el mapa…</h2><p class="nota">Descargando casas, tuberías, llaves, sectores y pagos.</p>');
   try {

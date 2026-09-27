@@ -426,3 +426,18 @@ input[type=email]{background:var(--blanco);border:1px solid var(--linea);border-
 .sel-inc{margin:3px 8px 0 0;accent-color:var(--bad);width:16px;height:16px;flex:none}
 .inc .inc-cab{align-items:flex-start}
 .inc .inc-cab b{flex:1}
+
+/* =================== Contraseñas =================== */
+.modo-acceso{background:var(--papel);border-radius:10px;padding:4px 10px;margin:8px 0}
+.modo-acceso .check{margin:8px 0}
+.modo-acceso .campo{margin:4px 0 8px 26px}
+.campo>.clave-fila,.clave-fila{display:flex;gap:6px;margin:0}
+.clave-fila input{flex:1;min-width:0;font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.02em}
+.credenciales{display:grid;grid-template-columns:auto 1fr;gap:6px 12px;background:var(--papel);border-radius:10px;padding:10px 12px;margin:10px 0 12px}
+.credenciales dt{color:var(--suave);font-size:13.5px}
+.credenciales dd{margin:0;font-weight:700;overflow-wrap:anywhere}
+.credenciales .clave{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:17px;color:var(--agua)}
+.aviso-temporal{background:#FBF0D8;color:#5C4304;border-radius:10px;padding:10px 12px;margin:0 0 10px;font-weight:700}
+.mensaje-form{border-radius:10px;padding:9px 12px;font-size:14px;margin:10px 0 0}
+.mensaje-form.ok{background:#E3F2E9;color:#1F6B42} .mensaje-form.mal{background:#FDECEA;color:#8C1D18}
+input[type=password]{background:var(--blanco);border:1px solid var(--linea);border-radius:7px;padding:7px 9px;width:100%}

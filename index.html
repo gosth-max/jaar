@@ -32,6 +32,7 @@
     <button class="btn-cuenta" id="btnCuenta" aria-expanded="false" hidden><span class="ini" id="cuentaIni">?</span><span id="cuentaNombre"></span></button>
     <ul class="menu-cuenta" id="menuCuenta" hidden>
       <li class="quien"><b id="menuNombre"></b><span id="menuCorreo"></span></li>
+      <li><a href="#/perfil">Mi perfil y contraseña</a></li>
       <li><a href="#/reportar">Mis reportes</a></li>
       <li id="menuAdm" hidden><a href="assets/pages/adm/jaar.html">Administración</a></li>
       <li><button id="btnSalir">Cerrar sesión</button></li>
@@ -128,6 +129,7 @@
       <p id="repSinAccesoTxt">Tu cuenta no está activa.</p>
     </article>
 
+    <p class="aviso-temporal" id="repAvisoClave" hidden>🔑 Estás usando una contraseña temporal. <a href="#/perfil">Cámbiala aquí</a>.</p>
     <!-- Con sesión de vecino -->
     <div class="reportar" id="repConSesion" hidden>
       <article class="tarjeta">
@@ -155,6 +157,35 @@
         <div id="misReportes"></div>
       </article>
     </div>
+  </section>
+
+  <!-- ======================= Mi perfil ======================= -->
+  <section class="vista" data-vista="perfil" hidden>
+    <div class="cab-vista"><div><h1>Mi perfil</h1><p>Tus datos y tu contraseña.</p></div></div>
+    <p class="aviso-temporal" id="pfAviso" hidden>🔑 Estás usando una contraseña temporal que te dio la administración. Cámbiala por una que solo tú conozcas.</p>
+    <div class="rejilla" id="pfContenido">
+      <article class="tarjeta">
+        <header><h2>Mis datos</h2></header>
+        <p class="nota" style="margin-top:0">Correo: <b id="pfCorreo"></b><br>Casa: <b id="pfCasa"></b></p>
+        <label class="campo"><span>Nombre del representante</span><input type="text" id="pfNombre" maxlength="120" autocomplete="name"></label>
+        <label class="campo"><span>Celular</span><input type="tel" id="pfCelular" maxlength="20" autocomplete="tel"></label>
+        <div class="fila"><button class="btn" id="pfGuardar">Guardar datos</button></div>
+        <p class="mensaje-form" id="pfDatosMsg" hidden></p>
+        <p class="nota">Para cambiar tu correo o tu casa, escribe a la administración.</p>
+      </article>
+      <article class="tarjeta">
+        <header><h2>Cambiar contraseña</h2></header>
+        <label class="campo"><span>Contraseña nueva (mínimo 8 caracteres)</span><input type="password" id="pfClave" maxlength="72" autocomplete="new-password"></label>
+        <label class="campo"><span>Repite la contraseña</span><input type="password" id="pfClave2" maxlength="72" autocomplete="new-password"></label>
+        <label class="check"><input type="checkbox" id="pfVer"><span>Mostrar contraseña</span></label>
+        <div class="fila"><button class="btn primario" id="pfCambiar">Cambiar contraseña</button></div>
+        <p class="mensaje-form" id="pfClaveMsg" hidden></p>
+      </article>
+    </div>
+    <article class="tarjeta bienvenida" id="pfSinSesion" hidden>
+      <h2>Inicia sesión para ver tu perfil</h2>
+      <div class="fila" style="justify-content:center"><a class="btn primario grande" href="assets/pages/auth/auth.html">Iniciar sesión</a></div>
+    </article>
   </section>
 
   <footer class="pie" id="pie">

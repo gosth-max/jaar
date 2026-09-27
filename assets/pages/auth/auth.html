@@ -71,7 +71,7 @@
   <!-- Pedir enlace de recuperación -->
   <form id="v-olvido" hidden>
     <h2>Recuperar contraseña</h2>
-    <p class="intro">Escribe tu correo y te enviaremos un enlace para crear una contraseña nueva.</p>
+    <p class="intro">Escribe tu correo y te enviaremos un enlace para crear una contraseña nueva. Si el correo no te llega, pide a la administración del acueducto una contraseña temporal.</p>
     <label class="campo"><span>Correo</span><input type="email" id="olCorreo" autocomplete="username" required></label>
     <p class="error" id="olError" role="alert"></p>
     <p class="exito" id="olExito" role="status" hidden></p>
@@ -169,9 +169,9 @@ $('#v-login').addEventListener('submit', async e => {
 /* Administradores a la administración; vecinos a "Enviar un reporte" */
 async function irSegunRol(){
   const {data:{user}} = await sb.auth.getUser();
-  const {data:p} = user ? await sb.from('perfiles').select('rol,estado').eq('id', user.id).maybeSingle() : {data:null};
+  const {data:p} = user ? await sb.from('perfiles').select('rol,estado,debe_cambiar_clave').eq('id', user.id).maybeSingle() : {data:null};
   if (p && p.estado === 'activo' && (p.rol === 'administrador' || p.rol === 'desarrollador')){ location.replace(DESTINO); return; }
-  if (p && p.estado === 'activo'){ location.replace(PUBLICO + '#/reportar'); return; }
+  if (p && p.estado === 'activo'){ location.replace(PUBLICO + (p.debe_cambiar_clave ? '#/perfil' : '#/reportar')); return; }
   await sb.auth.signOut();
   mensaje('Tu cuenta no está activa', p
     ? 'Tu cuenta está suspendida. Comunícate con la administración del acueducto.'

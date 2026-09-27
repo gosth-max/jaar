@@ -305,12 +305,12 @@ function ajustarMapa(){
    SECCIONES
    ===================================================================== */
 let vistaActual = null;
-const RENDER = {inicio:renderInicio, calendario:renderCalendario, reportar:renderReportar};
+const RENDER = {inicio:renderInicio, calendario:renderCalendario, reportar:renderReportar, perfil:renderPerfil};
 function router(){
   let ruta = location.hash.replace(/^#\/?/, '') || 'inicio';
   let abrirReg = false;
   if (ruta === 'registro'){ ruta = 'reportar'; abrirReg = true; }
-  if (!['inicio', 'mapa', 'calendario', 'reportar'].includes(ruta)) ruta = 'inicio';
+  if (!['inicio', 'mapa', 'calendario', 'reportar', 'perfil'].includes(ruta)) ruta = 'inicio';
   irA(ruta, true);
   if (abrirReg){ history.replaceState(null, '', '#/reportar'); abrirRegistro(); }
 }
@@ -482,6 +482,7 @@ function renderReportar(){
   $('#repSinSesion').hidden = !!sesion;
   $('#repSinAcceso').hidden = !sesion || puedeReportar();
   $('#repConSesion').hidden = !(sesion && puedeReportar());
+  $('#repAvisoClave').hidden = !(perfil && perfil.debe_cambiar_clave);
   if (sesion && !puedeReportar()){
     $('#repSinAccesoTxt').textContent = !perfil
       ? 'Tu cuenta todavía no tiene acceso. Si enviaste una solicitud, espera a que sea aprobada.'
@@ -565,6 +566,44 @@ function renderMisReportes(){
       ${r.respuesta ? `<p class="respuesta"><b>Respuesta:</b> ${esc(r.respuesta)}</p>` : ''}
     </div>`).join('') : '<p class="vacio">Todavía no has enviado reportes.</p>';
 }
+
+/* --- Mi perfil --- */
+function renderPerfil(){
+  $('#pfSinSesion').hidden = !!sesion;
+  $('#pfContenido').hidden = !sesion;
+  $('#pfAviso').hidden = !(perfil && perfil.debe_cambiar_clave);
+  if (!sesion) return;
+  $('#pfCorreo').textContent = sesion.user.email || '';
+  const casa = perfil && perfil.casa_id && capas.get(perfil.casa_id);
+  $('#pfCasa').textContent = casa ? nombreElemento(casa.fila) : (perfil && perfil.numero_casa ? 'Casa ' + perfil.numero_casa : 'sin casa vinculada');
+  if (document.activeElement !== $('#pfNombre')) $('#pfNombre').value = (perfil && perfil.nombre) || '';
+  if (document.activeElement !== $('#pfCelular')) $('#pfCelular').value = (perfil && perfil.celular) || '';
+}
+$('#pfVer').addEventListener('change', e => { ['#pfClave', '#pfClave2'].forEach(s => { $(s).type = e.target.checked ? 'text' : 'password'; }); });
+$('#pfGuardar').addEventListener('click', async () => {
+  const {data, error} = await sb.rpc('actualizar_mi_perfil', {p_nombre:$('#pfNombre').value, p_celular:$('#pfCelular').value});
+  if (error){ mensajeForm('#pfDatosMsg', explicarError(error), false); return; }
+  mensajeForm('#pfDatosMsg', data.mensaje, data.ok);
+  if (data.ok && perfil){ perfil.nombre = $('#pfNombre').value.trim(); perfil.celular = $('#pfCelular').value.trim(); pintarCuenta(); }
+});
+$('#pfCambiar').addEventListener('click', async () => {
+  const a = $('#pfClave').value, b = $('#pfClave2').value;
+  if (a.length < 8){ mensajeForm('#pfClaveMsg', 'La contraseña debe tener al menos 8 caracteres.', false); return; }
+  if (a !== b){ mensajeForm('#pfClaveMsg', 'Las dos contraseñas no coinciden.', false); return; }
+  const btn = $('#pfCambiar'); btn.disabled = true;
+  const {error} = await sb.auth.updateUser({password:a});
+  btn.disabled = false;
+  if (error){
+    mensajeForm('#pfClaveMsg', /reauthent|recent/i.test(error.message) ? 'Por seguridad, cierra sesión, vuelve a entrar e inténtalo de nuevo.'
+      : /same|different/i.test(error.message) ? 'La contraseña nueva debe ser distinta de la actual.' : 'No se pudo cambiar: ' + error.message, false);
+    return;
+  }
+  await sb.rpc('marcar_clave_cambiada');
+  if (perfil) perfil.debe_cambiar_clave = false;
+  $('#pfClave').value = ''; $('#pfClave2').value = '';
+  mensajeForm('#pfClaveMsg', 'Listo, contraseña cambiada. Úsala la próxima vez que entres.', true);
+  renderPerfil();
+});
 
 /* --- Solicitar una cuenta --- */
 const CLAVE_ESPERA_REG = 'acu-registro-espera';

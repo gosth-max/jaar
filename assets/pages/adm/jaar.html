@@ -92,6 +92,7 @@
         <li class="correo"><b data-rol></b><br><span data-correo></span></li>
         <li><a href="../../../index.html" target="_blank" rel="noopener"><span>Ver mapa público ↗</span></a></li>
         <li class="sep" role="separator"></li>
+        <li><button data-mi-perfil>Mi perfil y contraseña</button></li>
         <li><button data-salir>Cerrar sesión</button></li>
       </ul>
     </div>
@@ -296,6 +297,27 @@
     </div>
   </section>
 </main>
+
+<dialog id="dlgCredenciales" class="modal" aria-labelledby="credTitulo">
+  <header><h2 id="credTitulo">Datos de acceso</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
+  <div class="modal-cuerpo" id="credCuerpo"></div>
+</dialog>
+
+<dialog id="dlgPerfil" class="modal" aria-labelledby="perfTitulo">
+  <header><h2 id="perfTitulo">Mi perfil</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
+  <div class="modal-cuerpo">
+    <p class="aviso-temporal" id="miAvisoTemporal" hidden>🔑 Estás usando una contraseña temporal. Cámbiala por una que solo tú conozcas.</p>
+    <p class="nota">Correo: <b id="miCorreo"></b></p>
+    <label class="campo"><span>Nombre</span><input type="text" id="miNombre" maxlength="120"></label>
+    <label class="campo"><span>Celular</span><input type="tel" id="miCelular" maxlength="20"></label>
+    <div class="fila"><button class="btn" id="miGuardar">Guardar datos</button></div>
+    <h3 class="dlg-sub">Cambiar contraseña</h3>
+    <label class="campo"><span>Contraseña nueva (mínimo 8 caracteres)</span><input type="password" id="miClave" autocomplete="new-password" maxlength="72"></label>
+    <label class="campo"><span>Repite la contraseña</span><input type="password" id="miClave2" autocomplete="new-password" maxlength="72"></label>
+    <div class="fila"><button class="btn primario" id="miCambiarClave">Cambiar contraseña</button></div>
+    <p class="mensaje-form" id="miClaveMsg" hidden></p>
+  </div>
+</dialog>
 
 <dialog id="dlgDia" class="modal" aria-labelledby="dlgTitulo">
   <header><h2 id="dlgTitulo"></h2><button class="cerrar" id="dlgCerrar" aria-label="Cerrar">×</button></header>
