@@ -281,26 +281,38 @@ function unirIntervalos(lista){
 }
 
 /* ---------- Conectores en T y en Y ----------
-   Cada conector tiene una entrada y dos salidas ("puertos") a BRAZO metros del centro.
-   rotacion: grados hacia donde sale el agua en línea recta (0 = este, 90 = norte).
-   T: salida 1 sigue recto, salida 2 sale en ángulo recto (a la izquierda, o a la derecha si espejo).
-   Y: las dos salidas se abren 35° a cada lado. */
-const BRAZO = 4;
+   Cada unión tiene tres brazos (puertos) numerados 1, 2 y 3:
+     T: 1 y 2 en línea recta, 3 lateral.   Y: 1 es el tronco, 2 y 3 las ramas.
+   datos.entrada: índice (0, 1 o 2) del brazo por donde entra el agua; los otros dos
+   son salidas. null = sin definir (el agua puede pasar entre cualquier par de brazos).
+   datos.tamano: largo de cada brazo en metros. datos.rotacion: grados (0 = este). */
+const BRAZO = 4;                        // tamaño de las uniones creadas antes de poder cambiarlo
+const tamanoConector = d => Math.min(10, Math.max(0.3, num(d && d.tamano) || BRAZO));
+function entradaConector(d){
+  if (!d || d.entrada === undefined) return 0;           // uniones antiguas: el brazo 1 era la entrada
+  if (d.entrada === null || d.entrada === '') return null;
+  const k = Number(d.entrada);
+  return k >= 0 && k <= 2 ? k : null;
+}
+/* Distancia mínima entre dos brazos: define cuánto puede alejarse una punta y seguir unida */
+const separacionPuertos = d => tamanoConector(d) * (d && d.forma === 'Y' ? 1.14 : 1.41);
+const tolPuerto = d => Math.min(1.5, separacionPuertos(d) * 0.35);
 function puertosConector(centro, d){
   d = d || {};
-  const th = (Number(d.rotacion) || 0) * Math.PI / 180;
+  const th = (Number(d.rotacion) || 0) * Math.PI / 180, b = tamanoConector(d);
   const lado = d.espejo ? -1 : 1;
   const locales = d.forma === 'Y'
-    ? [[-BRAZO, 0], [BRAZO * Math.cos(0.61), BRAZO * Math.sin(0.61)], [BRAZO * Math.cos(0.61), -BRAZO * Math.sin(0.61)]]
-    : [[-BRAZO, 0], [BRAZO, 0], [0, lado * BRAZO]];
+    ? [[-b, 0], [b * Math.cos(0.61), b * Math.sin(0.61)], [b * Math.cos(0.61), -b * Math.sin(0.61)]]
+    : [[-b, 0], [b, 0], [0, lado * b]];
   const cos = Math.cos(centro.lat * Math.PI / 180);
   const pts = locales.map(([x, y]) => {
     const xr = x * Math.cos(th) - y * Math.sin(th), yr = x * Math.sin(th) + y * Math.cos(th);
     return L.latLng(centro.lat + yr / 110540, centro.lng + xr / (111320 * cos));
   });
-  return {entrada:pts[0], salidas:[pts[1], pts[2]], todos:pts};
+  const e = entradaConector(d);
+  return {todos:pts, entradaIdx:e, entrada:e === null ? null : pts[e], salidas:e === null ? [] : pts.filter((_, i) => i !== e)};
 }
-/* Dibujo del conector: brazos gruesos y puntas marcadas (E = entrada, 1 y 2 = salidas) */
+/* Dibujo: brazos gruesos; con etiquetas muestra el número de cada brazo y si es entrada (E) o salida (S) */
 function formaConector(centro, d, opciones = {}){
   const g = L.featureGroup();
   const pr = puertosConector(centro, d), col = opciones.color || '#0B5C73';
@@ -308,10 +320,18 @@ function formaConector(centro, d, opciones = {}){
   pr.todos.forEach(p => L.polyline([centro, p], {...comun, color:col, weight:opciones.grosor || 6, opacity:1, lineCap:'round'}).addTo(g));
   L.circleMarker(centro, {...comun, radius:4, color:'#fff', weight:2, fillColor:col, fillOpacity:1}).addTo(g);
   if (opciones.puertos){
-    [['E', pr.entrada], ['1', pr.salidas[0]], ['2', pr.salidas[1]]].forEach(([t, p], i) => {
-      L.circleMarker(p, {...comun, interactive:false, radius:5, color:col, weight:2, fillColor:i ? '#fff' : '#9FB7BF', fillOpacity:1}).addTo(g);
-      if (opciones.etiquetas) L.marker(p, {interactive:false, keyboard:false, pmIgnore:true, snapIgnore:true,
-        icon:L.divIcon({className:'puerto-conector', html:`<span>${t}</span>`, iconSize:null})}).addTo(g);
+    pr.todos.forEach((p, i) => {
+      const esEntrada = pr.entradaIdx === i;
+      L.circleMarker(p, {...comun, interactive:false, radius:4, color:col, weight:2, fillColor:esEntrada ? '#2F8F5B' : '#fff', fillOpacity:1}).addTo(g);
+      if (opciones.etiquetas){
+        const txt = (i + 1) + (pr.entradaIdx === null ? '' : esEntrada ? ' · E' : ' · S');
+        // la etiqueta se corre hacia afuera, en la dirección del brazo, para leerse aunque la unión sea pequeña
+        const cos = Math.cos(centro.lat * Math.PI / 180), dx = (p.lng - centro.lng) * 111320 * cos, dy = (p.lat - centro.lat) * 110540;
+        const l = Math.hypot(dx, dy) || 1, ox = dx / l * 20, oy = -dy / l * 20;
+        L.marker(p, {interactive:false, keyboard:false, pmIgnore:true, snapIgnore:true,
+          icon:L.divIcon({className:'puerto-conector' + (esEntrada ? ' entrada' : ''),
+            html:`<span style="transform:translate(calc(-50% + ${ox.toFixed(1)}px), calc(-50% + ${oy.toFixed(1)}px))">${txt}</span>`, iconSize:null})}).addTo(g);
+      }
     });
   }
   g.centroConector = centro;
@@ -343,14 +363,24 @@ function construirRed(elementos){
     return id;
   }
 
-  // 0. Puertos de los conectores (se crean primero para que las tuberías se unan a ellos)
-  const conectorNodos = new Map();
+  // 0. Puertos de los conectores: nodos propios, así una unión pequeña no mezcla sus brazos
+  const conectorNodos = new Map(), puertosRed = [], nodosPuerto = new Set();
   elementos.forEach(e => {
     if (e.tipo !== 'conector' || !e.layer) return;
     const c = centroConectorDe(e.layer); if (!c) return;
-    const pr = puertosConector(c, e.datos);
-    conectorNodos.set(e.id, {entrada:nodoEn(P.a(pr.entrada)), salidas:pr.salidas.map(p => nodoEn(P.a(p)))});
+    const pr = puertosConector(c, e.datos), tol = tolPuerto(e.datos);
+    const ns = pr.todos.map(q => {
+      const p = P.a(q), n = nodos.length;
+      nodos.push({x:p.x, y:p.y}); nodosPuerto.add(n); puertosRed.push({x:p.x, y:p.y, n, tol});
+      return n;
+    });
+    conectorNodos.set(e.id, {puertos:ns, entrada:pr.entradaIdx});
   });
+  const nodoPunta = p => {
+    let mejor = null;
+    puertosRed.forEach(q => { const d = Math.hypot(q.x - p.x, q.y - p.y); if (d <= q.tol && (!mejor || d < mejor.d)) mejor = {n:q.n, d}; });
+    return mejor ? mejor.n : nodoEn(p);
+  };
 
   // 1. Tramos de tubería
   const segs = [], tuboDir = new Map(), tuboSectores = new Map();
@@ -363,7 +393,9 @@ function construirRed(elementos){
     partesDeCapa(e.layer).forEach(parte => {
       const pts = parte.map(P.a);
       for (let i = 1; i < pts.length; i++){
-        segs.push({tubo:e.id, pa:pts[i-1], pb:pts[i], na:nodoEn(pts[i-1]), nb:nodoEn(pts[i]), cortes:[], caja:caja([pts[i-1], pts[i]], margen)});
+        const extremoA = i === 1, extremoB = i === pts.length - 1;
+        segs.push({tubo:e.id, pa:pts[i-1], pb:pts[i], na:extremoA ? nodoPunta(pts[i-1]) : nodoEn(pts[i-1]),
+          nb:extremoB ? nodoPunta(pts[i]) : nodoEn(pts[i]), cortes:[], caja:caja([pts[i-1], pts[i]], margen)});
       }
     });
   });
@@ -394,7 +426,7 @@ function construirRed(elementos){
   // 3. Cortar cada tramo donde lo toca otro nodo (uniones en "T", llaves…)
   segs.forEach(s => {
     nodos.forEach((n, id) => {
-      if (id === s.na || id === s.nb || !enCaja(n, s.caja)) return;
+      if (id === s.na || id === s.nb || nodosPuerto.has(id) || !enCaja(n, s.caja)) return;
       const r = proySeg(n, s.pa, s.pb);
       if (r.d <= TOL_RED && r.t > EPS && r.t < 1 - EPS) s.cortes.push({t:r.t, n:id});
     });
@@ -433,10 +465,13 @@ function construirRed(elementos){
     unir(a, {e, otro:b, puede:alIr});
     unir(b, {e, otro:a, puede:alVolver});
   };
-  conectorNodos.forEach((c, id) => c.salidas.forEach(s => virtual(c.entrada, s, true, false, {conector:id})));
+  conectorNodos.forEach((c, id) => {
+    if (c.entrada === null) c.puertos.slice(1).forEach(n => virtual(c.puertos[0], n, true, true, {conector:id}));   // sin entrada: pasa en cualquier sentido
+    else c.puertos.forEach((n, i) => { if (i !== c.entrada) virtual(c.puertos[c.entrada], n, true, false, {conector:id}); });
+  });
   casaNodos.forEach((set, id) => { const [primero, ...resto] = [...set]; resto.forEach(n => virtual(primero, n, true, true, {casa:id})); });
   const nodoConectores = new Map();
-  conectorNodos.forEach((c, id) => [c.entrada, ...c.salidas].forEach(n => { if (!nodoConectores.has(n)) nodoConectores.set(n, []); nodoConectores.get(n).push(id); }));
+  conectorNodos.forEach((c, id) => c.puertos.forEach(n => { if (!nodoConectores.has(n)) nodoConectores.set(n, []); nodoConectores.get(n).push(id); }));
 
   const nodoCasas = new Map(), nodoLlaves = new Map();
   casaNodos.forEach((set, id) => set.forEach(n => { if (!nodoCasas.has(n)) nodoCasas.set(n, []); nodoCasas.get(n).push(id); }));
@@ -469,7 +504,7 @@ function nodosDeElemento(red, id, tipo){
   if (tipo === 'tuberia') return (red.tuboAristas.get(id) || []).flatMap(i => [red.aristas[i].a, red.aristas[i].b]);
   if (tipo === 'casa') return [...(red.casaNodos.get(id) || [])];
   if (tipo === 'llave') return red.llaveNodo.has(id) ? [red.llaveNodo.get(id)] : [];
-  if (tipo === 'conector'){ const c = red.conectorNodos.get(id); return c ? [c.entrada, ...c.salidas] : []; }
+  if (tipo === 'conector'){ const c = red.conectorNodos.get(id); return c ? c.puertos.slice() : []; }
   return [];
 }
 
@@ -680,6 +715,6 @@ function hace(iso){
 }
 
 window.Acu = {TIPOS, SIN_FLUJO, ImagenEsri, esc, num, cliente, traerTodo, crearMapa, capaDesdeGeom, fechaHora, hace,
-  COLOR_TUBERIA, ROJO, BRAZO, puertosConector, formaConector, construirRed, conectado, afectacion, textoAfectacion, dibujarFlechas, iconoIncidencia, centroDe,
+  COLOR_TUBERIA, ROJO, BRAZO, tamanoConector, entradaConector, tolPuerto, puertosConector, formaConector, construirRed, conectado, afectacion, textoAfectacion, dibujarFlechas, iconoIncidencia, centroDe,
   opacidadSector, estiloSector, quitarClasesSector, etiquetaSector, ponerEtiquetaSector, ponerTooltip, desde};
 })();

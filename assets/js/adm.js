@@ -10,8 +10,8 @@ const PISTAS = {
   llave:'Toca el mapa donde está la llave.',
   sector:'Toca el mapa alrededor de la zona. Toca el primer punto para cerrar el sector.',
   acometida:'Empieza tocando sobre la tubería y termina tocando dentro de la casa. Toca el último punto otra vez para terminar.',
-  conectorT:'Toca sobre la tubería donde va la unión en T: se corta sola y queda orientada con el agua.',
-  conectorY:'Toca sobre la tubería donde va la unión en Y: se corta sola y queda orientada con el agua.'
+  conectorT:'Toca sobre la tubería donde va la unión en T: se corta sola. Después eliges en el panel por cuál brazo entra el agua.',
+  conectorY:'Toca sobre la tubería donde va la unión en Y: se corta sola. Después eliges en el panel por cuál brazo entra el agua.'
 };
 const ROJO = Acu.ROJO;
 const PALETA = ['#1E88E5','#3B6EA8','#1596C4','#2F8F5B','#C8901A','#C0392B','#8A4FBF','#E0679A','#6F7F85','#15323B'];
@@ -66,7 +66,7 @@ function datosBase(tipo){
   if (tipo === 'tuberia') return {nombre:'', clase:'principal', flujo:'', sectores:[], diametro:'', material:'PVC', notas:''};
   if (tipo === 'llave') return {nombre:'', estado:'abierta', notas:''};
   if (tipo === 'sector') return {nombre:'', opacidad:0.35, activo:false, activoDesde:'', notas:''};
-  if (tipo === 'conector') return {nombre:'', forma:'T', rotacion:0, espejo:false, notas:''};
+  if (tipo === 'conector') return {nombre:'', forma:'T', rotacion:0, espejo:false, tamano:TAMANO_UNION, entrada:null, notas:''};
   return {notas:''};
 }
 
@@ -330,7 +330,7 @@ function aplicarEstilo(layer){
     layer.setStyle({radius:7, color:sel ? '#FFD23F' : '#fff', weight:sel ? 4 : 2, fillColor:col, fillOpacity:1, opacity:1, dashArray:null});
     marcarClase(layer, 'con-incidencia', !!(inc && inc.length));
     if (layer._map){
-      layer._decor = Acu.formaConector(layer.getLatLng(), aq.datos, {color:col, puertos:true, etiquetas:sel});
+      layer._decor = Acu.formaConector(layer.getLatLng(), aq.datos, {color:col, puertos:true, etiquetas:sel || map.getZoom() >= 20});
       capaConectores.addLayer(layer._decor);
       layer.bringToFront();
     }
@@ -917,8 +917,9 @@ function ponerFlujo(layer, activo){
    ===================================================================== */
 const COLOR_CONECTOR = '#0B5C73';
 const capaConectores = L.layerGroup().addTo(map);   // dibujo de los brazos (no se puede tocar)
-const TOL_PUERTO = 1.5;                             // m: una punta de tubería está en un puerto
-const RADIO_CONECTOR = Acu.BRAZO + 4;               // m: una punta tan cerca se une sola al conector
+map.on('zoomend', () => conectores().forEach(aplicarEstilo));   // de cerca se ven los números de los brazos
+const TAMANO_UNION = 1.5;                           // m: largo de cada brazo de una unión nueva
+const radioConector = c => Acu.tamanoConector(c.aq.datos) + 4;   // m: una punta tan cerca se une sola a la unión
 
 const conectores = () => [...capas.values()].filter(l => l.aq && l.aq.tipo === 'conector');
 const tuberias = () => [...capas.values()].filter(l => l.aq && l.aq.tipo === 'tuberia' && esLinea(l));
@@ -938,8 +939,9 @@ function conexionesConector(con, puertos){
   return pr.todos.map(p => {
     for (const t of tuberias()){
       const e = extremos(t);
-      if (e.ini.distanceTo(p) <= TOL_PUERTO) return {layer:t, extremo:'ini'};
-      if (e.fin.distanceTo(p) <= TOL_PUERTO) return {layer:t, extremo:'fin'};
+      const tol = Acu.tolPuerto(con.aq.datos);
+      if (e.ini.distanceTo(p) <= tol) return {layer:t, extremo:'ini'};
+      if (e.fin.distanceTo(p) <= tol) return {layer:t, extremo:'fin'};
     }
     return null;
   });
@@ -952,7 +954,7 @@ function ajustarAConectores(tubo){
   ['ini', 'fin'].forEach(ext => {
     const i = ext === 'ini' ? 0 : pts.length - 1, p = pts[i];
     let mejor = null;
-    conectores().forEach(c => { const dist = c.getLatLng().distanceTo(p); if (dist <= RADIO_CONECTOR && (!mejor || dist < mejor.dist)) mejor = {c, dist}; });
+    conectores().forEach(c => { const dist = c.getLatLng().distanceTo(p); if (dist <= radioConector(c) && (!mejor || dist < mejor.dist)) mejor = {c, dist}; });
     if (!mejor) return;
     const pr = Acu.puertosConector(mejor.c.getLatLng(), mejor.c.aq.datos);
     const ocupados = conexionesConector(mejor.c, pr).map(x => x && x.layer !== tubo);
@@ -960,21 +962,29 @@ function ajustarAConectores(tubo){
     const libre = orden.find(o => !ocupados[o.k]);
     if (!libre){ msgs.push('Todas las puntas de ese conector ya están ocupadas.'); return; }
     pts[i] = pr.todos[libre.k];
-    // Entrada: el agua va hacia el conector. Salidas: el agua sale del conector.
-    const haciaElConector = libre.k === 0;
-    d.flujo = (ext === 'fin') === haciaElConector ? 'adelante' : 'atras';
     cambio = true;
-    msgs.push(`Unida a la ${libre.k ? 'salida ' + libre.k : 'entrada'} del conector; dirección del agua ajustada.`);
+    if (pr.entradaIdx === null){ msgs.push(`Unida al brazo ${libre.k + 1} de la unión.`); return; }
+    d.flujo = flujoEnPuerto(ext, libre.k === pr.entradaIdx);
+    msgs.push(`Unida al brazo ${libre.k + 1} (${libre.k === pr.entradaIdx ? 'entrada' : 'salida'}); dirección del agua ajustada.`);
   });
   if (cambio){ ponerPuntos(tubo, pts); guardarForma(tubo.aq.id); geometriaCambio(); aplicarEstilo(tubo); }
   return msgs.join(' ');
 }
-/* Cambia forma, giro o lado de un conector llevando consigo las tuberías unidas */
+/* Entrada: el agua va hacia la unión. Salida: el agua sale de la unión. */
+const flujoEnPuerto = (extremo, esEntrada) => (extremo === 'fin') === esEntrada ? 'adelante' : 'atras';
+/* Cambia forma, giro, tamaño, lado o entrada de una unión llevando consigo las tuberías unidas */
 function cambiarConector(con, cambios, soloVista){
   const antes = Acu.puertosConector(con.getLatLng(), con.aq.datos);
   const unidas = conexionesConector(con, antes);
   Object.assign(con.aq.datos, cambios);
   moverUnidas(con, unidas);
+  // La entrada decide la dirección del agua de todas las tuberías unidas
+  const e = Acu.entradaConector(con.aq.datos);
+  if ('entrada' in cambios || e !== null) unidas.forEach((u, k) => {
+    if (!u || e === null) return;
+    const f = flujoEnPuerto(u.extremo, k === e);
+    if (u.layer.aq.datos.flujo !== f){ u.layer.aq.datos.flujo = f; guardarForma(u.layer.aq.id); aplicarEstilo(u.layer); }
+  });
   aplicarEstilo(con);
   if (!soloVista){ guardarForma(con.aq.id); geometriaCambio(); if (selected === con) renderPanel(); }
 }
@@ -997,8 +1007,8 @@ function colocarConector(con){
     aviso('Conector colocado. Gíralo desde el panel y une las tuberías a sus puntas.', 5000);
     return;
   }
-  let pts = puntosDe(tubo);
-  if (tubo.aq.datos.flujo === 'atras') pts.reverse();
+  const pts = puntosDe(tubo);          // se respeta el orden del trazo y su dirección del agua
+  const B = Acu.tamanoConector(d);
   // tramo más cercano y punto sobre él
   const cos = Math.cos(ll.lat * Math.PI / 180), m = q => ({x:q.lng * 111320 * cos, y:q.lat * 110540});
   let mejor = null;
@@ -1015,20 +1025,19 @@ function colocarConector(con){
   // Cerca de una punta: no se corta, solo se une esa punta
   const largoHasta = k => { let s = 0; for (let j = 1; j <= k; j++) s += pts[j - 1].distanceTo(pts[j]); return s; };
   const total = largoHasta(pts.length - 1), antes = largoHasta(mejor.i - 1) + A0.distanceTo(P);
-  if (antes < Acu.BRAZO + 1.5 || total - antes < Acu.BRAZO + 1.5){
-    if (total - antes < Acu.BRAZO + 1.5) d.rotacion = Math.round((d.rotacion + 180) % 360);   // la punta final entra al conector
+  if (antes < B + 1 || total - antes < B + 1){
+    if (total - antes < B + 1) d.rotacion = Math.round((d.rotacion + 180) % 360);   // el brazo 1 mira hacia la tubería
     aplicarEstilo(con); guardarForma(con.aq.id);
-    const msg = ajustarAConectores(tubo);
-    aviso('Conector colocado en la punta de la tubería. ' + msg, 6000);
+    ajustarAConectores(tubo);
+    aviso('Unión colocada en la punta de la tubería. Elige en el panel por cuál brazo entra el agua.', 6000);
     return;
   }
   const pr = Acu.puertosConector(P, d);
   const parteA = pts.slice(0, mejor.i), parteB = pts.slice(mejor.i);
-  while (parteA.length > 1 && parteA[parteA.length - 1].distanceTo(P) < Acu.BRAZO + 0.5) parteA.pop();
-  while (parteB.length > 1 && parteB[0].distanceTo(P) < Acu.BRAZO + 0.5) parteB.shift();
-  parteA.push(pr.entrada); parteB.unshift(pr.salidas[0]);
+  while (parteA.length > 1 && parteA[parteA.length - 1].distanceTo(P) < B + 0.3) parteA.pop();
+  while (parteB.length > 1 && parteB[0].distanceTo(P) < B + 0.3) parteB.shift();
+  parteA.push(pr.todos[0]); parteB.unshift(pr.todos[1]);
   ponerPuntos(tubo, parteA);
-  tubo.aq.datos.flujo = 'adelante';
   const datos = JSON.parse(JSON.stringify(tubo.aq.datos));
   datos.nombre = datos.nombre ? datos.nombre + ' (continuación)' : '';
   const nueva = L.polyline(parteB);
@@ -1036,7 +1045,7 @@ function colocarConector(con){
   aplicarEstilo(con); aplicarEstilo(tubo);
   guardarForma(tubo.aq.id); guardarForma(nueva.aq.id); guardarForma(con.aq.id);
   geometriaCambio();
-  aviso('Conector colocado: la tubería quedó dividida y la salida 2 está libre para una ramificación.', 6000);
+  aviso('Unión colocada y tubería dividida. Ahora elige en el panel por cuál brazo entra el agua.', 7000);
 }
 
 /* ---------- Trazados guiados ----------
@@ -1049,8 +1058,8 @@ const PISTAS_TRAZADO = {
   ramal:'Toca sobre la tubería donde nace el ramal y luego ve tocando hasta la casa. Toca el último punto otra vez para terminar.',
   casaCasa:'El trazo ya empieza en esta casa: ve tocando hasta la casa que recibe el agua y toca el último punto otra vez.',
   acometida:'Empieza tocando sobre la tubería y termina dentro de la casa. Toca el último punto otra vez para terminar.',
-  salida:'El trazo empieza en la salida del conector: sigue el camino del agua y toca el último punto otra vez para terminar.',
-  entrada:'Empieza donde viene el agua y termina en la punta marcada «E» del conector.'
+  salida:'El trazo empieza en el brazo de la unión: ve tocando el camino y toca el último punto otra vez para terminar.',
+  entrada:'Empieza donde viene el agua y termina en la punta del brazo de entrada de la unión.'
 };
 function centroCasa(l){ return esPunto(l) ? l.getLatLng() : l.getBounds().getCenter(); }
 function dentroDe(ll, pol){
@@ -1256,14 +1265,22 @@ function renderPanel(){
       <button data-estado="abierta" class="${d.estado !== 'cerrada' ? 'on' : ''}">Abierta</button>
       <button data-estado="cerrada" class="${d.estado === 'cerrada' ? 'on' : ''}">Cerrada</button></div></div>`;
   } else if (aq.tipo === 'conector'){
-    const con = conexionesConector(layer);
-    const fila = (i, nombre) => {
-      const t = con[i];
-      return `<li><span class="puerto p${i}">${i ? i : 'E'}</span><span class="nom">${nombre}<small>${t ? esc(titulo(t.layer.aq)) : 'Libre'}</small></span>
-        ${t ? `<button class="btn chico" data-ir="${esc(t.layer.aq.id)}">Ver</button>` : `<button class="btn chico" data-desde-puerto="${i}">${i ? 'Sacar tubería' : 'Traer tubería'}</button>`}</li>`;
+    const con = conexionesConector(layer), ent = Acu.entradaConector(d);
+    const nombres = d.forma === 'Y' ? ['Tronco', 'Rama', 'Rama'] : ['Recto', 'Recto', 'Lateral'];
+    const fila = i => {
+      const t = con[i], esEnt = ent === i;
+      return `<li class="${esEnt ? 'es-entrada' : ''}"><span class="puerto ${esEnt ? 'ent' : ''}">${i + 1}</span>
+        <span class="nom">Brazo ${i + 1} <small class="lado">${nombres[i]}</small>
+          <small>${ent === null ? '' : esEnt ? '💧 Entrada · ' : 'Salida · '}${t ? esc(titulo(t.layer.aq)) : 'libre'}</small></span>
+        <span class="botones">${esEnt ? '' : `<button class="btn chico" data-entrada="${i}" title="El agua entra por este brazo; los otros dos quedan como salidas">Entrada</button>`}
+        ${t ? `<button class="btn chico" data-ir="${esc(t.layer.aq.id)}">Ver</button>` : `<button class="btn chico" data-desde-puerto="${i}">Conectar</button>`}</span></li>`;
     };
-    estado = `<div class="p-estado"><ul class="puertos">${fila(0, 'Entrada del agua')}${fila(1, d.forma === 'Y' ? 'Salida 1' : 'Salida recta (1)')}${fila(2, d.forma === 'Y' ? 'Salida 2' : 'Salida lateral (2)')}</ul>
-      <p class="nota">Las tuberías solo se unen en las puntas. Al conectarlas, la dirección del agua se ajusta sola.</p></div>`;
+    estado = `<div class="p-estado ${ent === null ? 'aviso' : ''}">
+      <p>${ent === null ? '⚠ <b>Elige por cuál brazo entra el agua.</b> Los otros dos quedarán como salidas y la dirección del agua de las tuberías unidas se ajusta sola.'
+                        : `💧 El agua entra por el brazo ${ent + 1} y sale por los otros dos.`}</p>
+      <ul class="puertos">${[0, 1, 2].map(fila).join('')}</ul>
+      ${ent === null ? '' : '<button class="btn chico" id="quitarEntrada">Quitar la entrada</button>'}
+      <p class="nota">En el mapa, cada brazo muestra su número; «E» es la entrada y «S» las salidas.</p></div>`;
   } else {
     estado = `<div class="p-estado aviso"><p>Esta forma todavía no tiene función. Elige qué es:</p>${botonesTipo(layer)}</div>`;
   }
@@ -1332,8 +1349,11 @@ function renderPanel(){
         <input type="range" id="rotRange" min="0" max="359" step="1" value="${rot}"></label>
       <div class="fila">
         <button class="btn chico" data-girar="-15">↺ 15°</button><button class="btn chico" data-girar="15">↻ 15°</button>
-        <button class="btn chico" data-girar="180" title="La entrada pasa al otro lado">Invertir</button>
-        ${d.forma !== 'Y' ? '<button class="btn chico" id="conEspejo">Cambiar lado del ramal</button>' : ''}</div>
+        <button class="btn chico" data-girar="180">Girar 180°</button>
+        ${d.forma !== 'Y' ? '<button class="btn chico" id="conEspejo">Cambiar lado del brazo lateral</button>' : ''}</div>
+      <label class="campo"><span>Tamaño de los brazos: <output id="tamVal">${Acu.tamanoConector(d).toFixed(1)} m</output></span>
+        <input type="range" id="tamRange" min="0.5" max="6" step="0.5" value="${Acu.tamanoConector(d)}"></label>
+      <p class="nota">Las tuberías unidas se estiran o acortan solas al cambiar el tamaño o el giro.</p>
       ${campo('Nombre (opcional)','nombre',d.nombre,'text','placeholder="Ej. Unión frente a la escuela"')}
       ${areaNotas(d.notas)}`;
   }
@@ -1415,9 +1435,20 @@ function enlazarPanel(layer, cuerpo){
     rot.addEventListener('change', () => cambiarConector(layer, {rotacion:Number(rot.value)}));
   }
   if ($('#conEspejo')) $('#conEspejo').addEventListener('click', () => cambiarConector(layer, {espejo:!aq.datos.espejo}));
+  const tam = $('#tamRange');
+  if (tam){
+    tam.addEventListener('input', () => { $('#tamVal').textContent = Number(tam.value).toFixed(1) + ' m'; cambiarConector(layer, {tamano:Number(tam.value)}, true); });
+    tam.addEventListener('change', () => cambiarConector(layer, {tamano:Number(tam.value)}));
+  }
+  cuerpo.querySelectorAll('[data-entrada]').forEach(b => b.addEventListener('click', () => {
+    cambiarConector(layer, {entrada:Number(b.dataset.entrada)});
+    aviso(`El agua entra por el brazo ${Number(b.dataset.entrada) + 1}; las tuberías unidas ya muestran la nueva dirección.`, 5000);
+  }));
+  if ($('#quitarEntrada')) $('#quitarEntrada').addEventListener('click', () => cambiarConector(layer, {entrada:null}));
   cuerpo.querySelectorAll('[data-desde-puerto]').forEach(b => b.addEventListener('click', () => {
     const i = Number(b.dataset.desdePuerto), pr = Acu.puertosConector(layer.getLatLng(), aq.datos);
-    iniciarTrazado(i ? 'salida' : 'entrada', layer, i ? pr.salidas[i - 1] : null);
+    if (pr.entradaIdx === i) iniciarTrazado('entrada', layer, null);     // hacia la entrada: se termina en la punta
+    else iniciarTrazado('salida', layer, pr.todos[i]);                   // desde el brazo: el trazo ya empieza ahí
   }));
   cuerpo.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => { const l = capas.get(b.dataset.ir); if (l){ enfocar(l); seleccionar(l); } }));
   $('#pEliminar').addEventListener('click', () => {
