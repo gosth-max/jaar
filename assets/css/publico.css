@@ -243,6 +243,7 @@ a{color:var(--agua)}
   .info.plegado .cuerpo{display:none}
   .vista-mapa .leaflet-bottom.leaflet-left{bottom:auto;top:120px}
   body.en-mapa .wa{display:none}
+  .banner-hist{top:10px;bottom:auto}
   .wa span{display:none}
   .wa{padding:13px}
   .calendario{gap:3px}
@@ -251,3 +252,7 @@ a{color:var(--agua)}
   .cal-dia .cuenta-dia{top:auto;bottom:4px;right:4px;min-width:18px;height:18px;font-size:11px}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+body.en-mapa:has(.banner-hist:not([hidden])) .wa{display:none}
+.vista-mapa .banner-hist{right:auto}
+@media (min-width:701px){ .vista-mapa .banner-hist{left:calc(50% - 170px)} }

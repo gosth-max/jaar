@@ -144,7 +144,7 @@ function recalcular(){
   const nA = new Map(), nT = new Map();
   const poner = (m, id, inc) => { if (!m.has(id)) m.set(id, []); m.get(id).push(inc); };
   capaInc.clearLayers();
-  abiertas().sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en))).forEach(inc => {
+  (historico ? [historico] : abiertas()).sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en))).forEach(inc => {
     const o = capas.get(inc.forma_id);
     const res = Acu.afectacion(rd, inc, o ? {id:o.fila.id, tipo:o.fila.tipo} : null);
     resultados.set(inc.id, res);
@@ -174,7 +174,41 @@ function recalcular(){
 const recalcularPronto = debounce(recalcular, 200);
 
 function casasAfectadas(){ const s = new Set(); resultados.forEach(r => r.casas.forEach(c => s.add(c))); return s; }
+/* ---------- Modo historial: solo una incidencia pasada y lo que afectó ---------- */
+let historico = null;
+function verHistorico(inc){
+  if (!inc || !capas.has(inc.forma_id)){ aviso('Ese lugar ya no aparece en el mapa.'); return; }
+  historico = inc;
+  irA('mapa');
+  map.closePopup();
+  map.getContainer().classList.add('modo-historial');
+  recalcular();
+  const res = resultados.get(inc.id), bnd = L.latLngBounds([]);
+  [...(res ? [...res.formas, ...res.tubos] : []), inc.forma_id].forEach(id => { const l = capas.get(id); if (l) bnd.extend(l.getBounds ? l.getBounds() : l.getLatLng()); });
+  if (res) res.puntos.forEach(p => bnd.extend(p));
+  setTimeout(() => { map.invalidateSize(); if (bnd.isValid()) map.fitBounds(bnd, {maxZoom:18, padding:[50,50]}); }, 60);
+  const abierta = (inc.estado || 'abierta') === 'abierta';
+  const b = $('#bannerHist');
+  b.innerHTML = `<div class="bh-cab"><span class="bh-etq">📅 Historial</span><b>${esc(inc.tipo)}</b>
+      <span class="pill ${abierta ? 'bad' : 'ok'}">${abierta ? 'En atención' : 'Resuelta'}</span></div>
+    <p><b>${esc(lugarDe(inc))}</b></p>
+    <p>Ocurrió: <b>${esc(Acu.fechaHora(inc.creada_en))}</b>${inc.resuelta_en ? ` · Resuelta: <b>${esc(Acu.fechaHora(inc.resuelta_en))}</b> · duró ${esc(duracion(inc.creada_en, inc.resuelta_en))}` : ''}</p>
+    ${res ? `<p>Afectó: ${esc(Acu.textoAfectacion(res))}</p>` : ''}
+    ${inc.detalle_publico ? `<p class="bh-det">${esc(inc.detalle_publico)}</p>` : ''}
+    <button class="btn primario" id="salirHist">Volver al mapa en vivo</button>`;
+  b.hidden = false;
+  $('#salirHist').addEventListener('click', salirHistorico);
+  plegarEnMovil();
+}
+function salirHistorico(){
+  if (!historico) return;
+  historico = null;
+  $('#bannerHist').hidden = true;
+  map.getContainer().classList.remove('modo-historial');
+  recalcular();
+}
 function enfocarIncidencia(inc){
+  salirHistorico();
   irA('mapa');
   const res = resultados.get(inc.id), bnd = L.latLngBounds([]);
   const ids = res ? [...res.formas, ...res.tubos, inc.forma_id] : [inc.forma_id];
@@ -210,7 +244,7 @@ function renderPanelMapa(){
   const est = $('#estadoRed'), ul = $('#listaIncs');
   if (!lista.length){ est.innerHTML = '<div class="ok-red">✓ No hay incidencias en la red en este momento.</div>'; ul.hidden = true; }
   else {
-    const n = casasAfectadas().size;
+    const n = historico ? 0 : casasAfectadas().size;
     est.innerHTML = `<div class="mal-red"><b>${lista.length}</b>${lista.length === 1 ? 'incidencia activa' : 'incidencias activas'}${n ? ` · ${n} ${n === 1 ? 'casa afectada' : 'casas afectadas'}` : ''}</div>`;
     ul.hidden = false;
     ul.innerHTML = lista.map((i, k) => `<li><button data-inc="${k}"><i class="muestra" style="background:${ROJO}"></i>
@@ -283,6 +317,7 @@ function router(){
 function irA(v, desdeRouter){
   if (!desdeRouter && location.hash !== '#/' + v) history.pushState(null, '', '#/' + v);
   const cambio = vistaActual !== v;
+  if (v !== 'mapa') salirHistorico();
   vistaActual = v;
   if (cambio){
     document.querySelectorAll('[data-vista]').forEach(s => { s.hidden = s.dataset.vista !== v; });
@@ -405,7 +440,7 @@ function abrirDia(k){
   if (seguian.length) html += `<h3 class="dlg-sub">Seguían en atención de días anteriores</h3>${seguian.map(evento).join('')}`;
   const cuerpo = $('#dlgCuerpo');
   cuerpo.innerHTML = html;
-  cuerpo.querySelectorAll('[data-ver-inc]').forEach(b => b.addEventListener('click', () => { $('#dlgDia').close(); enfocarIncidencia(incsTodas.get(b.dataset.verInc)); }));
+  cuerpo.querySelectorAll('[data-ver-inc]').forEach(b => b.addEventListener('click', () => { $('#dlgDia').close(); verHistorico(incsTodas.get(b.dataset.verInc)); }));
   $('#dlgDia').showModal();
 }
 $('#calPrev').addEventListener('click', () => { calMes = new Date(calMes.getFullYear(), calMes.getMonth() - 1, 1); renderCalendario(); });

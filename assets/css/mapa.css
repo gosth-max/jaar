@@ -54,3 +54,15 @@ path.con-incidencia{animation:acu-alerta 1.6s ease-in-out infinite}
 .puerto-conector span{display:inline-block;transform:translate(-50%,-50%);background:#0B5C73;color:#fff;font:700 10px/1 system-ui,sans-serif;
   padding:2px 4px;border-radius:4px;white-space:nowrap;pointer-events:none}
 .puerto-conector.entrada span{background:#2F8F5B}
+
+/* Modo historial: el mapa muestra una incidencia pasada */
+.modo-historial .leaflet-tile-pane{filter:grayscale(.75) brightness(1.05)}
+.banner-hist{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);z-index:1100;width:min(460px,calc(100% - 24px));
+  background:#fff;color:#15323B;border-radius:14px;box-shadow:0 12px 34px rgba(0,0,0,.3);padding:12px 14px;font-size:13.5px;
+  border-top:4px solid #8A6208}
+.banner-hist p{margin:3px 0}
+.banner-hist .bh-cab{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px;font-size:15px}
+.banner-hist .bh-etq{background:#FBF0D8;color:#6B4D05;border-radius:999px;padding:2px 9px;font-size:12px;font-weight:700}
+.banner-hist .bh-det{background:#F2F6F7;border-radius:8px;padding:6px 8px}
+.banner-hist .bh-nota{color:#5B7078;font-size:12px}
+.banner-hist .btn{margin-top:8px}

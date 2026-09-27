@@ -566,7 +566,7 @@ function recalcularIncidencias(){
   const nuevoA = new Map(), nuevoT = new Map();
   const poner = (m, id, inc) => { if (!m.has(id)) m.set(id, []); m.get(id).push(inc); };
   capaInc.clearLayers();
-  incAbiertas().forEach(inc => {
+  (historico ? [historico] : incAbiertas()).forEach(inc => {
     const r = afectacionDe(inc);
     r.formas.forEach(id => poner(nuevoA, id, inc));
     r.tubos.forEach(id => { if (!r.formas.has(id)) poner(nuevoT, id, inc); });
@@ -1119,6 +1119,7 @@ function completarTrazado(layer, tr){
 /* ================= Dibujo ================= */
 function iniciarDibujo(t){
   asegurarMapa();
+  salirHistorico();
   if (pendingTipo === t){ map.pm.disableDraw(); pendingTipo = null; marcarBotones(); return; }
   map.pm.disableDraw();
   pendingTipo = t;
@@ -1176,6 +1177,7 @@ map.on('click', e => {
 /* ================= Selección y panel ================= */
 function seleccionar(layer){
   asegurarMapa();
+  salirHistorico();
   if (editando && editando !== layer) terminarEdicion();
   const prev = selected;
   selected = layer;
@@ -1198,6 +1200,7 @@ function cerrarPanel(){
 $('#pCerrar').addEventListener('click', cerrarPanel);
 document.addEventListener('keydown', e => {
   if (e.key !== 'Escape') return;
+  if (historico){ salirHistorico(); return; }
   if (modoPunto){ terminarModoPunto(true); return; }
   if (pendingTipo){ map.pm.disableDraw(); pendingTipo = null; trazado = null; marcarBotones(); return; }
   if (editando){ terminarEdicion(); return; }
@@ -1628,7 +1631,7 @@ function router(){
   else if (ruta.startsWith('configuracion/')){ base = 'configuracion'; extra = ruta.split('/')[1]; }
   if (!(base in GRUPO_DE)) base = 'inicio';
   mostrarVista(base);
-  if (base === 'mapa' && extra && TIPOS[extra] && extra !== 'sin'){
+  if (base === 'mapa' && extra && PISTAS[extra] && extra !== 'acometida'){
     history.replaceState(null, '', '#/mapa');
     if (pendingTipo !== extra) iniciarDibujo(extra);
   }
@@ -1640,6 +1643,7 @@ function router(){
 window.addEventListener('hashchange', () => { if (appIniciada) router(); });
 
 function mostrarVista(v){
+  if (v !== 'mapa') salirHistorico();
   const cambio = vistaActual !== v;
   vistaActual = v;
   if (cambio){
@@ -1714,8 +1718,49 @@ function verForma(id){
   if (!l){ aviso('Ese elemento ya no existe.'); return; }
   asegurarMapa(); enfocar(l); seleccionar(l);
 }
-function verIncidencia(inc){
+/* =====================================================================
+   MODO HISTORIAL: el mapa muestra solo una incidencia pasada y lo que afectó
+   ===================================================================== */
+let historico = null;
+function verHistorico(inc){
   if (!inc) return;
+  const o = capas.get(inc.forma_id);
+  if (!o){ aviso('El elemento de esta incidencia ya no existe en el mapa.'); return; }
+  cerrarPanel();
+  if (pendingTipo){ map.pm.disableDraw(); pendingTipo = null; trazado = null; marcarBotones(); }
+  historico = inc;
+  location.hash = '#/mapa';
+  asegurarMapa();
+  map.getContainer().classList.add('modo-historial');
+  recalcularIncidencias();
+  const r = afectacionDe(inc), b = L.latLngBounds([]);
+  [...r.formas, ...r.tubos, inc.forma_id].forEach(id => { const l = capas.get(id); if (l) b.extend(l.getBounds ? l.getBounds() : l.getLatLng()); });
+  r.puntos.forEach(p => b.extend(p));
+  if (b.isValid()) setTimeout(() => map.fitBounds(b, {maxZoom:19, padding:[70,70]}), 50);
+  const abierta = inc.estado === 'abierta';
+  const banner = $('#bannerHist');
+  banner.innerHTML = `<div class="bh-cab"><span class="bh-etq">📅 Historial</span><b>${esc(inc.tipo)}</b>
+      <span class="pill ${abierta ? 'bad' : 'ok'}">${abierta ? 'Sigue abierta' : 'Resuelta'}</span></div>
+    <p><b>${esc(titulo(o.aq))}</b></p>
+    <p>Ocurrió: <b>${esc(Acu.fechaHora(inc.creada_en))}</b>${inc.resuelta_en ? ` · Resuelta: <b>${esc(Acu.fechaHora(inc.resuelta_en))}</b> · duró ${esc(duracion(inc.creada_en, inc.resuelta_en))}` : ''}</p>
+    <p>Sin agua o afectado: ${esc(Acu.textoAfectacion(r))}</p>
+    ${inc.detalle ? `<p class="bh-det">${esc(inc.detalle)}</p>` : ''}
+    <p class="bh-nota">Se dibuja sobre la red actual de tuberías.</p>
+    <button class="btn primario chico" id="salirHist">Volver al mapa en vivo</button>`;
+  banner.hidden = false;
+  $('#salirHist').addEventListener('click', salirHistorico);
+}
+function salirHistorico(){
+  if (!historico) return;
+  historico = null;
+  $('#bannerHist').hidden = true;
+  map.getContainer().classList.remove('modo-historial');
+  recalcularIncidencias();
+}
+function verIncidencia(inc, comoHistorial){
+  if (!inc) return;
+  if (comoHistorial || inc.estado === 'resuelta'){ verHistorico(inc); return; }
+  salirHistorico();
   const o = capas.get(inc.forma_id);
   if (!o){ aviso('El elemento de esta incidencia ya no existe.'); return; }
   asegurarMapa();
@@ -1728,7 +1773,7 @@ function verIncidencia(inc){
 }
 function enlazar(cont){
   cont.querySelectorAll('[data-ver]').forEach(b => b.addEventListener('click', () => verForma(b.dataset.ver)));
-  cont.querySelectorAll('[data-ver-inc]').forEach(b => b.addEventListener('click', () => verIncidencia(incidencias.get(b.dataset.verInc))));
+  cont.querySelectorAll('[data-ver-inc]').forEach(b => b.addEventListener('click', () => verIncidencia(incidencias.get(b.dataset.verInc), b.dataset.hist === '1')));
   cont.querySelectorAll('[data-flujo-id]').forEach(c => c.addEventListener('change', () => {
     const l = capas.get(c.dataset.flujoId); if (l) ponerFlujo(l, c.checked);
   }));
@@ -2201,7 +2246,7 @@ function abrirDia(k){
         <p class="ev-tiempos">Ocurrió: <b>${esc(Acu.fechaHora(i.creada_en))}</b><br>
           ${i.resuelta_en ? `Resuelta: <b>${esc(Acu.fechaHora(i.resuelta_en))}</b> · duró ${esc(duracion(i.creada_en, i.resuelta_en))}`
                           : `Sigue abierta, ${esc(Acu.hace(i.creada_en).replace('hace ', 'desde hace '))}`}</p>
-        <div class="fila">${o ? `<button class="btn chico" data-ver-inc="${esc(i.id)}">Ver en el mapa</button>` : ''}
+        <div class="fila">${o ? `<button class="btn chico" data-ver-inc="${esc(i.id)}" data-hist="1">Ver en el mapa</button>` : ''}
           ${esDev() ? `<button class="btn chico peligro" data-borrar-inc-id="${esc(i.id)}">Eliminar</button>` : ''}</div>
       </div></article>`;
   };
