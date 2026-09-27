@@ -10,6 +10,7 @@ const TIPOS = {
   tuberia: {nombre:'Tubería',     color:'#00C4FF', dibujo:'Line'},
   llave:   {nombre:'Llave',       color:'#8A4FBF', dibujo:'CircleMarker'},
   sector:  {nombre:'Sector',      color:'#1E88E5', dibujo:'Polygon'},
+  conector:{nombre:'Conector',    color:'#0B5C73', dibujo:'CircleMarker'},
   sin:     {nombre:'Sin función', color:'#6F7F85'}
 };
 const SIN_FLUJO = {relleno:'#8C989C', borde:'#5F6D72'};
@@ -279,6 +280,45 @@ function unirIntervalos(lista){
   return out;
 }
 
+/* ---------- Conectores en T y en Y ----------
+   Cada conector tiene una entrada y dos salidas ("puertos") a BRAZO metros del centro.
+   rotacion: grados hacia donde sale el agua en línea recta (0 = este, 90 = norte).
+   T: salida 1 sigue recto, salida 2 sale en ángulo recto (a la izquierda, o a la derecha si espejo).
+   Y: las dos salidas se abren 35° a cada lado. */
+const BRAZO = 4;
+function puertosConector(centro, d){
+  d = d || {};
+  const th = (Number(d.rotacion) || 0) * Math.PI / 180;
+  const lado = d.espejo ? -1 : 1;
+  const locales = d.forma === 'Y'
+    ? [[-BRAZO, 0], [BRAZO * Math.cos(0.61), BRAZO * Math.sin(0.61)], [BRAZO * Math.cos(0.61), -BRAZO * Math.sin(0.61)]]
+    : [[-BRAZO, 0], [BRAZO, 0], [0, lado * BRAZO]];
+  const cos = Math.cos(centro.lat * Math.PI / 180);
+  const pts = locales.map(([x, y]) => {
+    const xr = x * Math.cos(th) - y * Math.sin(th), yr = x * Math.sin(th) + y * Math.cos(th);
+    return L.latLng(centro.lat + yr / 110540, centro.lng + xr / (111320 * cos));
+  });
+  return {entrada:pts[0], salidas:[pts[1], pts[2]], todos:pts};
+}
+/* Dibujo del conector: brazos gruesos y puntas marcadas (E = entrada, 1 y 2 = salidas) */
+function formaConector(centro, d, opciones = {}){
+  const g = L.featureGroup();
+  const pr = puertosConector(centro, d), col = opciones.color || '#0B5C73';
+  const comun = {interactive:!!opciones.interactivo, pmIgnore:true, snapIgnore:true, bubblingMouseEvents:true};
+  pr.todos.forEach(p => L.polyline([centro, p], {...comun, color:col, weight:opciones.grosor || 6, opacity:1, lineCap:'round'}).addTo(g));
+  L.circleMarker(centro, {...comun, radius:4, color:'#fff', weight:2, fillColor:col, fillOpacity:1}).addTo(g);
+  if (opciones.puertos){
+    [['E', pr.entrada], ['1', pr.salidas[0]], ['2', pr.salidas[1]]].forEach(([t, p], i) => {
+      L.circleMarker(p, {...comun, interactive:false, radius:5, color:col, weight:2, fillColor:i ? '#fff' : '#9FB7BF', fillOpacity:1}).addTo(g);
+      if (opciones.etiquetas) L.marker(p, {interactive:false, keyboard:false, pmIgnore:true, snapIgnore:true,
+        icon:L.divIcon({className:'puerto-conector', html:`<span>${t}</span>`, iconSize:null})}).addTo(g);
+    });
+  }
+  g.centroConector = centro;
+  return g;
+}
+const centroConectorDe = l => l.centroConector || (esPuntoCapa(l) ? l.getLatLng() : null);
+
 /* elementos: [{id, tipo, datos, layer}] */
 function construirRed(elementos){
   const primero = elementos.find(e => e.layer);
@@ -302,6 +342,15 @@ function construirRed(elementos){
     celdas.get(k).push(id);
     return id;
   }
+
+  // 0. Puertos de los conectores (se crean primero para que las tuberías se unan a ellos)
+  const conectorNodos = new Map();
+  elementos.forEach(e => {
+    if (e.tipo !== 'conector' || !e.layer) return;
+    const c = centroConectorDe(e.layer); if (!c) return;
+    const pr = puertosConector(c, e.datos);
+    conectorNodos.set(e.id, {entrada:nodoEn(P.a(pr.entrada)), salidas:pr.salidas.map(p => nodoEn(P.a(p)))});
+  });
 
   // 1. Tramos de tubería
   const segs = [], tuboDir = new Map(), tuboSectores = new Map();
@@ -377,18 +426,31 @@ function construirRed(elementos){
     ady.forEach((_, id) => { const n = nodos[id]; if (enCaja(n, cj) && cercaAnillo(n, an, TOL_RED)) set.add(id); });
     if (set.size) casaNodos.set(e.id, set);
   });
+  const virtual = (a, b, alIr, alVolver, extra) => {
+    if (a === b) return;
+    const e = {id:aristas.length, tubo:null, virtual:true, a, b, pa:nodos[a], pb:nodos[b], len:Math.hypot(nodos[b].x - nodos[a].x, nodos[b].y - nodos[a].y), dir:'', ...extra};
+    aristas.push(e);
+    unir(a, {e, otro:b, puede:alIr});
+    unir(b, {e, otro:a, puede:alVolver});
+  };
+  conectorNodos.forEach((c, id) => c.salidas.forEach(s => virtual(c.entrada, s, true, false, {conector:id})));
+  casaNodos.forEach((set, id) => { const [primero, ...resto] = [...set]; resto.forEach(n => virtual(primero, n, true, true, {casa:id})); });
+  const nodoConectores = new Map();
+  conectorNodos.forEach((c, id) => [c.entrada, ...c.salidas].forEach(n => { if (!nodoConectores.has(n)) nodoConectores.set(n, []); nodoConectores.get(n).push(id); }));
+
   const nodoCasas = new Map(), nodoLlaves = new Map();
   casaNodos.forEach((set, id) => set.forEach(n => { if (!nodoCasas.has(n)) nodoCasas.set(n, []); nodoCasas.get(n).push(id); }));
   llaveNodo.forEach((n, id) => { if (!nodoLlaves.has(n)) nodoLlaves.set(n, []); nodoLlaves.get(n).push(id); });
 
   return {
     nodos, aristas, ady, tuboAristas, tuboDir, tuboSectores, casaNodos, nodoCasas, llaveNodo, nodoLlaves, sectores, P,
+    conectorNodos, nodoConectores,
     /* Punto de tubería más cercano a una posición (a menos de maxM metros) */
     puntoMasCercano(latlng, maxM, soloTubo){
       const p = P.a(latlng);
       let mejor = null;
       aristas.forEach(e => {
-        if (soloTubo && e.tubo !== soloTubo) return;
+        if (e.virtual || (soloTubo && e.tubo !== soloTubo)) return;
         const r = proySeg(p, e.pa, e.pb);
         if (r.d <= maxM && (!mejor || r.d < mejor.d)) mejor = {arista:e, t:r.t, d:r.d, latlng:P.b(r)};
       });
@@ -407,6 +469,7 @@ function nodosDeElemento(red, id, tipo){
   if (tipo === 'tuberia') return (red.tuboAristas.get(id) || []).flatMap(i => [red.aristas[i].a, red.aristas[i].b]);
   if (tipo === 'casa') return [...(red.casaNodos.get(id) || [])];
   if (tipo === 'llave') return red.llaveNodo.has(id) ? [red.llaveNodo.get(id)] : [];
+  if (tipo === 'conector'){ const c = red.conectorNodos.get(id); return c ? [c.entrada, ...c.salidas] : []; }
   return [];
 }
 
@@ -417,7 +480,7 @@ function conectado(red, id, tipo){
   cola.forEach(n => vistos.add(n));
   while (cola.length){
     const n = cola.pop();
-    (red.ady.get(n) || []).forEach(v => { tubos.add(v.e.tubo); if (!vistos.has(v.otro)){ vistos.add(v.otro); cola.push(v.otro); } });
+    (red.ady.get(n) || []).forEach(v => { if (!v.e.virtual) tubos.add(v.e.tubo); if (!vistos.has(v.otro)){ vistos.add(v.otro); cola.push(v.otro); } });
   }
   vistos.forEach(n => { (red.nodoCasas.get(n) || []).forEach(c => casas.add(c)); (red.nodoLlaves.get(n) || []).forEach(k => llaves.add(k)); });
   if (tipo === 'tuberia') tubos.add(id);
@@ -468,10 +531,10 @@ function camino(red, A, B){
    Devuelve: formas (ids que se pintan completos en rojo), piezas (partes de
    tubería en rojo), puntos (marcadores del problema) y listas por tipo. */
 function afectacion(red, inc, origen){
-  const res = {formas:new Set(), piezas:[], puntos:[], tubos:new Set(), casas:new Set(), llaves:new Set(), sectores:new Set()};
+  const res = {formas:new Set(), piezas:[], puntos:[], tubos:new Set(), casas:new Set(), llaves:new Set(), sectores:new Set(), conectores:new Set()};
   if (!origen) return res;
   const cob = new Map(), alcanzados = new Set();
-  const cubrir = (id, t0, t1) => { if (t1 - t0 <= EPS) return; if (!cob.has(id)) cob.set(id, []); cob.get(id).push([t0, t1]); };
+  const cubrir = (id, t0, t1) => { if (t1 - t0 <= EPS || red.aristas[id].virtual) return; if (!cob.has(id)) cob.set(id, []); cob.get(id).push([t0, t1]); };
   const propagar = inc.propagar === true || (inc.propagar == null && inc.alcance === 'red');
   const bfs = (ini, dirigido) => {
     const cola = [...ini];
@@ -545,6 +608,7 @@ function afectacion(red, inc, origen){
   alcanzados.forEach(n => {
     (red.nodoCasas.get(n) || []).forEach(c => res.casas.add(c));
     (red.nodoLlaves.get(n) || []).forEach(k => res.llaves.add(k));
+    (red.nodoConectores.get(n) || []).forEach(k => res.conectores.add(k));
   });
   if (inc.sectores_enlazados) res.tubos.forEach(t => (red.tuboSectores.get(t) || []).forEach(s => res.sectores.add(s)));
   if (inc.sector_id) res.sectores.add(inc.sector_id);
@@ -552,6 +616,7 @@ function afectacion(red, inc, origen){
   [...res.sectores].forEach(s => { if (!existeSector.has(s)) res.sectores.delete(s); });
   res.casas.forEach(c => res.formas.add(c));
   res.llaves.forEach(k => res.formas.add(k));
+  res.conectores.forEach(k => res.formas.add(k));
   res.sectores.forEach(s => res.formas.add(s));
   return res;
 }
@@ -615,6 +680,6 @@ function hace(iso){
 }
 
 window.Acu = {TIPOS, SIN_FLUJO, ImagenEsri, esc, num, cliente, traerTodo, crearMapa, capaDesdeGeom, fechaHora, hace,
-  COLOR_TUBERIA, ROJO, construirRed, conectado, afectacion, textoAfectacion, dibujarFlechas, iconoIncidencia, centroDe,
+  COLOR_TUBERIA, ROJO, BRAZO, puertosConector, formaConector, construirRed, conectado, afectacion, textoAfectacion, dibujarFlechas, iconoIncidencia, centroDe,
   opacidadSector, estiloSector, quitarClasesSector, etiquetaSector, ponerEtiquetaSector, ponerTooltip, desde};
 })();

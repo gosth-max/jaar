@@ -52,6 +52,7 @@ function nombreElemento(r){
   if (r.tipo === 'tuberia') return (d.clase === 'acometida' ? 'Acometida' : 'Tubería') + (d.nombre ? ' ' + d.nombre : '');
   if (r.tipo === 'llave') return d.nombre ? 'Llave ' + d.nombre : 'Llave';
   if (r.tipo === 'sector') return d.nombre || 'Sector';
+  if (r.tipo === 'conector') return 'Unión en ' + (d.forma === 'Y' ? 'Y' : 'T') + (d.nombre ? ': ' + d.nombre : '');
   return 'Elemento';
 }
 const lugarDe = inc => { const o = capas.get(inc.forma_id); return o ? nombreElemento(o.fila) : 'la red'; };
@@ -65,6 +66,11 @@ const marcar = (layer, cls, si) => { const el = layer.getElement && layer.getEle
 
 function estilo(layer){
   const r = layer.fila, d = r.datos || {};
+  if (r.tipo === 'conector'){
+    const lista = afectados.get(r.id);
+    layer.setStyle({color:lista && lista.length ? (lista[0].color || ROJO) : '#0B5C73'});
+    return;
+  }
   const esPunto = layer instanceof L.CircleMarker, esPol = layer instanceof L.Polygon;
   const lista = afectados.get(r.id);
   if (lista && lista.length){
@@ -105,6 +111,7 @@ function contenidoPopup(layer){
     if (secs.length) meta.push('Abastece: ' + esc(secs.join(', ')));
   }
   if (r.tipo === 'llave') meta.push(d.estado === 'cerrada' ? 'Llave cerrada' : 'Llave abierta');
+  if (r.tipo === 'conector') meta.push('Divide el agua en dos tuberías');
   if (r.tipo === 'sector') meta.push(esc((d.activo ? 'Con agua ' : 'Sin agua ') + Acu.desde(d.activoDesde)));
   const estado = lista.length
     ? `<div class="estado mal">${lista.map(i => `⚠ ${esc(i.tipo)}<small>${esc(explicacion(i, r.id))} · desde ${esc(Acu.fechaHora(i.creada_en))}${i.detalle_publico ? '<br>' + esc(i.detalle_publico) : ''}</small>`).join('')}</div>`
@@ -115,8 +122,11 @@ function contenidoPopup(layer){
 function quitar(id){ const l = capas.get(id); if (!l) return; Object.values(grupos).forEach(g => g.removeLayer(l)); capas.delete(id); versionGeo++; }
 function agregar(r){
   quitar(r.id);
-  const grupo = grupos[r.tipo]; if (!grupo) return;
-  const layer = Acu.capaDesdeGeom(r.geometria); if (!layer) return;
+  const grupo = grupos[r.tipo === 'conector' ? 'tuberia' : r.tipo]; if (!grupo) return;
+  const layer = r.tipo === 'conector'
+    ? (r.geometria && r.geometria.type === 'Point' ? Acu.formaConector(L.latLng(r.geometria.coordinates[1], r.geometria.coordinates[0]), r.datos, {interactivo:true, grosor:5}) : null)
+    : Acu.capaDesdeGeom(r.geometria);
+  if (!layer) return;
   layer.fila = r;
   layer.addTo(grupo);
   capas.set(r.id, layer);
@@ -639,6 +649,7 @@ function suscribir(){
     return;
   }
   sb.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT'){ sesion = null; perfil = null; pintarCuenta(); renderVistaActual(); } });
+  if (window.__PRUEBAS) window.__pub = {map, capas, red};   // solo para pruebas automáticas
   setInterval(() => cargar().catch(() => {}), 120000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) cargar().catch(() => {}); });
 })();

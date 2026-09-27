@@ -49,3 +49,7 @@ path.con-incidencia{animation:acu-alerta 1.6s ease-in-out infinite}
 .popup-acu .estado.ok{background:#E3F2E9;color:#2F8F5B}
 .popup-acu .estado.mal{background:#FDECEA;color:#B3261E}
 .popup-acu .estado small{display:block;font-weight:400;color:#5B7078}
+
+/* Conectores en T / Y: letras de las puntas (E = entrada, 1 y 2 = salidas) */
+.puerto-conector span{display:inline-block;transform:translate(-50%,-150%);background:#0B5C73;color:#fff;font:700 10px/1 system-ui,sans-serif;
+  padding:2px 4px;border-radius:4px;white-space:nowrap;pointer-events:none}

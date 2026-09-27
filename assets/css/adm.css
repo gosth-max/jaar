@@ -382,3 +382,43 @@ input[type=email]{background:var(--blanco);border:1px solid var(--linea);border-
 .submenu .correo b{color:var(--tinta)}
 .pin-reporte span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1D6FA3;
   color:#fff;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);font:700 12px system-ui}
+
+/* =================== Panel de detalles (ordenado) =================== */
+.p-cuerpo{padding:10px 14px 20px}
+.p-barra{display:flex;gap:6px;flex-wrap:wrap;margin:2px 0 10px}
+.p-acc{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--linea);background:var(--blanco);border-radius:999px;
+  padding:6px 11px;font-weight:700;font-size:13px;color:var(--tinta)}
+.p-acc span{font-size:14px;line-height:1}
+.p-acc:hover{border-color:var(--agua);background:var(--agua-claro)}
+.p-acc.on{background:var(--agua);border-color:var(--agua);color:#fff}
+.p-estado{background:var(--agua-claro);border-radius:12px;padding:10px 12px;font-size:13.5px;margin-bottom:12px}
+.p-estado.aviso{background:#FBF0D8;color:#5C4304}
+.p-estado p{margin:0 0 4px}
+.p-estado .fila{margin-top:8px}
+.p-estado .interruptor{margin:2px 0 4px}
+.p-estado .tipos{margin-top:8px}
+.p-tabs{display:flex;border-bottom:1px solid var(--linea);margin:0 -14px 4px;padding:0 14px;gap:2px;position:sticky;top:52px;background:var(--blanco);z-index:1}
+.p-tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:9px 10px 8px;font-weight:700;font-size:14px;color:var(--suave);display:flex;gap:5px;align-items:center}
+.p-tabs button[aria-selected="true"]{color:var(--agua);border-bottom-color:var(--agua)}
+.p-tabs .badge{font-size:11px;min-width:18px;height:18px}
+.p-tab{padding-top:4px}
+.p-tab .campo{margin:8px 0}
+.p-tab h4{margin:14px 0 6px}
+.p-mas{margin-top:18px;border-top:1px solid var(--linea);padding-top:10px}
+.p-mas summary{cursor:pointer;font-weight:700;color:var(--suave);font-size:14px}
+.p-mas[open] summary{margin-bottom:6px}
+.p-mas .tipos{margin-top:4px}
+.tipos{grid-template-columns:repeat(3,1fr)}
+.puertos{list-style:none;margin:0 0 6px;padding:0;display:grid;gap:6px}
+.puertos li{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.7);border-radius:8px;padding:6px 8px}
+.puertos .nom{flex:1;min-width:0;font-weight:700}
+.puertos small{display:block;font-weight:400;color:var(--suave);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.puerto{display:grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#0B5C73;color:#fff;font-weight:700;font-size:12px;flex:none}
+.puerto.p0{background:#5F7F89}
+/* Limpieza de pruebas (desarrollador) */
+.limpieza{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;background:#FFF6E0;border:1px dashed #E0A526;border-radius:10px;padding:8px 12px;margin-bottom:12px;font-size:14px}
+.limpieza .check{margin:0}
+.limpieza small{color:var(--suave)}
+.sel-inc{margin:3px 8px 0 0;accent-color:var(--bad);width:16px;height:16px;flex:none}
+.inc .inc-cab{align-items:flex-start}
+.inc .inc-cab b{flex:1}
