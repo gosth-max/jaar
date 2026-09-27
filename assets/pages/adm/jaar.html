@@ -203,20 +203,33 @@
 
   <section class="vista" data-vista="usuarios/administradores" hidden>
     <div class="cab-vista"><div><h1>Administradores</h1><p>Personas que pueden gestionar el acueducto.</p></div></div>
-    <p class="nota intro-seccion" id="admAviso">Solo el desarrollador puede agregar, cambiar o eliminar administradores.</p>
+    <p class="nota intro-seccion" id="admAviso">Los administradores son miembros de la junta directiva o del personal del acueducto. Solo el desarrollador puede nombrarlos, cambiar su cargo o quitarles el acceso.</p>
     <div id="admTabla"></div>
-    <article class="tarjeta invitar" id="admInvitar" hidden>
-      <header><h2>Invitar a un administrador</h2></header>
-      <form id="formInvitarAdm" class="form-invitar">
-        <label class="campo"><span>Nombre de usuario</span><input type="text" name="nombre" required minlength="3" maxlength="120"></label>
-        <label class="campo"><span>Correo</span><input type="email" name="email" required maxlength="160"></label>
-        <label class="campo"><span>Celular</span><input type="tel" name="celular" maxlength="20"></label>
-        <label class="campo"><span>Número de casa</span><input type="text" name="numero_casa" maxlength="20"></label>
-        <label class="campo"><span>Rol</span><select name="rol"><option value="administrador">Administrador</option><option value="desarrollador">Desarrollador</option></select></label>
-        <div class="fila"><button class="btn primario" type="submit">Enviar invitación</button></div>
-      </form>
-      <p class="nota">Recibirá un correo para crear su contraseña.</p>
-    </article>
+    <div class="rejilla-adm">
+      <article class="tarjeta" id="admAscender" hidden>
+        <header><h2>Hacer administrador a un vecino</h2></header>
+        <p class="nota" style="margin-top:0">Para ser administrador, la persona debe tener primero su cuenta de vecino aprobada.</p>
+        <label class="campo"><span>Vecino</span><select id="ascVecino"></select></label>
+        <div class="dos">
+          <label class="campo"><span>Cargo</span><select id="ascCargo"></select></label>
+          <label class="campo"><span>Trato</span><select id="ascTrato"><option value="M">Caballero</option><option value="F">Dama</option></select></label>
+        </div>
+        <div class="fila"><button class="btn primario" id="ascBoton">Hacer administrador</button></div>
+      </article>
+      <article class="tarjeta" id="admCargos" hidden>
+        <header><h2>Cargos</h2></header>
+        <div id="cargosLista"></div>
+        <h3 class="dlg-sub">Agregar otro cargo</h3>
+        <form id="formCargo">
+          <div class="dos">
+            <label class="campo"><span>Nombre (caballero)</span><input type="text" id="cgMasc" maxlength="60" placeholder="Ej. Fontanero"></label>
+            <label class="campo"><span>Nombre (dama)</span><input type="text" id="cgFem" maxlength="60" placeholder="Ej. Fontanera"></label>
+          </div>
+          <label class="campo"><span>Tipo</span><select id="cgGrupo"><option value="otro">Otro cargo</option><option value="junta">Junta directiva</option></select></label>
+          <div class="fila"><button class="btn" type="submit">Agregar cargo</button></div>
+        </form>
+      </article>
+    </div>
   </section>
 
   <section class="vista" data-vista="sectores" hidden>
@@ -307,7 +320,7 @@
   <header><h2 id="perfTitulo">Mi perfil</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
   <div class="modal-cuerpo">
     <p class="aviso-temporal" id="miAvisoTemporal" hidden>🔑 Estás usando una contraseña temporal. Cámbiala por una que solo tú conozcas.</p>
-    <p class="nota">Correo: <b id="miCorreo"></b></p>
+    <p class="nota">Correo: <b id="miCorreo"></b><br>Cargo: <b id="miCargo"></b></p>
     <label class="campo"><span>Nombre</span><input type="text" id="miNombre" maxlength="120"></label>
     <label class="campo"><span>Celular</span><input type="tel" id="miCelular" maxlength="20"></label>
     <div class="fila"><button class="btn" id="miGuardar">Guardar datos</button></div>

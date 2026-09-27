@@ -441,3 +441,13 @@ input[type=email]{background:var(--blanco);border:1px solid var(--linea);border-
 .mensaje-form{border-radius:10px;padding:9px 12px;font-size:14px;margin:10px 0 0}
 .mensaje-form.ok{background:#E3F2E9;color:#1F6B42} .mensaje-form.mal{background:#FDECEA;color:#8C1D18}
 input[type=password]{background:var(--blanco);border:1px solid var(--linea);border-radius:7px;padding:7px 9px;width:100%}
+
+/* =================== Administradores y cargos =================== */
+.rejilla-adm{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px;margin-top:16px;align-items:start}
+.lista-cargos{list-style:none;margin:0;padding:0;border:1px solid var(--linea);border-radius:10px;overflow:hidden}
+.lista-cargos li{display:flex;align-items:center;gap:8px;padding:7px 10px;font-size:14px}
+.lista-cargos li+li{border-top:1px solid var(--linea)}
+.lista-cargos .nom{flex:1}
+#admTabla td{white-space:nowrap}
+#admTabla .sel-cargo{min-width:150px}
+#admTabla .sel-trato{min-width:112px}

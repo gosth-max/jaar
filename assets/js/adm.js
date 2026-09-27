@@ -237,6 +237,7 @@ function suscribir(){
       cargarUsuariosPronto();
     })
     .on('postgres_changes', {event:'*', schema:'public', table:'perfiles'}, cargarUsuariosPronto)
+    .on('postgres_changes', {event:'*', schema:'public', table:'cargos'}, cargarUsuariosPronto)
     .subscribe(status => { enVivo = status === 'SUBSCRIBED'; pintarSync(); });
 }
 function aplicarFilaForma(r){
@@ -2303,14 +2304,20 @@ async function cargarUsuarios(){
     const limite = new Date(Date.now() - 183 * 864e5).toISOString();
     sb.from('solicitudes_registro').delete().neq('estado', 'pendiente').lt('revisada_en', limite).then(() => {}, () => {});
   }
-  const [s, p, r] = await Promise.all([
+  const [s, p, r, c, a] = await Promise.all([
     sb.from('solicitudes_registro').select('*').order('created_at', {ascending:false}).limit(300),
     sb.from('perfiles').select('*').order('created_at', {ascending:true}),
-    sb.from('reportes').select('*, perfiles(nombre, celular, numero_casa, email)').order('created_at', {ascending:false}).limit(500)
+    sb.from('reportes').select('*, perfiles(nombre, celular, numero_casa, email)').order('created_at', {ascending:false}).limit(500),
+    sb.from('cargos').select('*'),
+    sb.rpc('lista_administradores')
   ]);
   if (!s.error) solicitudes = s.data || [];
   if (!p.error) perfilesLista = p.data || [];
   if (!r.error) reportesLista = r.data || [];
+  if (!c.error) cargosLista = c.data || [];
+  if (!a.error) adminsLista = a.data || [];
+  const yo = adminsLista.find(x => x.id === miPerfil.id);
+  if (yo){ Object.assign(miPerfil, {cargo:yo.cargo, genero:yo.genero}); document.querySelectorAll('[data-rol]').forEach(e => { e.textContent = etiquetaCuenta(miPerfil); }); }
   actualizarBadges();
   if (/^usuarios\/|^incidencias\/reportes|^inicio$/.test(vistaActual || '')) renderVistaActual();
 }
@@ -2371,7 +2378,7 @@ async function guardarMiPerfil(){
   if (error){ aviso(explicarError(error)); return; }
   aviso(data.mensaje);
   if (data.ok){ miPerfil.nombre = $('#miNombre').value.trim(); miPerfil.celular = $('#miCelular').value.trim();
-    document.querySelectorAll('[data-rol]').forEach(e => { e.textContent = miPerfil.nombre + ' · ' + NOMBRE_ROL[miPerfil.rol]; }); cargarUsuarios(); }
+    document.querySelectorAll('[data-rol]').forEach(e => { e.textContent = etiquetaCuenta(miPerfil); }); cargarUsuarios(); }
 }
 async function cambiarMiClave(){
   const a = $('#miClave').value, b = $('#miClave2').value, msg = $('#miClaveMsg');
@@ -2394,6 +2401,7 @@ function abrirMiPerfil(){
   $('#miNombre').value = miPerfil.nombre || '';
   $('#miCelular').value = miPerfil.celular || '';
   $('#miCorreo').textContent = miPerfil.email || '';
+  $('#miCargo').textContent = nombreCargo(miPerfil) || NOMBRE_ROL[miPerfil.rol];
   $('#miAvisoTemporal').hidden = !miPerfil.debe_cambiar_clave;
   $('#miClaveMsg').hidden = true;
   $('#dlgPerfil').showModal();
@@ -2444,11 +2452,11 @@ function renderSolicitudes(){
       <p class="verificacion ${coinciden.length ? 'ok' : 'no'}">${verif}</p>
       ${pendiente ? `
         <label class="campo"><span>Vincular a la casa</span><select data-casa-sol="${esc(s.id)}">${opcionesCasas(coinciden[0] && coinciden[0].aq.id)}</select></label>
-        <div class="modo-acceso">
+        ${esDev() ? `<div class="modo-acceso">
           <label class="check"><input type="radio" name="modo-${esc(s.id)}" value="clave" checked><span><b>Crear su contraseña ahora</b> (no se envía correo)</span></label>
           <div data-caja-clave="${esc(s.id)}">${campoClave(`data-clave-sol="${esc(s.id)}"`, 'Contraseña temporal')}</div>
           <label class="check"><input type="radio" name="modo-${esc(s.id)}" value="correo"><span>Enviarle un correo para que la cree</span></label>
-        </div>
+        </div>` : '<p class="nota">Al aprobar, se le enviará un correo para crear su contraseña. Si prefieres no usar el correo, pide al desarrollador que la apruebe.</p>'}
         <div class="fila"><button class="btn primario" data-aprobar="${esc(s.id)}">Aprobar</button><button class="btn peligro" data-rechazar="${esc(s.id)}">Rechazar</button></div>`
       : `<p class="nota">${s.estado === 'aprobada' ? 'Aprobada' : 'Rechazada'} ${s.revisada_en ? 'el ' + esc(Acu.fechaHora(s.revisada_en)) : ''}${s.motivo ? ' · Motivo: ' + esc(s.motivo) : ''}</p>`}
     </article>`;
@@ -2460,7 +2468,8 @@ function renderSolicitudes(){
   }));
   cont.querySelectorAll('[data-aprobar]').forEach(b => b.addEventListener('click', async () => {
     const s = solicitudes.find(x => x.id === b.dataset.aprobar); if (!s) return;
-    const conClave = cont.querySelector(`input[name="modo-${s.id}"]:checked`).value === 'clave';
+    const modo = cont.querySelector(`input[name="modo-${s.id}"]:checked`);
+    const conClave = !!modo && modo.value === 'clave';
     const clave = conClave ? cont.querySelector(`[data-clave-sol="${s.id}"]`).value.trim() : '';
     if (conClave && clave.length < 8){ aviso('La contraseña debe tener al menos 8 caracteres.'); return; }
     if (!confirm(conClave ? `¿Aprobar a ${s.nombre} con la contraseña «${clave}»?` : `¿Aprobar a ${s.nombre}? Se le enviará un correo a ${s.email}.`)) return;
@@ -2494,18 +2503,23 @@ function accionesCuenta(p, puedeGestionar){
     ${p.estado === 'activo'
       ? `<button class="btn chico" data-suspender="${esc(p.id)}">Suspender</button>`
       : `<button class="btn chico" data-reactivar="${esc(p.id)}">Reactivar</button>`}
-    <button class="btn chico" data-nueva-clave="${esc(p.id)}" title="Pone una contraseña temporal, sin enviar correos">Nueva contraseña</button>
+    ${esDev() ? `<button class="btn chico" data-nueva-clave="${esc(p.id)}" title="Pone una contraseña temporal, sin enviar correos">Nueva contraseña</button>
+      ${p.rol === 'vecino' && p.estado === 'activo' ? `<button class="btn chico" data-hacer-admin="${esc(p.id)}">Hacer administrador</button>` : ''}` : ''}
     <button class="btn chico peligro" data-eliminar-cuenta="${esc(p.id)}">Eliminar</button></div>`;
 }
 function enlazarCuentas(cont){
-  const buscar = id => perfilesLista.find(p => p.id === id);
+  const buscar = id => perfilesLista.find(p => p.id === id) || adminsLista.find(p => p.id === id);
   cont.querySelectorAll('[data-suspender]').forEach(b => b.addEventListener('click', () => {
     const p = buscar(b.dataset.suspender);
     if (p && confirm(`¿Suspender la cuenta de ${p.nombre || p.email}? No podrá entrar hasta que la reactives.`)) cambiarPerfil(p.id, {estado:'suspendido'}, 'Cuenta suspendida.');
   }));
   cont.querySelectorAll('[data-reactivar]').forEach(b => b.addEventListener('click', () => cambiarPerfil(b.dataset.reactivar, {estado:'activo'}, 'Cuenta reactivada.')));
+  cont.querySelectorAll('[data-hacer-admin]').forEach(b => b.addEventListener('click', () => {
+    location.hash = '#/usuarios/administradores';
+    setTimeout(() => { $('#ascVecino').value = b.dataset.hacerAdmin; $('#ascCargo').focus(); $('#admAscender').scrollIntoView({block:'center'}); }, 150);
+  }));
   cont.querySelectorAll('[data-nueva-clave]').forEach(b => b.addEventListener('click', async () => {
-    const p = buscar(b.dataset.nuevaClave); if (!p) return;
+    const p = buscar(b.dataset.nuevaClave) || adminsLista.find(x => x.id === b.dataset.nuevaClave); if (!p) return;
     const clave = prompt(`Contraseña temporal para ${p.nombre || p.email} (mínimo 8 caracteres). Podrá cambiarla al entrar:`, generarClave());
     if (clave === null) return;
     if (clave.trim().length < 8){ aviso('La contraseña debe tener al menos 8 caracteres.'); return; }
@@ -2555,20 +2569,102 @@ function renderVecinos(){
   const todos = perfilesLista.filter(p => p.rol === 'vecino');
   const lista = todos.filter(p => !q || [p.nombre, p.email, p.celular, p.numero_casa].join(' ').toLowerCase().includes(q));
   $('#vecConteo').textContent = `${lista.length} de ${todos.length} vecinos`;
+  campoClaveVecino();
   const cont = $('#vecTabla');
   cont.innerHTML = tablaCuentas(lista, {vacio: todos.length ? 'Ningún vecino coincide con la búsqueda.' : 'Todavía no hay vecinos con cuenta. Aparecerán aquí al aprobar sus solicitudes.',
     puedeGestionar: () => true, editarCasa: true});
   enlazarCuentas(cont);
 }
 $('#vecBusca').addEventListener('input', debounce(renderVecinos, 200));
-function renderAdministradores(){
-  const lista = perfilesLista.filter(p => p.rol !== 'vecino');
-  $('#admAviso').hidden = esDev();
-  $('#admInvitar').hidden = !esDev();
-  const cont = $('#admTabla');
-  cont.innerHTML = tablaCuentas(lista, {vacio:'No hay administradores.', conRol:true, puedeGestionar: () => esDev(), editarCasa:false});
-  enlazarCuentas(cont);
+/* --- Administradores: salen de los vecinos; cargos de la junta (solo el desarrollador gestiona) --- */
+let cargosLista = [], adminsLista = [];
+const cargoDe = id => cargosLista.find(c => c.id === id);
+function nombreCargo(p){ const c = p && cargoDe(p.cargo); return c ? (p.genero === 'F' ? c.femenino : c.masculino) : ''; }
+function etiquetaCuenta(p){ return (p.nombre ? p.nombre + ' · ' : '') + (nombreCargo(p) || NOMBRE_ROL[p.rol]); }
+function opcionesCargo(sel, genero){
+  const grupo = (g, titulo) => {
+    const l = cargosLista.filter(c => c.grupo === g).sort((a, b) => a.orden - b.orden || a.masculino.localeCompare(b.masculino, 'es'));
+    return l.length ? `<optgroup label="${titulo}">${l.map(c => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(genero === 'F' ? c.femenino : c.masculino)}</option>`).join('')}</optgroup>` : '';
+  };
+  return `<option value="">Sin cargo</option>${grupo('junta', 'Junta directiva')}${grupo('otro', 'Otros cargos')}`;
 }
+const opcionesTrato = sel => `<option value="M" ${sel !== 'F' ? 'selected' : ''}>Caballero</option><option value="F" ${sel === 'F' ? 'selected' : ''}>Dama</option>`;
+
+function renderAdministradores(){
+  const dev = esDev();
+  $('#admAviso').hidden = dev;
+  $('#admAscender').hidden = !dev;
+  $('#admCargos').hidden = !dev;
+  const cont = $('#admTabla');
+  if (!adminsLista.length){ cont.innerHTML = '<div class="vacio-grande">No hay administradores.</div>'; return; }
+  cont.innerHTML = `<div class="tabla-cont"><table class="tabla">
+    <thead><tr><th>Nombre</th><th>Cargo</th>${dev ? '<th>Trato</th><th>Correo</th>' : ''}<th>Celular</th><th>Casa</th><th>Estado</th>${dev ? '<th></th>' : ''}</tr></thead>
+    <tbody>${adminsLista.map(p => {
+      const casa = p.casa_id && capas.get(p.casa_id), yo = p.id === miPerfil.id;
+      return `<tr>
+        <td><b>${esc(p.nombre || '—')}</b>${p.rol === 'desarrollador' ? ' <span class="pill ok">Desarrollador</span>' : ''}${yo ? ' <span class="nota">(tú)</span>' : ''}</td>
+        <td>${dev ? `<select class="sel-chico sel-cargo" data-cargo="${esc(p.id)}">${opcionesCargo(p.cargo, p.genero)}</select>` : esc(nombreCargo(p) || '—')}</td>
+        ${dev ? `<td><select class="sel-chico sel-trato" data-genero="${esc(p.id)}">${opcionesTrato(p.genero)}</select></td><td>${esc(p.email || '—')}</td>` : ''}
+        <td>${telLink(p.celular)}</td>
+        <td>${esc(casa ? nombreCasa(casa.aq.datos) : (p.numero_casa ? 'Casa ' + p.numero_casa : '—'))}</td>
+        <td><span class="pill ${p.estado === 'activo' ? 'ok' : 'bad'}">${p.estado === 'activo' ? 'Activa' : 'Suspendida'}</span></td>
+        ${dev ? `<td>${yo || p.rol === 'desarrollador' ? '' : `<div class="fila acciones-cuenta">
+            ${p.estado === 'activo' ? `<button class="btn chico" data-suspender="${esc(p.id)}">Suspender</button>` : `<button class="btn chico" data-reactivar="${esc(p.id)}">Reactivar</button>`}
+            <button class="btn chico" data-nueva-clave="${esc(p.id)}">Nueva contraseña</button>
+            <button class="btn chico peligro" data-bajar="${esc(p.id)}">Bajar a vecino</button></div>`}</td>` : ''}
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+  enlazarCuentas(cont);
+  cont.querySelectorAll('[data-cargo]').forEach(s => s.addEventListener('change', () => cambiarPerfil(s.dataset.cargo, {cargo:s.value || null}, 'Cargo actualizado.')));
+  cont.querySelectorAll('[data-genero]').forEach(s => s.addEventListener('change', () => cambiarPerfil(s.dataset.genero, {genero:s.value}, 'Listo: el cargo se muestra como ' + (s.value === 'F' ? 'dama.' : 'caballero.'))));
+  cont.querySelectorAll('[data-bajar]').forEach(b => b.addEventListener('click', () => {
+    const p = adminsLista.find(x => x.id === b.dataset.bajar);
+    if (p && confirm(`¿Quitarle la administración a ${p.nombre || 'esta persona'}? Vuelve a ser vecino: conserva su cuenta y sus reportes, pero pierde el cargo y el acceso a la administración.`))
+      cambiarPerfil(p.id, {rol:'vecino'}, 'Ahora es vecino.');
+  }));
+  if (dev){ renderAscender(); renderCargos(); }
+}
+function renderAscender(){
+  const vecinos = perfilesLista.filter(p => p.rol === 'vecino' && p.estado === 'activo')
+    .sort((a, b) => String(a.nombre || '').localeCompare(String(b.nombre || ''), 'es'));
+  $('#ascVecino').innerHTML = vecinos.length
+    ? '<option value="">Elige un vecino</option>' + vecinos.map(p => `<option value="${esc(p.id)}">${esc(p.nombre || p.email)}${p.numero_casa ? ' — casa ' + esc(p.numero_casa) : ''}</option>`).join('')
+    : '<option value="">No hay vecinos activos</option>';
+  const cargoSel = $('#ascCargo').value;
+  $('#ascCargo').innerHTML = opcionesCargo(cargoSel, $('#ascTrato').value);
+}
+$('#ascTrato').addEventListener('change', () => { const v = $('#ascCargo').value; $('#ascCargo').innerHTML = opcionesCargo(v, $('#ascTrato').value); });
+$('#ascBoton').addEventListener('click', () => {
+  const id = $('#ascVecino').value, p = perfilesLista.find(x => x.id === id);
+  if (!p){ aviso('Elige el vecino que será administrador.'); return; }
+  const cargo = $('#ascCargo').value || null, genero = $('#ascTrato').value;
+  const nc = nombreCargo({cargo, genero});
+  if (!confirm(`¿Dar acceso a la administración a ${p.nombre || p.email}${nc ? ' como ' + nc : ''}?`)) return;
+  cambiarPerfil(p.id, {rol:'administrador', cargo, genero}, `${p.nombre || 'La persona'} ahora ${genero === 'F' ? 'es administradora' : 'es administrador'}.`);
+});
+function renderCargos(){
+  const fila = c => `<li><span class="nom"><b>${esc(c.masculino)}</b>${c.femenino !== c.masculino ? ' / ' + esc(c.femenino) : ''}</span>
+    ${c.predefinido ? '<span class="nota">predefinido</span>' : `<button class="btn chico peligro" data-borrar-cargo="${esc(c.id)}">Quitar</button>`}</li>`;
+  const grupo = g => cargosLista.filter(c => c.grupo === g).sort((a, b) => a.orden - b.orden || a.masculino.localeCompare(b.masculino, 'es')).map(fila).join('');
+  $('#cargosLista').innerHTML = `<h3 class="dlg-sub">Junta directiva</h3><ul class="lista-cargos">${grupo('junta')}</ul>
+    <h3 class="dlg-sub">Otros cargos</h3><ul class="lista-cargos">${grupo('otro')}</ul>`;
+  $('#cargosLista').querySelectorAll('[data-borrar-cargo]').forEach(b => b.addEventListener('click', async () => {
+    const c = cargoDe(b.dataset.borrarCargo);
+    if (!c || !confirm(`¿Quitar el cargo «${c.masculino}»? Quien lo tenga quedará sin cargo.`)) return;
+    if (await tarea(sb.from('cargos').delete().eq('id', c.id), 'No se pudo quitar el cargo')){ aviso('Cargo quitado.'); cargarUsuarios(); }
+  }));
+}
+$('#formCargo').addEventListener('submit', async e => {
+  e.preventDefault();
+  const masc = $('#cgMasc').value.trim(), fem = $('#cgFem').value.trim() || masc, grupo = $('#cgGrupo').value;
+  if (masc.length < 2){ aviso('Escribe el nombre del cargo.'); return; }
+  const id = masc.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || uid();
+  if (cargoDe(id)){ aviso('Ese cargo ya existe.'); return; }
+  const orden = Math.max(0, ...cargosLista.filter(c => c.grupo === grupo).map(c => c.orden)) + 1;
+  if (await tarea(sb.from('cargos').insert({id, masculino:masc, femenino:fem, grupo, orden}), 'No se pudo agregar el cargo')){
+    aviso(`Cargo «${masc}» agregado.`); e.target.reset(); cargarUsuarios();
+  }
+});
 
 /* --- Formularios para invitar directamente --- */
 function formInvitar(formSel, rolFijo){
@@ -2585,14 +2681,15 @@ function formInvitar(formSel, rolFijo){
     if (r && r.ok){
       if (r.con_clave) mostrarCredenciales({nombre:d.nombre, email:d.email, clave, celular:d.celular});
       else aviso(r.mensaje, 8000);
-      f.reset(); f.querySelector('[name=clave]').value = generarClave(); cargarUsuarios();
+      f.reset(); if (f.querySelector('[name=clave]')) f.querySelector('[name=clave]').value = generarClave(); cargarUsuarios();
     }
   });
-  const hueco = f.querySelector('.fila');
-  hueco.insertAdjacentHTML('beforebegin', campoClave('name="clave"', 'Contraseña temporal (déjala vacía para enviar un correo)'));
-  enlazarGenerar(f);
 }
-formInvitar('#formInvitarAdm', null);
+function campoClaveVecino(){
+  const f = $('#formInvitarVec'), hay = f.querySelector('[name=clave]');
+  if (esDev() && !hay){ f.querySelector('.fila').insertAdjacentHTML('beforebegin', campoClave('name="clave"', 'Contraseña temporal (déjala vacía para enviar un correo)')); enlazarGenerar(f); }
+  if (!esDev() && hay) hay.closest('.campo').remove();
+}
 formInvitar('#formInvitarVec', 'vecino');
 
 /* --- Reportes de los vecinos --- */
@@ -2828,7 +2925,9 @@ async function verificarBaseDatos(){
     ['solicitudes_registro', 'id'],
     ['reportes', 'id'],
     ['configuracion', 'id,whatsapp,whatsapp_activo,correo_contacto'],
-    ['incidencias', 'id,publica,detalle_publico']
+    ['incidencias', 'id,publica,detalle_publico'],
+    ['perfiles', 'id,cargo,genero'],
+    ['cargos', 'id']
   ];
   const faltan = [];
   for (const [tabla, cols] of pruebas){
@@ -2861,7 +2960,7 @@ async function iniciarApp(session){
   }
   miPerfil = perfil;
   if (perfil.debe_cambiar_clave) setTimeout(() => { abrirMiPerfil(); aviso('Estás usando una contraseña temporal: cámbiala por una tuya.', 7000); }, 800);
-  document.querySelectorAll('[data-rol]').forEach(e => { e.textContent = (perfil.nombre ? perfil.nombre + ' · ' : '') + NOMBRE_ROL[perfil.rol]; });
+  document.querySelectorAll('[data-rol]').forEach(e => { e.textContent = (perfil.nombre ? perfil.nombre + ' · ' : '') + NOMBRE_ROL[perfil.rol]; });   // se completa con el cargo al cargar
   mensaje('<h2>Cargando el mapa…</h2><p class="nota">Descargando casas, tuberías, llaves, sectores y pagos.</p>');
   try {
     await cargarTodo();
