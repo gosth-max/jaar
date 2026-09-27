@@ -9,11 +9,13 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<!-- Números más claros: Inter solo para los dígitos (las letras siguen con Atkinson Hyperlegible) -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&text=0123456789" rel="stylesheet">
 <style>
   :root{--papel:#F2F6F7;--blanco:#fff;--tinta:#15323B;--suave:#5B7078;--linea:#D5E0E3;--agua:#1D6FA3;--agua-claro:#E1EEF6}
   *{box-sizing:border-box}
   html{scroll-padding-top:20px}
-  body{margin:0;font-family:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);background:var(--papel);line-height:1.6;font-size:16px}
+  body{margin:0;font-family:"Inter","Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);background:var(--papel);line-height:1.6;font-size:16px}
   :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
   a{color:var(--agua)}
   header{background:var(--blanco);border-bottom:1px solid var(--linea)}
@@ -42,167 +44,43 @@
 <body>
 <header><div class="dentro">
   <a class="marca" href="index.html"><span class="gota" aria-hidden="true"></span><span data-nombre>el acueducto</span></a>
-  <a class="volver" href="index.html">← Volver al inicio</a>
+  <a class="volver" href="index.html">← Volver</a>
 </div></header>
 
 <main>
   <h1>Política de privacidad</h1>
-  <p class="fecha">Última actualización: 27 de septiembre de 2026</p>
-
-  <nav class="indice" aria-label="Contenido">
-    <b>Contenido</b>
-    <ol>
-      <li><a href="#responsable">Quién es responsable</a></li>
-      <li><a href="#datos">Qué datos usamos</a></li>
-      <li><a href="#finalidad">Para qué los usamos</a></li>
-      <li><a href="#base">Por qué podemos usarlos</a></li>
-      <li><a href="#publico">Qué es público</a></li>
-      <li><a href="#compartir">Con quién se comparten</a></li>
-      <li><a href="#plazo">Cuánto tiempo se guardan</a></li>
-      <li><a href="#derechos">Tus derechos</a></li>
-      <li><a href="#seguridad">Seguridad</a></li>
-      <li><a href="#cookies">Aviso de cookies</a></li>
-      <li><a href="#cambios">Cambios</a></li>
-      <li><a href="#contacto">Contacto</a></li>
-    </ol>
-  </nav>
-
-  <section id="responsable">
-    <h2>1. Quién es responsable de tus datos</h2>
-    <p>El responsable del tratamiento de los datos de este sitio es la junta administradora de <b data-nombre>el acueducto</b>, que lo usa para gestionar el servicio de agua de la comunidad.</p>
-    <p>Esta política se rige por la legislación de la República de Panamá sobre protección de datos personales (Ley 81 de 2019 y su reglamentación).</p>
-  </section>
-
-  <section id="datos">
-    <h2>2. Qué datos usamos</h2>
-    <div class="tabla-cont"><table class="tabla">
-      <thead><tr><th>Quién</th><th>Datos</th></tr></thead>
-      <tbody>
-        <tr><td>Visitantes del sitio</td><td>Ninguno que te identifique. Para frenar abusos, al enviar una solicitud se guarda una huella anónima de tu conexión (no tu dirección IP).</td></tr>
-        <tr><td>Quien solicita una cuenta</td><td>Nombre del representante legal de la casa, número de casa, celular y correo electrónico.</td></tr>
-        <tr><td>Vecinos con cuenta</td><td>Los datos anteriores, la casa vinculada y los reportes que envías (tipo, descripción y, si la marcas, la ubicación del problema).</td></tr>
-        <tr><td>Administradores</td><td>Nombre, cargo, celular, número de casa y correo, y el registro de su trabajo en el sistema (qué incidencias registraron, resolvieron o atendieron, y cuándo).</td></tr>
-        <tr><td>Casas del acueducto</td><td>La administración registra el responsable de cada casa, su teléfono, los núcleos familiares y los pagos de cuota. Estos datos son internos.</td></tr>
-      </tbody>
-    </table></div>
-    <p>No pedimos datos sensibles (salud, religión, opiniones políticas, etc.) ni datos de menores de edad.</p>
-  </section>
-
-  <section id="finalidad">
-    <h2>3. Para qué los usamos</h2>
-    <ul>
-      <li>Verificar que quien pide una cuenta es el representante legal de la casa.</li>
-      <li>Crear y administrar tu cuenta, y enviarte el correo para crear tu contraseña.</li>
-      <li>Recibir, atender y responder los reportes sobre el servicio.</li>
-      <li>Administrar el servicio de agua: cuotas, pagos, incidencias y mantenimiento de la red.</li>
-      <li>Comunicarnos contigo sobre el servicio, por ejemplo cortes programados.</li>
-      <li>Proteger el sitio contra spam y abusos.</li>
-    </ul>
-    <p>No vendemos tus datos ni los usamos para publicidad.</p>
-  </section>
-
-  <section id="base">
-    <h2>4. Por qué podemos usarlos</h2>
-    <p>Usamos tus datos con tu <b>consentimiento</b>, que das al enviar la solicitud de cuenta, y porque son necesarios para <b>prestar y administrar el servicio de agua</b> del que eres usuario. Puedes retirar tu consentimiento cuando quieras; en ese caso eliminaremos tu cuenta.</p>
-  </section>
-
-  <section id="publico">
-    <h2>5. Qué información es pública</h2>
-    <p>La página pública muestra el mapa de la red de agua, el estado de cada sector, las incidencias que la administración decide publicar y el número de cada casa. <b>Nunca se publican</b> nombres, teléfonos, correos, pagos ni deudas, ni el contenido de tus reportes.</p>
-  </section>
-
-  <section id="compartir">
-    <h2>6. Con quién se comparten</h2>
-    <p>Solo los administradores del acueducto ven tus datos. Para que el sitio funcione usamos estos proveedores, que tratan los datos por nuestra cuenta:</p>
-    <ul>
-      <li><b>Supabase</b>: guarda la base de datos y gestiona las cuentas. Sus servidores pueden estar fuera de Panamá.</li>
-      <li><b>GitHub Pages</b>: publica las páginas del sitio.</li>
-      <li><b>Esri y OpenStreetMap</b>: proveen las imágenes del mapa; como cualquier sitio que visitas, reciben la dirección de conexión de tu dispositivo al cargar el mapa.</li>
-      <li><b>WhatsApp</b>: solo si decides escribirnos por ese medio, con sus propias condiciones.</li>
-    </ul>
-    <p>Solo entregaremos datos a una autoridad cuando la ley lo exija.</p>
-  </section>
-
-  <section id="plazo">
-    <h2>7. Cuánto tiempo se guardan</h2>
-    <ul>
-      <li>Solicitudes rechazadas: hasta 6 meses, para evitar abusos.</li>
-      <li>Cuentas de vecinos y administradores: mientras la cuenta exista. Si se elimina, se borran el correo, el celular y el acceso; los reportes se conservan sin tu nombre para el historial del servicio.</li>
-      <li>Registro de trabajo de la administración: el nombre y el cargo de quien registró, resolvió o atendió cada incidencia se conservan de forma permanente como parte del historial del acueducto, aunque la persona deje su cargo o elimine su cuenta. Solo lo ven los administradores y nunca incluye correo ni celular.</li>
-      <li>Datos de las casas y pagos: mientras seas usuario del servicio y el tiempo que exijan las obligaciones contables de la junta.</li>
-    </ul>
-  </section>
-
-  <section id="derechos">
-    <h2>8. Tus derechos</h2>
-    <p>Puedes pedir en cualquier momento:</p>
-    <ul>
-      <li><b>Acceso</b>: saber qué datos tuyos tenemos.</li>
-      <li><b>Rectificación</b>: corregir datos equivocados o desactualizados.</li>
-      <li><b>Cancelación</b>: que eliminemos tus datos. Se exceptúa el registro de trabajo de quienes fueron administradores (nombre y cargo en las incidencias que atendieron), que el acueducto conserva como constancia de la gestión del servicio.</li>
-      <li><b>Oposición</b>: que dejemos de usar tus datos para algún fin.</li>
-      <li><b>Portabilidad</b>: recibir tus datos en un formato que puedas llevar a otro lugar.</li>
-    </ul>
-    <p>Escríbenos por los medios de la sección <a href="#contacto">Contacto</a>. Responderemos lo antes posible y dentro de los plazos que fija la ley. Si no quedas conforme, puedes acudir a la Autoridad Nacional de Transparencia y Acceso a la Información (ANTAI).</p>
-  </section>
-
-  <section id="seguridad">
-    <h2>9. Seguridad</h2>
-    <p>La conexión al sitio está cifrada. Cada persona solo puede ver lo que le corresponde: los vecinos ven sus propios reportes y solo los administradores verificados acceden a los datos internos. Las cuentas se crean únicamente cuando un administrador aprueba la solicitud, y el sitio limita el número de solicitudes y reportes para evitar abusos.</p>
-  </section>
-
-  <section id="cookies">
-    <h2>10. Aviso de cookies</h2>
-    <p>Este sitio <b>no usa cookies de publicidad, de análisis ni de seguimiento</b>. Solo guarda en el almacenamiento de tu navegador lo imprescindible para funcionar:</p>
-    <div class="tabla-cont"><table class="tabla">
-      <thead><tr><th>Qué se guarda</th><th>Para qué</th><th>Cuánto dura</th></tr></thead>
-      <tbody>
-        <tr><td>Sesión de tu cuenta</td><td>Mantenerte conectado si inicias sesión.</td><td>Hasta que cierres sesión.</td></tr>
-        <tr><td>Aviso de cookies visto</td><td>No volver a mostrarte este aviso.</td><td>Hasta que borres los datos del navegador.</td></tr>
-        <tr><td>Preferencias del mapa</td><td>Recordar el tipo de mapa y la zona que estabas viendo.</td><td>Hasta que borres los datos del navegador.</td></tr>
-        <tr><td>Tiempo de espera</td><td>Recordar cuándo puedes enviar otra solicitud o reporte.</td><td>Unos minutos u horas.</td></tr>
-      </tbody>
-    </table></div>
-    <p>Como son necesarios para el funcionamiento, no requieren tu consentimiento, pero puedes borrarlos desde la configuración de tu navegador. Las imágenes del mapa vienen de servicios externos que podrían usar sus propias cookies técnicas.</p>
-  </section>
-
-  <section id="cambios">
-    <h2>11. Cambios en esta política</h2>
-    <p>Si cambiamos esta política, actualizaremos la fecha del inicio y, si el cambio es importante, lo avisaremos en el sitio.</p>
-  </section>
-
-  <section id="contacto">
-    <h2>12. Contacto</h2>
-    <p>Para cualquier consulta sobre tus datos o para ejercer tus derechos:</p>
-    <ul id="medios">
-      <li>Correo: <span data-correo>escríbenos por los medios de contacto del acueducto</span></li>
-      <li data-wa-item hidden>WhatsApp: <a data-wa href="#" target="_blank" rel="noopener">escribir por WhatsApp</a></li>
-    </ul>
-  </section>
-
+  <p class="fecha" id="fecha">Cargando…</p>
+  <nav class="indice" aria-label="Contenido" id="indice" hidden><b>Contenido</b><ol id="indiceLista"></ol></nav>
+  <div id="politica"></div>
   <p class="nota">Este texto es una guía general. La junta del acueducto debe revisarlo y ajustarlo a su situación, idealmente con asesoría legal.</p>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="assets/js/config.js"></script>
+<script src="assets/js/politica.js"></script>
 <script src="assets/js/sitio.js" data-privacidad="privacidad.html"></script>
 <script>
-// Completa el nombre del acueducto y los datos de contacto desde la configuración
+// La política se escribe en Configuración (administración). Si todavía no se ha escrito, se muestra el texto base.
 (async function(){
+  const pintar = (texto, datos, fecha) => {
+    const r = window.AcuPolitica.render(texto || window.AcuPolitica.TEXTO_BASE, datos);
+    document.getElementById('politica').innerHTML = r.html;
+    document.getElementById('indiceLista').innerHTML = r.secciones.map(s => `<li><a href="#${s.id}">${s.titulo.replace(/[&<>"']/g, '')}</a></li>`).join('');
+    document.getElementById('indice').hidden = !r.secciones.length;
+    document.getElementById('fecha').textContent = fecha
+      ? 'Última actualización: ' + new Date(fecha).toLocaleDateString('es', {day:'numeric', month:'long', year:'numeric'})
+      : '';
+    if (location.hash){ const el = document.getElementById(location.hash.slice(1)); if (el) el.scrollIntoView(); }
+  };
   try {
     const c = window.ACU_CONFIG;
     const sb = window.supabase.createClient(c.SUPABASE_URL, c.SUPABASE_KEY);
-    const {data} = await sb.from('configuracion').select('nombre,correo_contacto,whatsapp,whatsapp_activo,whatsapp_mensaje').eq('id', 1).maybeSingle();
-    if (!data) return;
-    const esc = v => String(v || '').replace(/[&<>"']/g, x => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[x]));
-    if (data.nombre){ document.querySelectorAll('[data-nombre]').forEach(e => { e.textContent = data.nombre; }); document.title = 'Política de privacidad: ' + data.nombre; }
-    if (data.correo_contacto) document.querySelectorAll('[data-correo]').forEach(e => { e.innerHTML = `<a href="mailto:${esc(data.correo_contacto)}">${esc(data.correo_contacto)}</a>`; });
-    const dig = String(data.whatsapp || '').replace(/\D/g, '');
-    if (data.whatsapp_activo && dig.length >= 8){
-      document.querySelector('[data-wa-item]').hidden = false;
-      document.querySelector('[data-wa]').href = `https://wa.me/${dig}`;
-    }
-  } catch (e){ console.warn(e); }
+    const {data} = await sb.from('configuracion').select('nombre,correo_contacto,whatsapp,whatsapp_activo,politica_privacidad,politica_actualizada_en').eq('id', 1).maybeSingle();
+    const d = data || {};
+    if (d.nombre){ document.querySelectorAll('[data-nombre]').forEach(e => { e.textContent = d.nombre; }); document.title = 'Política de privacidad: ' + d.nombre; }
+    const wa = d.whatsapp_activo && String(d.whatsapp || '').replace(/\D/g, '').length >= 8 ? d.whatsapp : '';
+    pintar(d.politica_privacidad, {acueducto:d.nombre, correo:d.correo_contacto, whatsapp:wa}, d.politica_privacidad ? d.politica_actualizada_en : null);
+  } catch (e){ console.warn(e); pintar('', {}, null); }
 })();
 </script>
 </body>

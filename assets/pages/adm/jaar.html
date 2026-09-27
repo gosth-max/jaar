@@ -9,6 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<!-- Números más claros: Inter solo para los dígitos (las letras siguen con Atkinson Hyperlegible) -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&text=0123456789" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.css">
 <link rel="stylesheet" href="../../css/mapa.css">
@@ -64,12 +66,13 @@
         </ul>
       </li>
       <li class="grupo" data-grupo="cobros">
-        <button class="nav-btn" aria-expanded="false">Cobros <i class="flecha"></i></button>
+        <button class="nav-btn" aria-expanded="false">Cobros <span class="badge" data-badge-cortes hidden></span> <i class="flecha"></i></button>
         <ul class="submenu">
           <li><a href="#/cobros/resumen" data-ruta="cobros/resumen"><span>Resumen de cobros<small>Cuánto se debe y cuánto se cobró</small></span></a></li>
           <li><a href="#/cobros/casas" data-ruta="cobros/casas"><span>Casas y cuentas<small>Estado de cuenta de cada casa</small></span></a></li>
           <li><a href="#/cobros/pagos" data-ruta="cobros/pagos"><span>Pagos registrados<small>Recibos, formas de pago y anulaciones</small></span></a></li>
           <li><a href="#/cobros/historial" data-ruta="cobros/historial"><span>Historial de cobros<small>Todo lo que se hizo, con fecha y hora</small></span></a></li>
+          <li><a href="#/cobros/cortes" data-ruta="cobros/cortes"><span>Cortes de agua<small>Avisos, cortes y reincorporaciones</small></span><span class="badge" data-badge-cortes hidden></span></a></li>
           <li><a href="#/cobros/tarifas" data-ruta="cobros/tarifas"><span>Tarifas<small>Cuánto se cobra y cómo</small></span></a></li>
         </ul>
       </li>
@@ -87,6 +90,7 @@
           <li><a href="#/configuracion/general"><span>General<small>Nombre, cuota y moneda</small></span></a></li>
           <li><a href="#/configuracion/tipos"><span>Tipos de incidencia</span></a></li>
           <li><a href="#/configuracion/contacto"><span>Contacto y WhatsApp</span></a></li>
+          <li><a href="#/configuracion/politica"><span>Política de privacidad</span></a></li>
           <li><a href="#/configuracion/copia"><span>Copia de seguridad</span></a></li>
         </ul>
       </li>
@@ -282,6 +286,9 @@
       <select id="ccEstado" aria-label="Filtrar por estado">
         <option value="todas">Todas</option><option value="deben">Con deuda</option><option value="morosas">Morosas (3 meses o más)</option>
         <option value="aldia">Al día</option><option value="favor">Con saldo a favor</option><option value="exoneradas">Exoneradas</option><option value="sincobro">Sin cobro configurado</option>
+        <option value="corte">Con aviso o corte de agua</option>
+        <option value="clase-excelencia">Clasificación: Excelencia</option><option value="clase-aldia">Clasificación: Al Día</option>
+        <option value="clase-atencion">Clasificación: Atención</option><option value="clase-intervencion">Clasificación: Intervención</option>
       </select>
       <select id="ccTarifa" aria-label="Filtrar por tarifa"></select>
       <span class="conteo" id="ccConteo"></span>
@@ -322,6 +329,21 @@
     <p class="conteo-grande" id="chConteo"></p>
     <div id="chTabla"></div>
     <nav class="paginacion" id="chPaginas" aria-label="Páginas del historial"></nav>
+  </section>
+
+  <section class="vista" data-vista="cobros/cortes" hidden>
+    <div class="cab-vista"><div><h1>Cortes de agua</h1><p>Casas que superan los meses de deuda permitidos: aviso, corte y reincorporación. Las cuotas se siguen cobrando cada mes.</p></div></div>
+    <form class="tarjeta reglas-corte" id="ctReglas">
+      <header><h2>Reglas</h2></header>
+      <div class="fila">
+        <label class="campo compacto"><span>Meses de deuda permitidos</span><input type="number" id="ctMeses" min="1" max="24" step="1"></label>
+        <label class="campo compacto"><span>Días de plazo tras el aviso</span><input type="number" id="ctDias" min="1" max="90" step="1"></label>
+        <label class="campo compacto"><span>Cargo por reconexión</span><input type="number" id="ctReconexion" min="0" step="0.01"></label>
+        <button class="btn primario" type="submit">Guardar reglas</button>
+      </div>
+      <p class="nota">Ejemplo con 2 meses: si una casa no paga julio ni agosto, en septiembre sigue permitido; al llegar octubre sin pago ni arreglo de pago, aparece aquí para notificar.</p>
+    </form>
+    <div id="ctCont"></div>
   </section>
 
   <section class="vista" data-vista="cobros/tarifas" hidden>
@@ -377,6 +399,21 @@
         <label class="check"><input type="checkbox" id="cfgWhatsappActivo"><span>Mostrar el botón de WhatsApp en la página pública</span></label>
         <p class="nota" id="cfgWhatsappPrueba"></p>
         <label class="campo"><span>Correo de contacto (aparece en la política de privacidad)</span><input type="email" id="cfgCorreo" maxlength="160"></label>
+      </article>
+
+      <article class="tarjeta ancho-completo" id="cfg-politica">
+        <header><h2>Política de privacidad</h2><span class="nota" id="polFecha"></span></header>
+        <p class="nota" style="margin-top:0">Formato: <code>## Título</code> para cada sección, <code>- </code> al inicio de línea para listas, <code>**negrita**</code> y <code>[texto](https://enlace)</code>.
+          Puedes escribir <code>{acueducto}</code>, <code>{correo}</code> y <code>{whatsapp}</code>: se reemplazan solos con los datos de la configuración.</p>
+        <textarea id="polTexto" rows="20" spellcheck="true" aria-label="Texto de la política de privacidad"></textarea>
+        <div class="fila" style="margin-top:8px">
+          <button class="btn primario" id="polGuardar">Guardar y publicar</button>
+          <button class="btn" id="polVista">Vista previa</button>
+          <button class="btn" id="polBase">Volver al texto base</button>
+          <a class="btn" href="../../../privacidad.html" target="_blank" rel="noopener">Ver la página ↗</a>
+        </div>
+        <p class="nota">Al guardar, la fecha de «Última actualización» que ven los usuarios cambia a hoy.</p>
+        <div class="politica-previa" id="polPrevia" hidden></div>
       </article>
 
       <article class="tarjeta" id="cfg-copia">
@@ -470,6 +507,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="../../js/config.js"></script>
 <script src="../../js/comun.js"></script>
+<script src="../../js/politica.js"></script>
 <script src="../../js/adm.js"></script>
 </body>
 </html>

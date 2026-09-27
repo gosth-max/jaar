@@ -9,12 +9,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<!-- Números más claros: Inter solo para los dígitos (las letras siguen con Atkinson Hyperlegible) -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&text=0123456789" rel="stylesheet">
 <style>
   :root{--papel:#F2F6F7;--blanco:#fff;--tinta:#15323B;--suave:#5B7078;--linea:#D5E0E3;--agua:#1D6FA3;--bad:#C0392B;--ok:#2F8F5B}
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
   :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-  body{font-family:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);font-size:15px;line-height:1.45;
+  body{font-family:"Inter","Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);font-size:15px;line-height:1.45;
     background:
       radial-gradient(1200px 600px at 85% -10%, rgba(94,170,214,.45), transparent 60%),
       radial-gradient(900px 500px at -10% 110%, rgba(21,150,196,.35), transparent 60%),
@@ -40,6 +42,10 @@
   .enlace{background:none;border:0;padding:0;color:var(--agua);cursor:pointer;text-decoration:underline;font-size:14px}
   .pie{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:16px;font-size:14px}
   .registro{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--linea);font-size:14px;color:var(--suave)}
+  .trampa{position:absolute!important;left:-9999px!important;width:1px;height:1px;overflow:hidden}
+  .check{display:flex;gap:9px;align-items:flex-start;margin:12px 0;font-size:14px}
+  .check input{margin-top:3px}
+  .registro .enlace{font-size:inherit}
   .error{color:var(--bad);font-size:14px;min-height:1.3em;margin:8px 0 0}
   .exito{color:var(--ok);font-size:14px;margin:8px 0 0}
   [hidden]{display:none!important}
@@ -62,10 +68,24 @@
     <button class="btn" id="lgBoton">Entrar</button>
     <div class="pie">
       <button type="button" class="enlace" data-ir="olvido">¿Olvidaste tu contraseña?</button>
-      <a href="../../../index.html">Volver al inicio</a>
     </div>
-    <p class="registro">¿Eres representante de una casa y aún no tienes cuenta? <a href="../../../index.html#/registro">Solicitar acceso</a>
-    </div>
+    <p class="registro">¿Eres representante de una casa y aún no tienes cuenta? <button type="button" class="enlace" data-ir="registro">Solicitar acceso</button></p>
+  </form>
+
+  <!-- Solicitar una cuenta (la revisa la administración) -->
+  <form id="v-registro" hidden novalidate>
+    <h2>Solicitar una cuenta</h2>
+    <p class="intro">Solo para el <b>representante legal de cada casa</b>. La administración revisará tus datos antes de activar la cuenta.</p>
+    <label class="campo"><span>Nombre del representante legal de la casa</span><input type="text" name="nombre" required minlength="3" maxlength="120" autocomplete="name"></label>
+    <label class="campo"><span>Número de casa</span><input type="text" name="numero_casa" required maxlength="20" placeholder="Ej. 12"></label>
+    <label class="campo"><span>Celular</span><input type="tel" name="celular" required maxlength="20" autocomplete="tel" placeholder="Ej. 6000-0000"></label>
+    <label class="campo"><span>Correo electrónico</span><input type="email" name="email" required maxlength="160" autocomplete="email"></label>
+    <label class="trampa" aria-hidden="true">No llenar este campo<input type="text" name="sitio_web" tabindex="-1" autocomplete="off"></label>
+    <label class="check"><input type="checkbox" name="acepto" required><span>Acepto que mis datos se usen para verificar mi casa y gestionar mi cuenta, según la <a href="../../../privacidad.html" target="_blank" rel="noopener">política de privacidad</a>.</span></label>
+    <p class="error" id="rgError" role="alert"></p>
+    <p class="exito" id="rgExito" role="status" hidden></p>
+    <button class="btn" id="rgBoton">Enviar solicitud</button>
+    <div class="pie"><button type="button" class="enlace" data-ir="login">Ya tengo cuenta: entrar</button></div>
   </form>
 
   <!-- Pedir enlace de recuperación -->
@@ -115,7 +135,8 @@ const esRecuperacion = esInvitacion || /type=recovery/.test(hash) || modo === 'n
 const errorEnlace = /error_code=|error=/.test(hash) ? decodeURIComponent((hash.match(/error_description=([^&]+)/) || [])[1] || '').replace(/\+/g, ' ') : '';
 
 function vista(nombre){
-  ['login','olvido','nueva','mensaje'].forEach(v => $('#v-' + v).hidden = v !== nombre);
+  ['login','olvido','nueva','mensaje','registro'].forEach(v => $('#v-' + v).hidden = v !== nombre);
+  if (nombre === 'registro'){ abiertoRegEn = Date.now(); contarEsperaReg(); }
   const primero = document.querySelector('#v-' + nombre + ' input');
   if (primero) setTimeout(() => primero.focus(), 30);
 }
@@ -171,7 +192,7 @@ async function irSegunRol(){
   const {data:{user}} = await sb.auth.getUser();
   const {data:p} = user ? await sb.from('perfiles').select('rol,estado,debe_cambiar_clave').eq('id', user.id).maybeSingle() : {data:null};
   if (p && p.estado === 'activo' && (p.rol === 'administrador' || p.rol === 'desarrollador')){ location.replace(DESTINO); return; }
-  if (p && p.estado === 'activo'){ location.replace(PUBLICO + (p.debe_cambiar_clave ? '#/perfil' : '#/reportar')); return; }
+  if (p && p.estado === 'activo'){ location.replace(PUBLICO + (p.debe_cambiar_clave ? '#/perfil' : '#/inicio')); return; }
   await sb.auth.signOut();
   mensaje('Tu cuenta no está activa', p
     ? 'Tu cuenta está suspendida. Comunícate con la administración del acueducto.'
@@ -225,8 +246,39 @@ $('#v-nueva').addEventListener('submit', async e => {
     return;
   }
   if (session){ irSegunRol(); return; }
-  vista('login');
+  vista(modo === 'registro' ? 'registro' : 'login');
 })();
+
+/* ---------- Solicitud de cuenta: antispam y tiempo de espera ---------- */
+const CLAVE_ESPERA_REG = 'acu-registro-espera';
+let abiertoRegEn = Date.now();
+function esperaRegistro(){ try { return Number(localStorage.getItem(CLAVE_ESPERA_REG)) || 0; } catch (e){ return 0; } }
+function contarEsperaReg(){
+  const b = $('#rgBoton'), falta = Math.ceil((esperaRegistro() - Date.now()) / 1000);
+  if (falta > 0){
+    b.disabled = true;
+    b.textContent = falta > 3600 ? `Podrás intentar de nuevo en ${Math.ceil(falta / 3600)} h` : falta > 60 ? `Podrás intentar de nuevo en ${Math.ceil(falta / 60)} min` : `Espera ${falta} s`;
+    if (!$('#v-registro').hidden) setTimeout(contarEsperaReg, 1000);
+  } else { b.disabled = false; b.textContent = 'Enviar solicitud'; }
+}
+$('#v-registro').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = e.target, d = Object.fromEntries(new FormData(f).entries());
+  $('#rgError').textContent = ''; $('#rgExito').hidden = true;
+  if (!f.checkValidity()){ f.reportValidity(); return; }
+  if (!d.acepto){ $('#rgError').textContent = 'Debes aceptar la política de privacidad.'; return; }
+  const b = $('#rgBoton'); b.disabled = true; b.textContent = 'Enviando…';
+  const {data, error} = await sb.rpc('solicitar_registro', {
+    p_nombre:d.nombre, p_celular:d.celular, p_email:d.email, p_numero_casa:d.numero_casa,
+    p_trampa:d.sitio_web || '', p_segundos:Math.round((Date.now() - abiertoRegEn) / 1000)
+  });
+  if (error){ b.disabled = false; b.textContent = 'Enviar solicitud'; $('#rgError').textContent = 'No se pudo enviar: ' + error.message; return; }
+  if (data.ok){ $('#rgExito').textContent = data.mensaje; $('#rgExito').hidden = false; f.reset(); }
+  else $('#rgError').textContent = data.mensaje;
+  const espera = data.ok ? 600 : (Number(data.esperar) || 0);
+  if (espera){ try { localStorage.setItem(CLAVE_ESPERA_REG, String(Date.now() + espera * 1000)); } catch (e2){} }
+  contarEsperaReg();
+});
 })();
 </script>
 </body>

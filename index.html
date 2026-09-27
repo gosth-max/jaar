@@ -9,6 +9,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<!-- Números más claros: Inter solo para los dígitos (las letras siguen con Atkinson Hyperlegible) -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&text=0123456789" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="assets/css/mapa.css">
 <link rel="stylesheet" href="assets/css/publico.css">
@@ -28,7 +30,10 @@
     <a href="#/reportar" data-ruta="reportar">Enviar reporte</a>
   </nav>
   <div class="cuenta-der" id="cuentaDer">
-    <a class="btn" id="btnEntrar" href="assets/pages/auth/auth.html">Iniciar sesión</a>
+    <a class="btn" id="btnEntrar" href="assets/pages/auth/auth.html" hidden>Iniciar sesión</a>
+    <button class="btn-avisos" id="btnAvisos" aria-label="Notificaciones" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 8-3 8h18s-3-1-3-8"/><path d="M13.7 20a2 2 0 0 1-3.4 0"/></svg>
+      <span class="badge-avisos" id="avisosCuenta" hidden>0</span></button>
     <button class="btn-cuenta" id="btnCuenta" aria-expanded="false" hidden><span class="ini" id="cuentaIni">?</span><span id="cuentaNombre"></span></button>
     <ul class="menu-cuenta" id="menuCuenta" hidden>
       <li class="quien"><b id="menuNombre"></b><span id="menuCorreo"></span></li>
@@ -115,7 +120,7 @@
       <p>Para evitar reportes falsos, solo los representantes verificados de cada casa pueden enviar reportes. Si ya tienes cuenta, inicia sesión; si no, solicítala.</p>
       <div class="fila" style="justify-content:center">
         <a class="btn primario grande" href="assets/pages/auth/auth.html">Iniciar sesión</a>
-        <button class="btn grande" id="abrirRegistro">Solicitar una cuenta</button>
+        <a class="btn grande" href="assets/pages/auth/auth.html?modo=registro">Solicitar una cuenta</a>
       </div>
       <ol class="pasos">
         <li><b class="n">1</b><span>Envías tu solicitud con tu nombre, celular, correo y número de casa.</span></li>
@@ -165,6 +170,11 @@
   <section class="vista" data-vista="perfil" hidden>
     <div class="cab-vista"><div><h1>Mi perfil</h1><p>El estado de cuenta de tus casas, tus datos y tu contraseña.</p></div></div>
     <p class="aviso-temporal" id="pfAviso" hidden>🔑 Estás usando una contraseña temporal que te dio la administración. Cámbiala por una que solo tú conozcas.</p>
+    <div class="pf-clase" id="pfClase" hidden></div>
+    <section id="pfNotifBox" hidden>
+      <h2 class="titulo-seccion">Notificaciones</h2>
+      <div class="notificaciones" id="pfNotificaciones"></div>
+    </section>
     <section id="pfCuentasBox" hidden>
       <h2 class="titulo-seccion" id="pfCuentasTitulo">Estado de cuenta de mi casa</h2>
       <div class="cuentas" id="pfCuentas"></div>
@@ -213,23 +223,7 @@
   <div class="modal-cuerpo" id="dlgCuerpo"></div>
 </dialog>
 
-<!-- Solicitud de cuenta -->
-<dialog id="dlgRegistro" class="modal" aria-labelledby="regTitulo">
-  <header><h2 id="regTitulo">Solicitar una cuenta</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
-  <div class="modal-cuerpo">
-    <p class="nota" style="margin-top:0">Solo para el <b>representante legal de cada casa</b>. La administración revisará tus datos antes de activar la cuenta.</p>
-    <form id="formRegistro" novalidate>
-      <label class="campo"><span>Nombre del representante legal de la casa</span><input type="text" name="nombre" required minlength="3" maxlength="120" autocomplete="name"></label>
-      <label class="campo"><span>Número de casa</span><input type="text" name="numero_casa" required maxlength="20" placeholder="Ej. 12"></label>
-      <label class="campo"><span>Celular</span><input type="tel" name="celular" required maxlength="20" autocomplete="tel" placeholder="Ej. 6000-0000"></label>
-      <label class="campo"><span>Correo electrónico</span><input type="email" name="email" required maxlength="160" autocomplete="email"></label>
-      <label class="trampa" aria-hidden="true">No llenar este campo<input type="text" name="sitio_web" tabindex="-1" autocomplete="off"></label>
-      <label class="check"><input type="checkbox" name="acepto" required><span>Acepto que mis datos se usen para verificar mi casa y gestionar mi cuenta, según la <a href="privacidad.html" target="_blank" rel="noopener">política de privacidad</a>.</span></label>
-      <div class="fila"><button class="btn primario grande" type="submit" id="regEnviar">Enviar solicitud</button></div>
-      <div class="mensaje-form" id="regMensaje" hidden></div>
-    </form>
-  </div>
-</dialog>
+
 
 <a class="wa" id="whatsapp" href="#" target="_blank" rel="noopener" hidden aria-label="Escríbenos por WhatsApp">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8.5 8.5 0 0 1-12.6 7.4L3 21l1.6-5.2A8.5 8.5 0 1 1 21 12Z"/><path d="M8.5 10.5h7M8.5 13.5h4.5"/></svg>

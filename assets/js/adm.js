@@ -153,9 +153,11 @@ function aqDesdeFila(r){
 }
 function aplicarFilaConfig(r){
   state.settings = {nombre:r.nombre || 'Mi acueducto', cuota:num(r.cuota), moneda:r.moneda ?? 'B/.', colorPorPago:!!r.color_por_pago, tarifaDefecto:r.tarifa_defecto || 'estandar',
-    ajusteFondos:r.ajuste_fondos || {},
+    ajusteFondos:r.ajuste_fondos || {}, mesesCorte:r.meses_para_corte ?? 2, diasAvisoCorte:r.dias_aviso_corte ?? 8, montoReconexion:num(r.monto_reconexion),
+    politica:r.politica_privacidad || '', politicaFecha:r.politica_actualizada_en || null,
     whatsapp:r.whatsapp || '', whatsappMensaje:r.whatsapp_mensaje || '', whatsappActivo:!!r.whatsapp_activo, correoContacto:r.correo_contacto || ''};
   if (typeof map !== 'undefined' && map.ajustarFondos && !ajusteEdicion) map.ajustarFondos(state.settings.ajusteFondos);
+  if ($('#polTexto')) pintarPolitica();
 }
 
 async function cargarTodo(){
@@ -204,6 +206,7 @@ function suscribir(){
     .on('postgres_changes', {event:'*', schema:'public', table:'tarifas'}, cargarTarifas)
     .on('postgres_changes', {event:'*', schema:'public', table:'arreglos_pago'}, async p => { await cargarArreglos(); const r = p.new && p.new.forma_id ? p.new : p.old; if (r && r.forma_id) refrescarCobrosUI(r.forma_id); })
     .on('postgres_changes', {event:'*', schema:'public', table:'casas_vecino'}, cargarUsuariosPronto)
+    .on('postgres_changes', {event:'*', schema:'public', table:'cortes'}, async p => { await cargarCortes(); const r = p.new && p.new.forma_id ? p.new : p.old; if (r && r.forma_id) refrescarCobrosUI(r.forma_id); actualizarBadgeCortes(); })
     .on('postgres_changes', {event:'*', schema:'public', table:'configuracion'}, p => {
       if (!p.new || p.new.editado_por === CLIENTE_ID) return;
       aplicarFilaConfig(p.new);
@@ -290,6 +293,15 @@ function marcarClase(layer, cls, si){
   if (el) el.classList.toggle(cls, !!si);
 }
 function aplicarEstilo(layer){
+  aplicarEstiloBase(layer);
+  const aq = layer.aq;
+  if (!aq || aq.tipo !== 'casa' || !cobrosListos) return;
+  const s = situacionCorte(aq, cuenta(aq));
+  marcarClase(layer, 'casa-cortada', s.estado === 'cortado');
+  if (s.estado === 'cortado') layer.setStyle({color:'#B3261E', weight:3, dashArray:'5 4', fillColor:'#2E3336', fillOpacity:.75});
+  else if (['notificar', 'notificado', 'vencido'].includes(s.estado)) layer.setStyle({color:'#E67E22', weight:3, dashArray:'6 4'});
+}
+function aplicarEstiloBase(layer){
   const aq = layer.aq; if (!aq) return;
   const sel = layer === selected;
   if (layer._decor){ capaConectores.removeLayer(layer._decor); layer._decor = null; }
@@ -1577,10 +1589,11 @@ const RENDER = {
   'cobros/casas': renderCobCasas,
   'cobros/pagos': renderCobPagos,
   'cobros/tarifas': renderCobTarifas,
-  'cobros/historial': renderCobHistorial
+  'cobros/historial': renderCobHistorial,
+  'cobros/cortes': renderCobCortes
 };
 const GRUPO_DE = {'inicio':'inicio', 'resumen':'inicio', 'mapa':'mapa', 'incidencias/abiertas':'incidencias',
-  'incidencias/resueltas':'incidencias', 'incidencias/calendario':'incidencias', 'incidencias/reportes':'incidencias', 'usuarios/solicitudes':'usuarios', 'usuarios/vecinos':'usuarios', 'usuarios/administradores':'usuarios', 'sectores':'gestion', 'cobros/resumen':'cobros', 'cobros/casas':'cobros', 'cobros/pagos':'cobros', 'cobros/tarifas':'cobros', 'cobros/historial':'cobros', 'configuracion':'config'};
+  'incidencias/resueltas':'incidencias', 'incidencias/calendario':'incidencias', 'incidencias/reportes':'incidencias', 'usuarios/solicitudes':'usuarios', 'usuarios/vecinos':'usuarios', 'usuarios/administradores':'usuarios', 'sectores':'gestion', 'cobros/resumen':'cobros', 'cobros/casas':'cobros', 'cobros/pagos':'cobros', 'cobros/tarifas':'cobros', 'cobros/historial':'cobros', 'cobros/cortes':'cobros', 'configuracion':'config'};
 
 function router(){
   let ruta = location.hash.replace(/^#\/?/, '') || 'inicio';
@@ -2464,7 +2477,7 @@ function enlazarCuentas(cont){
 function tablaCuentas(lista, opciones){
   if (!lista.length) return `<div class="vacio-grande">${opciones.vacio}</div>`;
   return `<div class="tabla-cont"><table class="tabla">
-    <thead><tr><th>Nombre</th><th>Correo</th><th>Celular</th><th>Casa</th>${opciones.conRol ? '<th>Rol</th>' : ''}<th>Estado</th><th></th></tr></thead>
+    <thead><tr><th>Nombre</th><th>Correo</th><th>Celular</th><th>Casa</th>${opciones.editarCasa ? '<th>Clasificación</th>' : ''}${opciones.conRol ? '<th>Rol</th>' : ''}<th>Estado</th><th></th></tr></thead>
     <tbody>${lista.map(p => {
       const casa = p.casa_id && capas.get(p.casa_id);
       const puede = opciones.puedeGestionar(p);
@@ -2473,6 +2486,7 @@ function tablaCuentas(lista, opciones){
         <td>${esc(p.email)}</td>
         <td>${telLink(p.celular)}</td>
         <td>${opciones.editarCasa ? chipsCasas(p.id, puede) : esc(casa ? nombreCasa(casa.aq.datos) : (p.numero_casa ? 'Casa ' + p.numero_casa : '—'))}</td>
+        ${opciones.editarCasa ? `<td>${etiquetaClase(clasificarVecino(p.id))}</td>` : ''}
         ${opciones.conRol ? `<td>${puede && p.id !== miPerfil.id ? `<select data-rol-perfil="${esc(p.id)}" class="sel-chico">
             <option value="administrador" ${p.rol === 'administrador' ? 'selected' : ''}>Administrador</option>
             <option value="desarrollador" ${p.rol === 'desarrollador' ? 'selected' : ''}>Desarrollador</option></select>`
@@ -2670,7 +2684,7 @@ $('#repBusca').addEventListener('input', debounce(renderReportes, 200));
    · pagos: abonos con número de recibo. Nada se borra: se anula con un motivo.
    Saldo = cargos no anulados − pagos no anulados.
    ===================================================================== */
-let tarifas = [];
+let tarifas = [], cobrosListos = false;
 const cobrosDe = new Map(), pagosDe = new Map();
 const METODOS = {efectivo:'Efectivo', transferencia:'Transferencia', yappy:'Yappy', cheque:'Cheque', otro:'Otro'};
 const MODOS_TARIFA = {casa:'Monto fijo por casa', nucleo:'Por cada núcleo familiar', persona:'Por cada persona'};
@@ -2741,10 +2755,18 @@ function cuenta(aq, excluirPago){
   const aplica = cargos.length > 0 || pagos.length > 0 || !!d.inicioCobro;
   const arreglo = arregloVigente(id), avance = arreglo ? avanceArreglo(arreglo, saldo) : null;
   const nivel = saldo <= 0 ? 'ok' : arreglo ? (avance.atrasado ? 'bad' : 'warn') : atraso >= 3 ? 'bad' : 'warn';
-  return {cuotaMes:q.monto, cuota:q, cargado, esperado:cargado, pagado, saldo, atraso, pendientes, aplica, exonerada, nivel,
+  const res = {cuotaMes:q.monto, cuota:q, cargado, esperado:cargado, pagado, saldo, atraso, pendientes, aplica, exonerada, nivel,
     ultimoPago, especial:q.especial, meses:cargos.filter(c => c.tipo === 'cuota').length, arreglo, avance};
+  const sc = situacionCorte(aq, res);
+  res.corte = sc.estado === 'normal' || sc.estado === 'atendible' ? null : sc.estado;
+  if (res.corte) res.nivel = 'bad';
+  return res;
 }
 function textoEstado(c){
+  if (c.corte === 'cortado') return {cls:'bad', txt:`🚱 Cortada · debe ${dinero(Math.max(0, c.saldo))}`};
+  if (c.corte === 'vencido') return {cls:'bad', txt:'⛔ Aviso vencido: cortar'};
+  if (c.corte === 'notificado') return {cls:'bad', txt:'⚠ Avisada de corte'};
+  if (c.corte === 'notificar') return {cls:'bad', txt:`Notificar corte · ${c.atraso} meses`};
   if (!c.aplica) return {cls:'nada', txt:c.exonerada ? 'Exonerada' : 'Sin cobro'};
   if (c.saldo < 0) return {cls:'ok', txt:'Adelantado ' + dinero(-c.saldo)};
   if (c.saldo === 0) return {cls:'ok', txt:c.exonerada ? 'Exonerada · al día' : 'Al día'};
@@ -2830,6 +2852,187 @@ function enlazarChipsCasas(cont){
   cont.querySelectorAll('[data-agregar-casa]').forEach(s => s.addEventListener('change', () => { if (s.value) vincularCasa(s.dataset.agregarCasa, s.value); }));
 }
 
+/* =====================================================================
+   CORTES DE AGUA
+   Regla: se permite deber hasta N meses (Configuración). Cuando una casa
+   supera ese atraso y no tiene un arreglo de pago al día, hay que avisarle.
+   Si no lo atiende antes de la fecha límite, se registra el corte.
+   Las cuotas se siguen generando cada mes mientras tanto.
+   ===================================================================== */
+const cortesDe = new Map();
+async function cargarCortes(){
+  const {data, error} = await sb.from('cortes').select('*').order('notificado_en');
+  if (error) return;
+  cortesDe.clear();
+  (data || []).forEach(k => { if (!cortesDe.has(k.forma_id)) cortesDe.set(k.forma_id, []); cortesDe.get(k.forma_id).push(k); });
+}
+const corteActivo = id => (cortesDe.get(id) || []).find(k => k.estado === 'notificado' || k.estado === 'cortado') || null;
+const mesesTolerancia = () => Math.max(1, num(state.settings.mesesCorte) || 2);
+/* Situación de corte de una casa según su cuenta */
+function situacionCorte(aq, c){
+  const k = corteActivo(aq.id);
+  const excede = c.atraso > mesesTolerancia() && !(c.arreglo && !c.avance.atrasado) && !c.exonerada;
+  if (k && k.estado === 'cortado') return {estado:'cortado', k, excede};
+  if (k && k.estado === 'notificado'){
+    const vencido = hoyISO() > String(k.fecha_limite);
+    return {estado:excede ? (vencido ? 'vencido' : 'notificado') : 'atendible', k, excede, vencido};
+  }
+  return {estado:excede ? 'notificar' : 'normal', k:null, excede};
+}
+/* Clasificación automática de una casa */
+function clasificar(aq, c){
+  if (!c.aplica) return null;
+  const s = situacionCorte(aq, c);
+  if (s.estado !== 'normal' && s.estado !== 'atendible' || c.atraso > mesesTolerancia()) return 'intervencion';
+  if (c.arreglo || c.atraso >= 1) return 'atencion';
+  if (c.saldo < 0 && mesesAdelantados(aq, -c.saldo, c.cuotaMes).length >= 1) return 'excelencia';
+  return 'aldia';
+}
+const CLASES = {excelencia:{txt:'Excelencia', icono:'⭐'}, aldia:{txt:'Al Día', icono:'✓'}, atencion:{txt:'Atención', icono:'!'}, intervencion:{txt:'Intervención', icono:'⚠'}};
+const ORDEN_CLASES = ['excelencia', 'aldia', 'atencion', 'intervencion'];
+const etiquetaClase = k => k ? `<span class="clase clase-${k}"><i>${CLASES[k].icono}</i>${CLASES[k].txt}</span>` : '<span class="nota">—</span>';
+/* Clasificación de un vecino: la peor de sus casas (Excelencia solo si todas lo son) */
+function clasificarVecino(uid){
+  const cls = casasDeUsuario(uid).map(fid => capas.get(fid)).filter(Boolean).map(l => clasificar(l.aq, cuenta(l.aq))).filter(Boolean);
+  if (!cls.length) return null;
+  if (cls.every(k => k === 'excelencia')) return 'excelencia';
+  return cls.filter(k => k !== 'excelencia').reduce((a, k) => ORDEN_CLASES.indexOf(k) > ORDEN_CLASES.indexOf(a) ? k : a, 'aldia');
+}
+/* Si una casa avisada ya pagó o hizo un arreglo, su aviso se da por atendido solo */
+let revisandoAvisos = false;
+async function revisarAvisos(){
+  if (revisandoAvisos) return;
+  revisandoAvisos = true;
+  try {
+    for (const [fid, lista] of cortesDe){
+      const k = lista.find(x => x.estado === 'notificado'), l = capas.get(fid);
+      if (!k || !l) continue;
+      if (situacionCorte(l.aq, cuenta(l.aq)).estado !== 'atendible') continue;
+      const {data} = await sb.from('cortes').update({estado:'atendido', nota:'Se puso al día o hizo un arreglo de pago.'}).eq('id', k.id).select().single();
+      if (data) Object.assign(k, data);
+    }
+  } finally { revisandoAvisos = false; }
+}
+const revisarAvisosPronto = debounce(() => revisarAvisos().then(() => { actualizarBadgeCortes(); renderVistaPronto(); }), 1500);
+function pendientesCorte(){
+  let notificar = 0, vencidos = 0;
+  datosGenerales().casas.forEach(l => { const s = situacionCorte(l.aq, cuenta(l.aq)); if (s.estado === 'notificar') notificar++; if (s.estado === 'vencido') vencidos++; });
+  return {notificar, vencidos, total:notificar + vencidos};
+}
+function actualizarBadgeCortes(){
+  const n = pendientesCorte().total;
+  document.querySelectorAll('[data-badge-cortes]').forEach(b => { b.textContent = n; b.hidden = !n; });
+}
+/* Acciones */
+async function notificarCorte(aq, fechaLimite){
+  const c = cuenta(aq);
+  const fila = await consultaConFila(sb.from('cortes').insert({forma_id:aq.id, deuda:c.saldo, meses:c.atraso, fecha_limite:fechaLimite}).select().single(), 'No se pudo registrar el aviso');
+  if (!fila) return false;
+  if (!cortesDe.has(aq.id)) cortesDe.set(aq.id, []);
+  cortesDe.get(aq.id).push(fila);
+  aviso(`Aviso de corte registrado para ${nombreCasa(aq.datos)}. El vecino lo verá en su perfil.`, 6000);
+  refrescarCobrosUI(aq.id); actualizarBadgeCortes();
+  return true;
+}
+async function cambiarCorte(aq, estado, nota){
+  const k = corteActivo(aq.id); if (!k) return false;
+  const fila = await consultaConFila(sb.from('cortes').update({estado, ...(nota ? {nota} : {})}).eq('id', k.id).select().single(), 'No se pudo actualizar');
+  if (!fila) return false;
+  Object.assign(k, fila);
+  refrescarCobrosUI(aq.id); actualizarBadgeCortes();
+  return true;
+}
+async function reincorporar(aq){
+  const monto = round2(state.settings.montoReconexion);
+  const nota = prompt(`Reincorporar el servicio de agua de ${nombreCasa(aq.datos)}.\nNota (opcional), por ejemplo: pagó la deuda, hizo un arreglo…`, '');
+  if (nota === null) return;
+  if (monto > 0 && confirm(`¿Cobrar la reconexión del servicio (${dinero(monto)})? Se agregará como cargo en su cuenta.`)){
+    await consultaConFila(sb.from('cobros').insert({forma_id:aq.id, tipo:'extra', concepto:'Reconexión del servicio', monto, fecha:hoyISO()}).select().single(), 'No se pudo agregar el cargo de reconexión')
+      .then(f => { if (f) ponerMovimiento(cobrosDe, f); });
+  }
+  if (await cambiarCorte(aq, 'reincorporado', nota.trim() || null)) aviso(`Servicio reincorporado en ${nombreCasa(aq.datos)}.`, 5000);
+}
+function accionesCorte(aq, c, compacto){
+  const s = situacionCorte(aq, c), lim = sumarDias(hoyISO(), num(state.settings.diasAvisoCorte) || 8);
+  if (s.estado === 'notificar') return `<div class="corte-caja notificar"><b>⚠ Debe ser notificada para corte</b>
+      <p>${c.atraso} meses de atraso (se permiten ${mesesTolerancia()}) y no tiene un arreglo de pago al día.</p>
+      <div class="fila"><label class="rango">Fecha límite <input type="date" data-limite="${esc(aq.id)}" value="${lim}"></label>
+      <button class="btn chico primario" data-notificar="${esc(aq.id)}">Notificar corte</button></div></div>`;
+  if (s.estado === 'notificado' || s.estado === 'vencido') return `<div class="corte-caja ${s.estado}"><b>${s.estado === 'vencido' ? '⛔ Aviso vencido: corresponde cortar el servicio' : '⚠ Aviso de corte enviado'}</b>
+      <p>Notificada el ${esc(fechaCorta(s.k.notificado_en))}${s.k.notificado_por_nombre ? ' por ' + esc(s.k.notificado_por_nombre) : ''} · fecha límite <b>${esc(fechaCorta(s.k.fecha_limite))}</b>${s.estado === 'vencido' ? '' : ` (${diasHasta(s.k.fecha_limite)} días)`}</p>
+      <div class="fila"><button class="btn chico ${s.estado === 'vencido' ? 'primario' : ''}" data-cortar="${esc(aq.id)}">Registrar corte</button>
+      <button class="btn chico" data-anular-aviso="${esc(aq.id)}">Anular aviso</button></div></div>`;
+  if (s.estado === 'cortado') return `<div class="corte-caja cortado"><b>🚱 Servicio cortado</b>
+      <p>Desde el ${esc(fechaCorta(s.k.cortado_en))}${s.k.cortado_por_nombre ? ' (' + esc(s.k.cortado_por_nombre) + ')' : ''}. Las cuotas se siguen cobrando cada mes.</p>
+      <div class="fila"><button class="btn chico primario" data-reincorporar="${esc(aq.id)}">Reincorporar servicio</button></div></div>`;
+  return compacto ? '' : '';
+}
+function enlazarCorte(cont){
+  cont.querySelectorAll('[data-notificar]').forEach(b => b.addEventListener('click', async e => {
+    e.stopPropagation();
+    const l = capas.get(b.dataset.notificar), lim = cont.querySelector(`[data-limite="${b.dataset.notificar}"]`).value;
+    if (!l || !lim){ aviso('Elige la fecha límite.'); return; }
+    if (confirm(`¿Notificar corte de agua a ${nombreCasa(l.aq.datos)}? Tendrá hasta el ${fechaCorta(lim)} para pagar o hacer un arreglo.`)) notificarCorte(l.aq, lim);
+  }));
+  cont.querySelectorAll('[data-cortar]').forEach(b => b.addEventListener('click', async e => {
+    e.stopPropagation();
+    const l = capas.get(b.dataset.cortar), s = situacionCorte(l.aq, cuenta(l.aq));
+    const msg = s.estado === 'vencido' ? `¿Registrar el corte de agua de ${nombreCasa(l.aq.datos)}?` : `La fecha límite aún no llega (${fechaCorta(s.k.fecha_limite)}). ¿Registrar el corte de todas formas?`;
+    if (confirm(msg) && await cambiarCorte(l.aq, 'cortado')) aviso(`Corte registrado en ${nombreCasa(l.aq.datos)}.`, 5000);
+  }));
+  cont.querySelectorAll('[data-anular-aviso]').forEach(b => b.addEventListener('click', async e => {
+    e.stopPropagation();
+    const l = capas.get(b.dataset.anularAviso), nota = prompt('¿Por qué se anula el aviso de corte?', '');
+    if (nota === null) return;
+    if (await cambiarCorte(l.aq, 'anulado', nota.trim() || 'Anulado por la administración')) aviso('Aviso anulado.');
+  }));
+  cont.querySelectorAll('[data-reincorporar]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); reincorporar(capas.get(b.dataset.reincorporar).aq); }));
+}
+function sumarDias(iso, n){ const d = new Date(iso + 'T12:00:00'); d.setDate(d.getDate() + n); return d.toISOString().slice(0, 10); }
+function diasHasta(iso){ return Math.max(0, Math.round((new Date(String(iso).slice(0, 10) + 'T12:00:00') - new Date(hoyISO() + 'T12:00:00')) / 864e5)); }
+
+/* --- Sección Cortes de agua --- */
+function renderCobCortes(){
+  $('#ctMeses').value = mesesTolerancia();
+  $('#ctDias').value = num(state.settings.diasAvisoCorte) || 8;
+  $('#ctReconexion').value = round2(state.settings.montoReconexion).toFixed(2);
+  const filas = datosGenerales().casas.map(l => { const c = cuenta(l.aq); return {l, c, s:situacionCorte(l.aq, c)}; });
+  const grupo = (est, vacio) => {
+    const lista = filas.filter(x => est.includes(x.s.estado)).sort((a, b) => b.c.saldo - a.c.saldo);
+    return lista.length ? `<div class="lista-cortes">${lista.map(x => `<article class="tarjeta corte-fila" data-ficha-corte="${esc(x.l.aq.id)}">
+        <header><h2>${esc(nombreCasa(x.l.aq.datos))}</h2><span class="nota">${esc(x.l.aq.datos.responsable || 'Sin representante')}</span></header>
+        <p class="nota">Debe <b class="rojo">${esc(dinero(x.c.saldo))}</b> · ${x.c.atraso} ${x.c.atraso === 1 ? 'mes' : 'meses'} de atraso${x.c.arreglo ? ' · arreglo de pago atrasado' : ''}</p>
+        ${accionesCorte(x.l.aq, x.c)}</article>`).join('')}</div>` : `<p class="vacio">${vacio}</p>`;
+  };
+  const cerrados = [...cortesDe.values()].flat().filter(k => ['atendido', 'reincorporado', 'anulado'].includes(k.estado))
+    .sort((a, b) => String(b.cerrado_en).localeCompare(String(a.cerrado_en))).slice(0, 20);
+  const n = k => filas.filter(x => k.includes(x.s.estado)).length;
+  $('#ctCont').innerHTML = `
+    <h2 class="sub-seccion">Para notificar <span class="badge">${n(['notificar'])}</span></h2>
+    <p class="nota">Casas con más de ${mesesTolerancia()} meses de atraso y sin arreglo de pago al día.</p>
+    ${grupo(['notificar'], '✓ Ninguna casa necesita aviso de corte.')}
+    <h2 class="sub-seccion">Avisos vigentes <span class="badge">${n(['notificado', 'vencido'])}</span></h2>
+    ${grupo(['vencido', 'notificado'], 'No hay avisos de corte vigentes.')}
+    <h2 class="sub-seccion">Casas con el servicio cortado <span class="badge">${n(['cortado'])}</span></h2>
+    ${grupo(['cortado'], 'Ninguna casa tiene el servicio cortado.')}
+    <h2 class="sub-seccion">Historial reciente</h2>
+    ${cerrados.length ? `<div class="tabla-cont"><table class="tabla"><thead><tr><th>Casa</th><th>Aviso</th><th>Resultado</th><th>Fecha</th><th>Por</th><th>Nota</th></tr></thead><tbody>
+      ${cerrados.map(k => { const l = capas.get(k.forma_id); return `<tr><td>${esc(l ? nombreCasa(l.aq.datos) : 'Casa eliminada')}</td><td>${esc(fechaCorta(k.notificado_en))}</td>
+        <td><span class="pill ${k.estado === 'anulado' ? 'nada' : 'ok'}">${k.estado === 'atendido' ? 'Atendido' : k.estado === 'reincorporado' ? 'Reincorporado' : 'Anulado'}</span>${k.cortado_en ? ' <small>(cortado el ' + esc(fechaCorta(k.cortado_en)) + ')</small>' : ''}</td>
+        <td>${esc(fechaCorta(k.cerrado_en))}</td><td>${esc(k.cerrado_por_nombre || '—')}</td><td>${esc(k.nota || '')}</td></tr>`; }).join('')}
+      </tbody></table></div>` : '<p class="vacio">Todavía no hay avisos cerrados.</p>'}`;
+  enlazarCorte($('#ctCont'));
+  $('#ctCont').querySelectorAll('[data-ficha-corte]').forEach(a => a.addEventListener('click', e => { if (!e.target.closest('button, input, label')) abrirFicha(a.dataset.fichaCorte); }));
+}
+$('#ctReglas').addEventListener('submit', async e => {
+  e.preventDefault();
+  const meses = Math.round(num($('#ctMeses').value)), dias = Math.round(num($('#ctDias').value)), rec = round2($('#ctReconexion').value);
+  if (meses < 1 || meses > 24 || dias < 1 || dias > 90){ aviso('Revisa los valores: meses de 1 a 24 y días de 1 a 90.'); return; }
+  if (!await tarea(sb.from('configuracion').update({meses_para_corte:meses, dias_aviso_corte:dias, monto_reconexion:rec, editado_por:CLIENTE_ID}).eq('id', 1), 'No se pudieron guardar las reglas')) return;
+  Object.assign(state.settings, {mesesCorte:meses, diasAvisoCorte:dias, montoReconexion:rec});
+  aviso('Reglas de corte guardadas.'); actualizarBadgeCortes(); capa.eachLayer(l => { if (l.aq && l.aq.tipo === 'casa') aplicarEstilo(l); }); renderCobCortes();
+});
+
 /* ---------- Carga y cambios en vivo ---------- */
 async function cargarCobros(){
   try { await sb.rpc('generar_cuotas', {p_forma:null}); } catch (e){ console.warn('generar_cuotas', e); }
@@ -2840,7 +3043,8 @@ async function cargarCobros(){
   ]);
   cobrosDe.clear(); pagosDe.clear();
   cob.forEach(c => ponerMovimiento(cobrosDe, c));
-  await cargarArreglos();
+  await Promise.all([cargarArreglos(), cargarCortes()]);
+  cobrosListos = true;
   pag.forEach(p => ponerMovimiento(pagosDe, p));
   if (!tar.error) tarifas = tar.data || [];
 }
@@ -2856,6 +3060,7 @@ function movimientoEnVivo(mapa, p){
   if (forma) refrescarCobrosUI(forma);
 }
 function refrescarCobrosUI(id){
+  revisarAvisosPronto();
   const l = capas.get(id);
   if (l){ refrescarForma(l); if (selected === l) refrescarCuenta(); }
   if (fichaId === id && $('#dlgFicha').open) renderFicha();
@@ -2884,7 +3089,7 @@ function renderFicha(){
   $('#fcTitulo').textContent = nombreCasa(d);
   $('#fcSub').innerHTML = `${esc(d.responsable || 'Sin representante registrado')}${d.telefono ? ' · ' + telLink(d.telefono) : ''}
     · ${nucleosDe(d)} ${nucleosDe(d) === 1 ? 'núcleo' : 'núcleos'}, ${personasDe(d)} ${personasDe(d) === 1 ? 'persona' : 'personas'}`;
-  $('#fcSaldo').innerHTML = `<span>${c.saldo < 0 ? 'Saldo a favor' : 'Saldo'}</span><b class="${c.saldo > 0 ? 'debe' : ''}">${esc(dinero(Math.abs(c.saldo)))}</b><span class="pill ${est.cls}">${esc(est.txt)}</span>`;
+  $('#fcSaldo').innerHTML = `<span>${c.saldo < 0 ? 'Saldo a favor' : 'Saldo'}</span><b class="${c.saldo > 0 ? 'debe' : ''}">${esc(dinero(Math.abs(c.saldo)))}</b><span class="fila">${etiquetaClase(clasificar(aq, c))}<span class="pill ${est.cls}">${esc(est.txt)}</span></span>`;
   document.querySelectorAll('[data-fc-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.fcTab === fichaTab)));
   const cuerpo = $('#fcCuerpo');
   cuerpo.innerHTML = ({cuenta:fichaCuenta, pago:fichaPago, nucleos:fichaNucleos, datos:fichaDatos})[fichaTab](aq, c);
@@ -2918,6 +3123,7 @@ function fichaCuenta(aq, c){
         ${m.anulado ? '' : `<button class="btn chico" data-anular="${m._tipo}:${esc(m.id)}">Anular</button>`}</td></tr>`;
   }).reverse();
   return `${aviso0}
+    ${accionesCorte(aq, c)}
     <div class="fc-kpis">
       <div><span>Cuota mensual</span><b>${esc(dinero(c.cuotaMes))}</b><small>${esc(textoCuota(c.cuota))}${c.exonerada ? ' · exonerada' : ''}</small></div>
       <div><span>Meses de atraso</span><b class="${c.atraso >= 3 ? 'rojo' : ''}">${c.atraso}</b><small>${c.atraso ? 'Cuotas vencidas sin pagar' : 'Ninguno'}</small></div>
@@ -3001,6 +3207,7 @@ function enlazarArreglo(aq, c, cuerpo){
 }
 function enlazarCuenta(aq, c, cuerpo){
   enlazarArreglo(aq, c, cuerpo);
+  enlazarCorte(cuerpo);
   cuerpo.querySelectorAll('[data-ir-tab]').forEach(b => b.addEventListener('click', () => { fichaTab = b.dataset.irTab; renderFicha(); }));
   $('#fcExtraBtn').addEventListener('click', () => { fichaExtraAbierto = !fichaExtraAbierto; renderFicha(); });
   $('#fcImprimir').addEventListener('click', () => imprimirEstadoCuenta(aq));
@@ -3390,7 +3597,8 @@ function renderCobCasas(){
   const lista = todas.filter(x => !q || [x.d.numero, x.d.responsable, x.d.telefono].join(' ').toLowerCase().includes(q))
     .filter(x => !tf || (x.d.tarifa || state.settings.tarifaDefecto) === tf)
     .filter(x => f === 'todas' || (f === 'deben' && x.c.saldo > 0) || (f === 'morosas' && x.c.atraso >= 3) || (f === 'aldia' && x.c.aplica && x.c.saldo <= 0)
-      || (f === 'favor' && x.c.saldo < 0) || (f === 'exoneradas' && x.c.exonerada) || (f === 'sincobro' && !x.c.aplica))
+      || (f === 'favor' && x.c.saldo < 0) || (f === 'exoneradas' && x.c.exonerada) || (f === 'sincobro' && !x.c.aplica)
+      || (f === 'corte' && !!x.c.corte) || (f.startsWith('clase-') && clasificar(x.l.aq, x.c) === f.slice(6)))
     .sort((a, b) => b.c.saldo - a.c.saldo || String(a.d.numero).localeCompare(String(b.d.numero), 'es', {numeric:true}));
   cobCasasFiltradas = lista;
   const total = round2(lista.reduce((s, x) => s + Math.max(0, x.c.saldo), 0));
@@ -3399,7 +3607,7 @@ function renderCobCasas(){
   if (!todas.length){ cont.innerHTML = '<div class="vacio-grande">Aún no hay casas. <a href="#/mapa/dibujar/casa">Dibuja la primera en el mapa</a>.</div>'; return; }
   if (!lista.length){ cont.innerHTML = '<div class="vacio-grande">Ninguna casa coincide con el filtro.</div>'; return; }
   cont.innerHTML = `<div class="tabla-cont"><table class="tabla clicable">
-    <thead><tr><th>Casa</th><th>Representante</th><th class="num">Núcleos</th><th class="num">Personas</th><th>Tarifa</th><th class="num">Cuota</th><th>Último pago</th><th class="num">Saldo</th><th>Estado</th></tr></thead>
+    <thead><tr><th>Casa</th><th>Representante</th><th class="num">Núcleos</th><th class="num">Personas</th><th>Tarifa</th><th class="num">Cuota</th><th>Último pago</th><th class="num">Saldo</th><th>Clasificación</th><th>Estado</th></tr></thead>
     <tbody>${lista.map(x => { const e = textoEstado(x.c); return `<tr data-ficha="${esc(x.l.aq.id)}" tabindex="0">
       <td><b>${esc(nombreCasa(x.d))}</b></td><td>${esc(x.d.responsable || '—')}</td>
       <td class="num">${nucleosDe(x.d)}</td><td class="num">${personasDe(x.d) || '—'}</td>
@@ -3407,6 +3615,7 @@ function renderCobCasas(){
       <td class="num">${esc(dinero(x.q.monto))}</td>
       <td>${x.c.ultimoPago ? esc(fechaCorta(x.c.ultimoPago.fecha)) : '—'}</td>
       <td class="num"><b class="${x.c.saldo > 0 ? 'rojo' : ''}">${esc(dinero(x.c.saldo))}</b></td>
+      <td>${etiquetaClase(clasificar(x.l.aq, x.c))}</td>
       <td><span class="pill ${e.cls}">${esc(e.txt)}</span></td></tr>`; }).join('')}</tbody></table></div>`;
   cont.querySelectorAll('[data-ficha]').forEach(tr => {
     tr.addEventListener('click', () => abrirFicha(tr.dataset.ficha));
@@ -3683,6 +3892,42 @@ document.addEventListener('keydown', e => {
   if (k){ e.preventDefault(); moverFondo(...k); }
 });
 
+/* ---------- Política de privacidad (se edita aquí y se muestra en privacidad.html) ---------- */
+let polEditada = false;
+function pintarPolitica(){
+  const f = state.settings.politicaFecha;
+  $('#polFecha').textContent = state.settings.politica
+    ? (f ? 'Última actualización: ' + new Date(f).toLocaleDateString('es', {day:'numeric', month:'long', year:'numeric'}) + ' a las ' + new Date(f).toLocaleTimeString('es', {hour:'numeric', minute:'2-digit'}) : '')
+    : 'Se muestra el texto base (aún no se ha guardado uno propio).';
+  if (!polEditada) $('#polTexto').value = state.settings.politica || AcuPolitica.TEXTO_BASE;
+}
+function previaPolitica(){
+  const r = AcuPolitica.render($('#polTexto').value, {acueducto:state.settings.nombre, correo:state.settings.correoContacto,
+    whatsapp:state.settings.whatsappActivo ? state.settings.whatsapp : ''});
+  $('#polPrevia').innerHTML = r.html || '<p class="vacio">El texto está vacío.</p>';
+}
+$('#polTexto').addEventListener('input', () => { polEditada = true; if (!$('#polPrevia').hidden) previaPolitica(); });
+$('#polVista').addEventListener('click', () => {
+  const ver = $('#polPrevia').hidden; $('#polPrevia').hidden = !ver;
+  $('#polVista').textContent = ver ? 'Ocultar vista previa' : 'Vista previa';
+  if (ver) previaPolitica();
+});
+$('#polBase').addEventListener('click', () => {
+  if (!confirm('¿Reemplazar lo escrito por el texto base? No se publica hasta que guardes.')) return;
+  $('#polTexto').value = AcuPolitica.TEXTO_BASE; polEditada = true; if (!$('#polPrevia').hidden) previaPolitica();
+});
+$('#polGuardar').addEventListener('click', async () => {
+  const texto = $('#polTexto').value.trim();
+  if (texto.length < 50){ aviso('El texto de la política es demasiado corto.'); return; }
+  if (!confirm('¿Publicar esta política de privacidad? La fecha de actualización cambiará a hoy.')) return;
+  const fila = await consultaConFila(sb.from('configuracion').update({politica_privacidad:texto, editado_por:CLIENTE_ID}).eq('id', 1)
+    .select('politica_privacidad,politica_actualizada_en').single(), 'No se pudo guardar la política');
+  if (!fila) return;
+  state.settings.politica = fila.politica_privacidad; state.settings.politicaFecha = fila.politica_actualizada_en;
+  polEditada = false; pintarPolitica();
+  aviso('Política publicada. Los usuarios ya ven la nueva versión y su fecha.', 5000);
+});
+
 /* ================= Sección: Configuración ================= */
 function cargarConfigEnFormulario(){
   $('#cfgNombre').value = state.settings.nombre;
@@ -3924,6 +4169,7 @@ async function iniciarApp(session){
     router();
     verificarBaseDatos();
     cargarUsuarios();
+    revisarAvisos().then(actualizarBadgeCortes);
     pintarSync();
     revisarDatosLocales();
   } catch (err){

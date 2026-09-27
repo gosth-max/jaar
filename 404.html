@@ -9,12 +9,14 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<!-- Números más claros: Inter solo para los dígitos (las letras siguen con Atkinson Hyperlegible) -->
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap&text=0123456789" rel="stylesheet">
 <style>
   /* Todo va dentro de esta página porque GitHub la muestra desde cualquier dirección */
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
   :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
-  body{font-family:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:#15323B;background:#F2F6F7;display:grid;place-items:center;padding:24px;text-align:center}
+  body{font-family:"Inter","Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:#15323B;background:#F2F6F7;display:grid;place-items:center;padding:24px;text-align:center}
   .caja{max-width:520px}
   svg{width:min(260px,70vw);height:auto;display:block;margin:0 auto 10px}
   .codigo{font-size:15px;font-weight:700;color:#1D6FA3;letter-spacing:.08em;margin:0}

@@ -309,10 +309,10 @@ const RENDER = {inicio:renderInicio, calendario:renderCalendario, reportar:rende
 function router(){
   let ruta = location.hash.replace(/^#\/?/, '') || 'inicio';
   let abrirReg = false;
-  if (ruta === 'registro'){ ruta = 'reportar'; abrirReg = true; }
+  if (ruta === 'registro'){ location.replace('assets/pages/auth/auth.html?modo=registro'); return; }
   if (!['inicio', 'mapa', 'calendario', 'reportar', 'perfil'].includes(ruta)) ruta = 'inicio';
   irA(ruta, true);
-  if (abrirReg){ history.replaceState(null, '', '#/reportar'); abrirRegistro(); }
+
 }
 function irA(v, desdeRouter){
   if (!desdeRouter && location.hash !== '#/' + v) history.pushState(null, '', '#/' + v);
@@ -474,7 +474,7 @@ $('#btnCuenta').addEventListener('click', e => {
   $('#btnCuenta').setAttribute('aria-expanded', String(ab));
 });
 document.addEventListener('click', e => { if (!e.target.closest('#cuentaDer')) $('#menuCuenta').hidden = true; });
-$('#btnSalir').addEventListener('click', async () => { await sb.auth.signOut(); location.hash = '#/inicio'; location.reload(); });
+$('#btnSalir').addEventListener('click', async () => { await sb.auth.signOut(); location.replace('assets/pages/auth/auth.html'); });
 
 /* --- Enviar un reporte --- */
 let mapaRep = null, marcaRep = null, puntoRep = null, abiertoRepEn = Date.now(), misReportes = [];
@@ -655,6 +655,7 @@ async function cargarMisCuentas(){
   if (error){ console.warn('mi_estado_cuenta', error.message); return; }
   misCuentas = Array.isArray(data) ? data : [];
   marcarMisCasas();
+  pintarNotificaciones();
   if (vistaActual === 'perfil') renderPerfil();
 }
 /* Identificador de "Mi casa" en el mapa */
@@ -672,12 +673,17 @@ function marcarMisCasas(){
 }
 function tarjetaCuenta(x){
   const c = calcularCuenta(x), t = x.tarifa, red = infoRedCasa(x.id), l = capas.get(x.id);
-  const paz = c.aplica && c.saldo <= 0;
+  const corte = corteActivoDe(x), clase = clasificarCasa(x, c);
+  const paz = c.aplica && c.saldo <= 0 && !corte;
   const unidades = t && t.modo === 'nucleo' ? `${x.nucleos} ${x.nucleos === 1 ? 'núcleo' : 'núcleos'} × ${dinero(t.monto)}`
     : t && t.modo === 'persona' ? `${x.personas} ${x.personas === 1 ? 'persona' : 'personas'} × ${dinero(t.monto)}` : 'monto fijo por casa';
   return `<article class="tarjeta cuenta-casa">
-    <div class="cintillo ${paz ? 'paz' : c.saldo > 0 ? 'debe' : 'neutro'}">${paz ? '✓ PAZ Y SALVO' : c.saldo > 0 ? `Saldo pendiente: ${esc(dinero(c.saldo))}` : 'Sin cobros registrados'}</div>
-    <header><h2>${esc(l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || ''))}</h2>${x.exonerada ? '<span class="pill nada">Exonerada</span>' : ''}</header>
+    <div class="cintillo ${corte && corte.estado === 'cortado' ? 'cortado' : paz ? 'paz' : c.saldo > 0 ? 'debe' : 'neutro'}">${corte && corte.estado === 'cortado' ? '🚱 SERVICIO SUSPENDIDO' : paz ? '✓ PAZ Y SALVO' : c.saldo > 0 ? `Saldo pendiente: ${esc(dinero(c.saldo))}` : 'Sin cobros registrados'}</div>
+    <header><h2>${esc(l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || ''))}</h2><span class="fila">${etiquetaClase(clase)}${x.exonerada ? '<span class="pill nada">Exonerada</span>' : ''}</span></header>
+    ${corte ? `<div class="bloque corte ${corte.estado}"><b>${corte.estado === 'cortado' ? '🚱 Servicio de agua suspendido' : '⚠️ Aviso de corte de agua'}</b>
+      <p>${corte.estado === 'cortado'
+        ? `Desde el ${esc(fechaCorta(corte.cortado_en))}. Las cuotas se siguen cobrando cada mes. Para reincorporar el servicio, ponte al día o haz un arreglo de pago con la administración.`
+        : `Tienes ${corte.meses} ${corte.meses === 1 ? 'mes' : 'meses'} de atraso. Paga o haz un arreglo de pago antes del <b>${esc(fechaCorta(corte.fecha_limite))}</b> para evitar el corte.`}</p></div>` : ''}
     <dl class="datos-cuenta">
       <dt>Tarifa</dt><dd>${x.especial ? 'Cuota especial' : esc(t ? t.nombre : 'Sin tarifa')}${!x.especial && t ? `<small>${esc(unidades)}</small>` : ''}</dd>
       <dt>Cuota mensual</dt><dd><b>${esc(dinero(x.cuota_mensual))}</b></dd>
@@ -704,6 +710,10 @@ function tarjetaCuenta(x){
 function renderCuentas(){
   const cont = $('#pfCuentas'); if (!cont) return;
   if (!sesion){ cont.innerHTML = ''; return; }
+  renderNotificaciones();
+  const g = clasificacionGeneral();
+  $('#pfClase').innerHTML = g ? `${etiquetaClase(g)}<span>${esc(CLASIFICACION[g].desc)}</span>` : '';
+  $('#pfClase').hidden = !g;
   $('#pfCuentasTitulo').textContent = misCuentas.length > 1 ? 'Estado de cuenta de mis casas' : 'Estado de cuenta de mi casa';
   cont.innerHTML = misCuentas.length ? misCuentas.map(tarjetaCuenta).join('')
     : '<p class="vacio">Todavía no tienes una casa vinculada a tu cuenta. Si eres representante de una casa, pide a la administración que la vincule.</p>';
@@ -713,6 +723,72 @@ function renderCuentas(){
     setTimeout(() => { if (l.getBounds) map.fitBounds(l.getBounds(), {maxZoom:19, padding:[60, 60]}); else map.setView(l.getLatLng(), 19); }, 80);
   }));
 }
+
+/* =====================================================================
+   CORTES, NOTIFICACIONES Y CLASIFICACIÓN DEL VECINO
+   ===================================================================== */
+const CLASIFICACION = {
+  excelencia:{txt:'Excelencia', icono:'⭐', desc:'Tienes meses pagados por adelantado. ¡Gracias!'},
+  aldia:{txt:'Al Día', icono:'✓', desc:'Tus pagos están al día.'},
+  atencion:{txt:'Atención', icono:'!', desc:'Tienes una deuda pendiente o un arreglo de pago.'},
+  intervencion:{txt:'Intervención', icono:'⚠', desc:'Superaste los meses de deuda permitidos: hay un aviso o un corte de agua.'}
+};
+const PRIORIDAD_CLASE = ['excelencia', 'aldia', 'atencion', 'intervencion'];
+const corteActivoDe = x => (x.cortes || []).find(k => k.estado === 'notificado' || k.estado === 'cortado') || null;
+/* Misma regla que la administración */
+function clasificarCasa(x, c){
+  if (!c.aplica) return null;
+  const tol = Number(x.meses_para_corte) || 2;
+  if (corteActivoDe(x) || c.atraso > tol) return 'intervencion';
+  if (c.arreglo || c.atraso >= 1) return 'atencion';
+  if (c.adelanto.length >= 1) return 'excelencia';
+  return 'aldia';
+}
+function clasificacionGeneral(){
+  const cls = misCuentas.map(x => clasificarCasa(x, calcularCuenta(x))).filter(Boolean);
+  if (!cls.length) return null;
+  if (cls.every(k => k === 'excelencia')) return 'excelencia';
+  return cls.filter(k => k !== 'excelencia').reduce((a, k) => PRIORIDAD_CLASE.indexOf(k) > PRIORIDAD_CLASE.indexOf(a) ? k : a, 'aldia');
+}
+const etiquetaClase = k => k ? `<span class="clase clase-${k}"><i>${CLASIFICACION[k].icono}</i>${CLASIFICACION[k].txt}</span>` : '';
+
+/* Notificaciones: avisos de corte, cortes y reincorporaciones de las casas del vecino */
+function notificaciones(){
+  const lista = [];
+  misCuentas.forEach(x => {
+    const l = capas.get(x.id), casa = l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || '');
+    (x.cortes || []).forEach(k => {
+      if (k.estado === 'notificado') lista.push({activa:true, tipo:'aviso', cuando:k.notificado_en, casa,
+        titulo:`Aviso de corte de agua · ${casa}`,
+        texto:`Tu casa tiene ${k.meses} ${k.meses === 1 ? 'mes' : 'meses'} de atraso (${dinero(k.deuda)}). Si no pagas o haces un arreglo de pago antes del ${fechaCorta(k.fecha_limite)}, se cortará el servicio de agua.`});
+      else if (k.estado === 'cortado') lista.push({activa:true, tipo:'corte', cuando:k.cortado_en, casa,
+        titulo:`Servicio de agua suspendido · ${casa}`,
+        texto:`El servicio se cortó el ${fechaCorta(k.cortado_en)} por falta de pago. Las cuotas se siguen generando cada mes. Para reincorporar el servicio, ponte al día o haz un arreglo de pago con la administración.`});
+      else if (k.estado === 'reincorporado') lista.push({activa:false, tipo:'ok', cuando:k.cerrado_en, casa,
+        titulo:`Servicio reincorporado · ${casa}`, texto:`El servicio de agua se reincorporó el ${fechaCorta(k.cerrado_en)}.${k.nota ? ' ' + k.nota : ''}`});
+      else if (k.estado === 'atendido') lista.push({activa:false, tipo:'ok', cuando:k.cerrado_en, casa,
+        titulo:`Aviso de corte atendido · ${casa}`, texto:`Gracias: el aviso del ${fechaCorta(k.notificado_en)} quedó atendido.`});
+    });
+  });
+  return lista.sort((a, b) => (b.activa - a.activa) || String(b.cuando).localeCompare(String(a.cuando)));
+}
+function pintarNotificaciones(){
+  const activas = notificaciones().filter(n => n.activa).length;
+  const b = $('#btnAvisos');
+  b.hidden = !sesion;
+  $('#avisosCuenta').textContent = activas; $('#avisosCuenta').hidden = !activas;
+  b.classList.toggle('con-avisos', !!activas);
+  b.title = activas ? `${activas} ${activas === 1 ? 'aviso importante' : 'avisos importantes'}` : 'Notificaciones';
+}
+function renderNotificaciones(){
+  const cont = $('#pfNotificaciones'); if (!cont) return;
+  const lista = notificaciones();
+  $('#pfNotifBox').hidden = !lista.length;
+  cont.innerHTML = lista.slice(0, 8).map(n => `<div class="notif ${n.tipo} ${n.activa ? 'activa' : ''}">
+      <span class="ic" aria-hidden="true">${n.tipo === 'aviso' ? '⚠️' : n.tipo === 'corte' ? '🚱' : '✅'}</span>
+      <div><b>${esc(n.titulo)}</b><p>${esc(n.texto)}</p><small>${esc(fechaCorta(n.cuando))}</small></div></div>`).join('');
+}
+$('#btnAvisos').addEventListener('click', () => { location.hash = '#/perfil'; setTimeout(() => { const n = $('#pfNotifBox'); if (n && !n.hidden) n.scrollIntoView({block:'start', behavior:'smooth'}); }, 150); });
 
 /* --- Mi perfil --- */
 function renderPerfil(){
@@ -753,45 +829,6 @@ $('#pfCambiar').addEventListener('click', async () => {
   $('#pfClave').value = ''; $('#pfClave2').value = '';
   mensajeForm('#pfClaveMsg', 'Listo, contraseña cambiada. Úsala la próxima vez que entres.', true);
   renderPerfil();
-});
-
-/* --- Solicitar una cuenta --- */
-const CLAVE_ESPERA_REG = 'acu-registro-espera';
-let abiertoRegEn = 0;
-function abrirRegistro(){
-  if (sesion){ aviso('Ya tienes una sesión iniciada.'); return; }
-  abiertoRegEn = Date.now();
-  $('#regMensaje').hidden = true;
-  $('#dlgRegistro').showModal();
-  contarEsperaReg();
-}
-$('#abrirRegistro').addEventListener('click', abrirRegistro);
-function esperaRegistro(){ try { return Number(localStorage.getItem(CLAVE_ESPERA_REG)) || 0; } catch (e){ return 0; } }
-function contarEsperaReg(){
-  const b = $('#regEnviar'), falta = Math.ceil((esperaRegistro() - Date.now()) / 1000);
-  if (falta > 0){
-    b.disabled = true;
-    b.textContent = falta > 3600 ? `Podrás intentar de nuevo en ${Math.ceil(falta / 3600)} h` : falta > 60 ? `Podrás intentar de nuevo en ${Math.ceil(falta / 60)} min` : `Espera ${falta} s`;
-    if ($('#dlgRegistro').open) setTimeout(contarEsperaReg, 1000);
-  } else { b.disabled = false; b.textContent = 'Enviar solicitud'; }
-}
-$('#formRegistro').addEventListener('submit', async e => {
-  e.preventDefault();
-  const f = e.target, d = Object.fromEntries(new FormData(f).entries());
-  if (!f.checkValidity()){ f.reportValidity(); return; }
-  if (!d.acepto){ mensajeForm('#regMensaje', 'Debes aceptar la política de privacidad.', false); return; }
-  const b = $('#regEnviar'); b.disabled = true; b.textContent = 'Enviando…';
-  const {data, error} = await sb.rpc('solicitar_registro', {
-    p_nombre:d.nombre, p_celular:d.celular, p_email:d.email, p_numero_casa:d.numero_casa,
-    p_trampa:d.sitio_web || '', p_segundos:Math.round((Date.now() - abiertoRegEn) / 1000)
-  });
-  if (error){ b.disabled = false; b.textContent = 'Enviar solicitud'; mensajeForm('#regMensaje', explicarError(error), false); return; }
-  mensajeForm('#regMensaje', data.mensaje, !!data.ok);
-  // Tiempo de espera antes de otro intento
-  const espera = data.ok ? 600 : (Number(data.esperar) || 0);
-  if (espera){ try { localStorage.setItem(CLAVE_ESPERA_REG, String(Date.now() + espera * 1000)); } catch (e2){} }
-  if (data.ok) f.reset();
-  contarEsperaReg();
 });
 
 /* ---------- WhatsApp ---------- */
@@ -858,10 +895,11 @@ function suscribir(){
   try {
     const {data:{session}} = await sb.auth.getSession();
     sesion = session;
-    if (sesion){
-      const {data} = await sb.from('perfiles').select('*').eq('id', sesion.user.id).maybeSingle();
-      perfil = data || null;
-    }
+    // Para ver la página hay que iniciar sesión con una cuenta activa
+    if (!sesion){ location.replace('assets/pages/auth/auth.html'); return; }
+    const {data} = await sb.from('perfiles').select('*').eq('id', sesion.user.id).maybeSingle();
+    perfil = data || null;
+    if (!perfil || perfil.estado !== 'activo'){ location.replace('assets/pages/auth/auth.html'); return; }
     pintarCuenta();
     await cargar();
     router();
@@ -874,7 +912,7 @@ function suscribir(){
     setTimeout(() => location.reload(), 20000);
     return;
   }
-  sb.auth.onAuthStateChange((ev, s) => { if (ev === 'SIGNED_OUT'){ sesion = null; perfil = null; pintarCuenta(); renderVistaActual(); } });
+  sb.auth.onAuthStateChange(ev => { if (ev === 'SIGNED_OUT') location.replace('assets/pages/auth/auth.html'); });
   if (window.__PRUEBAS) window.__pub = {map, capas, red};   // solo para pruebas automáticas
   setInterval(() => cargar().catch(() => {}), 120000);
   document.addEventListener('visibilitychange', () => { if (!document.hidden) cargar().catch(() => {}); });

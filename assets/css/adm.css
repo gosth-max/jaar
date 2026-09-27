@@ -9,7 +9,7 @@
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
-body{font-family:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);background:var(--papel);
+body{font-family:"Inter","Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);background:var(--papel);
   font-size:15px;line-height:1.4;display:flex;flex-direction:column}
 button,input,select,textarea{font:inherit;color:inherit}
 button{cursor:pointer}
@@ -586,3 +586,38 @@ input[type=password]{background:var(--blanco);border:1px solid var(--linea);bord
 .arreglo p{margin:4px 0;font-size:14px}
 .progreso{height:10px;background:var(--papel);border-radius:6px;overflow:hidden;margin:6px 0}
 .progreso i{display:block;height:100%;background:var(--ok)}
+
+/* Cortes de agua y clasificación */
+.clase{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px 2px 3px;font-weight:700;font-size:12.5px;white-space:nowrap}
+.clase i{font-style:normal;display:grid;place-items:center;width:19px;height:19px;border-radius:50%;color:#fff;font-size:11px}
+.clase-excelencia{background:#FFF4D6;color:#7A5A00} .clase-excelencia i{background:#E0A800}
+.clase-aldia{background:#E3F2E9;color:#1F6B42} .clase-aldia i{background:var(--ok)}
+.clase-atencion{background:#FBF0D8;color:#6B4D05} .clase-atencion i{background:#C8901A}
+.clase-intervencion{background:#FDECEA;color:#8C1D18} .clase-intervencion i{background:var(--bad)}
+.corte-caja{border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:14px;border:1px solid}
+.corte-caja p{margin:4px 0}
+.corte-caja.notificar,.corte-caja.notificado{background:#FFF7E8;border-color:#E8A33C}
+.corte-caja.vencido{background:#FDECEA;border-color:#E4A19A}
+.corte-caja.cortado{background:#2E3336;border-color:#2E3336;color:#fff}
+.corte-caja.cortado .btn{color:var(--tinta)}
+.corte-caja .rango{display:flex;align-items:center;gap:6px;font-size:13.5px}
+.corte-caja input[type=date]{border:1px solid var(--linea);border-radius:7px;padding:5px 7px}
+.reglas-corte{margin-bottom:16px}
+.reglas-corte .fila{align-items:flex-end}
+.sub-seccion{font-size:18px;margin:22px 0 6px;display:flex;align-items:center;gap:8px}
+.lista-cortes{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+.corte-fila{cursor:pointer}
+.corte-fila header{margin-bottom:2px}
+.corte-fila .corte-caja{margin:8px 0 0}
+.fc-saldo .fila{gap:6px;justify-content:flex-end}
+
+/* Editor de la política de privacidad */
+.ancho-completo{grid-column:1/-1}
+#polTexto{width:100%;min-height:340px;font:13.5px/1.55 ui-monospace,Menlo,Consolas,monospace;border:1px solid var(--linea);border-radius:10px;padding:12px;resize:vertical;background:var(--blanco)}
+.politica-previa{margin-top:12px;border:1px solid var(--linea);border-radius:12px;padding:6px 18px 12px;background:var(--papel);max-height:520px;overflow:auto}
+.politica-previa h2{font-size:17px;margin:14px 0 6px}
+.politica-previa section{border-bottom:1px solid var(--linea);padding-bottom:6px}
+code{background:var(--papel);border-radius:4px;padding:1px 5px;font-size:12.5px}
+
+/* Cifras con ancho fijo: columnas de montos alineadas */
+.tabla,.kpi b,.fc-kpis b,.fc-saldo b,.monto,.num,.rc-monto b,.cuenta dd{font-variant-numeric:tabular-nums}

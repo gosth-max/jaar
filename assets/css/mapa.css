@@ -42,7 +42,7 @@ path.con-incidencia{animation:acu-alerta 1.6s ease-in-out infinite}
 @media (prefers-reduced-motion:reduce){.pin-inc span{animation:none}}
 
 /* Ventanita al tocar un elemento en el mapa */
-.popup-acu .leaflet-popup-content{margin:12px 14px;font:14px/1.4 "Atkinson Hyperlegible",system-ui,sans-serif;color:#15323B;min-width:200px}
+.popup-acu .leaflet-popup-content{margin:12px 14px;font:14px/1.4 "Inter","Atkinson Hyperlegible",system-ui,sans-serif;color:#15323B;min-width:200px}
 .popup-acu h3{margin:0 0 4px;font-size:15.5px}
 .popup-acu .meta{color:#5B7078;font-size:12.5px;margin:0 0 6px}
 .popup-acu .estado{margin:8px 0 0;padding:7px 9px;border-radius:8px;font-weight:700}
