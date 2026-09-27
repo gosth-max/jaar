@@ -455,3 +455,4 @@ input[type=password]{background:var(--blanco);border:1px solid var(--linea);bord
 /* Control administrativo de incidencias */
 .control{background:#F4F7F8;border-left:3px solid #5F7F89;border-radius:6px;padding:6px 9px;margin:6px 0;font-size:13px;line-height:1.55;color:var(--tinta)}
 .banner-hist .control{font-size:12.5px}
+.control .ex{color:var(--suave);font-size:12px}

@@ -662,12 +662,18 @@ function pedirResolucion(id){
   $('#dlgResolver').showModal();
 }
 /* Quién registró, resolvió y atendió (datos internos) */
+/* El nombre guardado se conserva; aquí solo se indica si la persona ya no está en la administración */
+function situacionCuenta(id){
+  if (!id || adminsLista.some(a => a.id === id)) return '';
+  if (perfilesLista.some(p => p.id === id)) return ' <span class="ex">(ya no es administrador)</span>';
+  return ' <span class="ex">(cuenta eliminada)</span>';
+}
 function textoControl(inc){
   const filas = [];
-  if (inc.creado_por_nombre) filas.push(`📝 Registró: <b>${esc(inc.creado_por_nombre)}</b>`);
+  if (inc.creado_por_nombre) filas.push(`📝 Registró: <b>${esc(inc.creado_por_nombre)}</b>${situacionCuenta(inc.creado_por)}`);
   if (inc.estado === 'resuelta'){
-    if (inc.atendida_por_nombre) filas.push(`🔧 Atendió: <b>${esc(inc.atendida_por_nombre)}</b>`);
-    if (inc.resuelta_por_nombre && inc.resuelta_por_nombre !== inc.atendida_por_nombre) filas.push(`✅ Marcó como resuelta: <b>${esc(inc.resuelta_por_nombre)}</b>`);
+    if (inc.atendida_por_nombre) filas.push(`🔧 Atendió: <b>${esc(inc.atendida_por_nombre)}</b>${situacionCuenta(inc.atendida_por)}`);
+    if (inc.resuelta_por_nombre && inc.resuelta_por_nombre !== inc.atendida_por_nombre) filas.push(`✅ Marcó como resuelta: <b>${esc(inc.resuelta_por_nombre)}</b>${situacionCuenta(inc.resuelta_por)}`);
     if (inc.nota_cierre) filas.push(`🗒 Nota de cierre: ${esc(inc.nota_cierre)}`);
   }
   return filas.length ? `<p class="control">${filas.join('<br>')}</p>` : '';
@@ -2563,7 +2569,7 @@ function enlazarCuentas(cont){
   }));
   cont.querySelectorAll('[data-eliminar-cuenta]').forEach(b => b.addEventListener('click', async () => {
     const p = buscar(b.dataset.eliminarCuenta); if (!p) return;
-    if (!confirm(`¿Eliminar definitivamente la cuenta de ${p.nombre || p.email}? Sus reportes se conservan sin su nombre.`)) return;
+    if (!confirm(`¿Eliminar definitivamente la cuenta de ${p.nombre || p.email}?\n\nSe borran su correo, celular y acceso. Sus reportes se conservan sin su nombre. Si alguna vez fue administrador, las incidencias que registró o atendió se conservan con su nombre y cargo como registro de trabajo.`)) return;
     const r = await llamarFuncion({accion:'eliminar', id:p.id});
     if (r && r.ok){ aviso(r.mensaje); cargarUsuarios(); }
   }));
@@ -2654,7 +2660,7 @@ function renderAdministradores(){
   cont.querySelectorAll('[data-genero]').forEach(s => s.addEventListener('change', () => cambiarPerfil(s.dataset.genero, {genero:s.value}, 'Listo: el cargo se muestra como ' + (s.value === 'F' ? 'dama.' : 'caballero.'))));
   cont.querySelectorAll('[data-bajar]').forEach(b => b.addEventListener('click', () => {
     const p = adminsLista.find(x => x.id === b.dataset.bajar);
-    if (p && confirm(`¿Quitarle la administración a ${p.nombre || 'esta persona'}? Vuelve a ser vecino: conserva su cuenta y sus reportes, pero pierde el cargo y el acceso a la administración.`))
+    if (p && confirm(`¿Quitarle la administración a ${p.nombre || 'esta persona'}? Vuelve a ser vecino: conserva su cuenta y sus reportes, pero pierde el cargo y el acceso a la administración. Las incidencias que atendió siguen registradas con su nombre y cargo.`))
       cambiarPerfil(p.id, {rol:'vecino'}, 'Ahora es vecino.');
   }));
   if (dev){ renderAscender(); renderCargos(); }
