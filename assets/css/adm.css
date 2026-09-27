@@ -625,3 +625,6 @@ code{background:var(--papel);border-radius:4px;padding:1px 5px;font-size:12.5px}
 .aviso-cuota{background:var(--agua-claro);border-radius:10px;padding:9px 12px;font-size:14px;margin:8px 0}
 /* Montos y nombres de casa en una sola línea */
 .tabla td.num,#ccTabla td:first-child,#cpTabla td:nth-child(3){white-space:nowrap}
+
+.menu-cuenta .ver-vecino,.submenu .ver-vecino{display:block;padding:9px 11px;border-radius:8px;text-decoration:none;color:var(--tinta);font-weight:700}
+.menu-cuenta .ver-vecino:hover,.submenu .ver-vecino:hover{background:var(--agua-claro)}

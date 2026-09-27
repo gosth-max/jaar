@@ -46,6 +46,13 @@
   .check{display:flex;gap:9px;align-items:flex-start;margin:12px 0;font-size:14px}
   .check input{margin-top:3px}
   .registro .enlace{font-size:inherit}
+  .correo-elegido{display:flex;align-items:center;gap:8px;background:#F2F6F7;border-radius:999px;padding:7px 12px;margin:4px 0 10px;font-size:14px}
+  .correo-elegido b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .opcion-entrada{display:flex;gap:12px;align-items:center;width:100%;text-align:left;background:#fff;border:2px solid var(--linea);border-radius:14px;padding:14px;margin:10px 0;cursor:pointer;font:inherit;color:var(--tinta)}
+  .opcion-entrada:hover,.opcion-entrada:focus-visible{border-color:var(--agua);background:#F3F8FC;outline:none}
+  .opcion-entrada .ic{font-size:28px;line-height:1}
+  .opcion-entrada b{display:block;font-size:16px}
+  .opcion-entrada small{display:block;color:var(--suave);font-size:13px;margin-top:2px}
   .error{color:var(--bad);font-size:14px;min-height:1.3em;margin:8px 0 0}
   .exito{color:var(--ok);font-size:14px;margin:8px 0 0}
   [hidden]{display:none!important}
@@ -60,12 +67,20 @@
   </div>
 
   <!-- Inicio de sesión -->
-  <form id="v-login" hidden>
+  <form id="v-login" hidden novalidate>
     <h2>Entrar</h2>
-    <label class="campo"><span>Correo</span><input type="email" id="lgCorreo" autocomplete="username" required></label>
-    <label class="campo"><span>Contraseña</span><input type="password" id="lgClave" autocomplete="current-password" required></label>
+    <!-- Paso 1: correo -->
+    <div id="lgPaso1">
+      <label class="campo"><span>Correo electrónico</span><input type="email" id="lgCorreo" autocomplete="username" required></label>
+    </div>
+    <!-- Paso 2: contraseña -->
+    <div id="lgPaso2" hidden>
+      <div class="correo-elegido"><span aria-hidden="true">👤</span><b id="lgCorreoVer"></b><button type="button" class="enlace" id="lgCambiar">Cambiar</button></div>
+      <label class="campo"><span>Contraseña</span><input type="password" id="lgClave" autocomplete="current-password"></label>
+      <label class="check"><input type="checkbox" id="lgVer"><span>Mostrar contraseña</span></label>
+    </div>
     <p class="error" id="lgError" role="alert"></p>
-    <button class="btn" id="lgBoton">Entrar</button>
+    <button class="btn" id="lgBoton">Continuar</button>
     <div class="pie">
       <button type="button" class="enlace" data-ir="olvido">¿Olvidaste tu contraseña?</button>
     </div>
@@ -110,6 +125,21 @@
   </form>
 
   <!-- Mensajes -->
+  <!-- Administradores: elegir cómo entrar -->
+  <section id="v-elegir" hidden>
+    <h2 id="elSaludo">¿Cómo quieres entrar?</h2>
+    <p class="intro">Tu cuenta es de administración y también representa una casa. Elige qué quieres ver ahora; podrás cambiar después desde el menú de tu cuenta.</p>
+    <button type="button" class="opcion-entrada" data-modo="vecino">
+      <span class="ic" aria-hidden="true">🏠</span>
+      <span><b>Entrar como vecino</b><small>Inicio, mapa en vivo, calendario, reportes y el estado de cuenta de tus casas.</small></span>
+    </button>
+    <button type="button" class="opcion-entrada" data-modo="admin">
+      <span class="ic" aria-hidden="true">🛠️</span>
+      <span><b>Entrar a la administración</b><small>Mapa de la red, incidencias, cobros, usuarios y configuración.</small></span>
+    </button>
+    <div class="pie"><button type="button" class="enlace" id="elSalir">No soy yo · cerrar sesión</button></div>
+  </section>
+
   <section id="v-mensaje" hidden>
     <h2 id="msgTitulo">Un momento…</h2>
     <p class="intro" id="msgTexto"></p>
@@ -136,7 +166,7 @@ const esRecuperacion = esInvitacion || /type=recovery/.test(hash) || modo === 'n
 const errorEnlace = /error_code=|error=/.test(hash) ? decodeURIComponent((hash.match(/error_description=([^&]+)/) || [])[1] || '').replace(/\+/g, ' ') : '';
 
 function vista(nombre){
-  ['login','olvido','nueva','mensaje','registro'].forEach(v => $('#v-' + v).hidden = v !== nombre);
+  ['login','olvido','nueva','mensaje','registro','elegir'].forEach(v => $('#v-' + v).hidden = v !== nombre);
   if (nombre === 'registro'){ abiertoRegEn = Date.now(); contarEsperaReg(); }
   const primero = document.querySelector('#v-' + nombre + ' input');
   if (primero) setTimeout(() => primero.focus(), 30);
@@ -149,6 +179,7 @@ function mensaje(titulo, texto, volver){
 }
 document.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => {
   if (b.dataset.ir === 'olvido') $('#olCorreo').value = $('#lgCorreo').value;
+  if (b.dataset.ir === 'login') pasoLogin(1);
   vista(b.dataset.ir);
 }));
 function ocupado(boton, si, texto){ boton.disabled = si; if (texto) boton.textContent = texto; }
@@ -173,9 +204,26 @@ if (esInvitacion){
 sb.auth.onAuthStateChange(evento => { if (evento === 'PASSWORD_RECOVERY') vista('nueva'); });
 
 /* --- Entrar --- */
+/* Inicio de sesión en dos pasos. Por seguridad, el paso del correo no revela si la cuenta
+   existe ni si es de un administrador: eso se sabe solo después de la contraseña. */
+function pasoLogin(n){
+  $('#lgPaso1').hidden = n !== 1; $('#lgPaso2').hidden = n !== 2;
+  $('#lgBoton').textContent = n === 1 ? 'Continuar' : 'Entrar';
+  $('#lgError').textContent = '';
+  if (n === 1) setTimeout(() => $('#lgCorreo').focus(), 0);
+  else { $('#lgCorreoVer').textContent = $('#lgCorreo').value.trim(); $('#lgClave').value = ''; setTimeout(() => $('#lgClave').focus(), 0); }
+}
+$('#lgCambiar').addEventListener('click', () => pasoLogin(1));
+$('#lgVer').addEventListener('change', e => { $('#lgClave').type = e.target.checked ? 'text' : 'password'; });
 $('#v-login').addEventListener('submit', async e => {
   e.preventDefault();
   const boton = $('#lgBoton');
+  if (!$('#lgPaso1').hidden){
+    const correo = $('#lgCorreo').value.trim();
+    if (!/^[^@\s]+@[^@\s]+\.[a-z]{2,}$/i.test(correo)){ $('#lgError').textContent = 'Escribe un correo electrónico válido.'; $('#lgCorreo').focus(); return; }
+    pasoLogin(2); return;
+  }
+  if (!$('#lgClave').value){ $('#lgError').textContent = 'Escribe tu contraseña.'; $('#lgClave').focus(); return; }
   ocupado(boton, true, 'Entrando…'); $('#lgError').textContent = '';
   const {error} = await sb.auth.signInWithPassword({email:$('#lgCorreo').value.trim(), password:$('#lgClave').value});
   if (error){
@@ -188,11 +236,18 @@ $('#v-login').addEventListener('submit', async e => {
   irSegunRol();
 });
 
-/* Administradores a la administración; vecinos a "Enviar un reporte" */
+/* Vecinos a Inicio. Administradores: eligen si entran como vecino o a la administración. */
+let perfilActual = null;
 async function irSegunRol(){
   const {data:{user}} = await sb.auth.getUser();
-  const {data:p} = user ? await sb.from('perfiles').select('rol,estado,debe_cambiar_clave').eq('id', user.id).maybeSingle() : {data:null};
-  if (p && p.estado === 'activo' && (p.rol === 'administrador' || p.rol === 'desarrollador')){ location.replace(DESTINO); return; }
+  const {data:p} = user ? await sb.from('perfiles').select('rol,estado,debe_cambiar_clave,nombre').eq('id', user.id).maybeSingle() : {data:null};
+  perfilActual = p;
+  if (p && p.estado === 'activo' && (p.rol === 'administrador' || p.rol === 'desarrollador')){
+    $('#elSaludo').textContent = p.nombre ? `Hola, ${p.nombre.split(' ')[0]}. ¿Cómo quieres entrar?` : '¿Cómo quieres entrar?';
+    vista('elegir');
+    setTimeout(() => document.querySelector('[data-modo="vecino"]').focus(), 0);
+    return;
+  }
   if (p && p.estado === 'activo'){ location.replace(PUBLICO + (p.debe_cambiar_clave ? '#/perfil' : '#/inicio')); return; }
   await sb.auth.signOut({scope:'local'});
   window.AcuSesion.limpiar();
@@ -200,6 +255,13 @@ async function irSegunRol(){
     ? 'Tu cuenta está suspendida. Comunícate con la administración del acueducto.'
     : 'Esta cuenta todavía no tiene acceso. Si enviaste una solicitud, espera a que sea aprobada: te llegará un correo.', true);
 }
+
+document.querySelectorAll('[data-modo]').forEach(b => b.addEventListener('click', () => {
+  const p = perfilActual || {};
+  if (b.dataset.modo === 'admin') location.replace(DESTINO);
+  else location.replace(PUBLICO + (p.debe_cambiar_clave ? '#/perfil' : '#/inicio'));
+}));
+$('#elSalir').addEventListener('click', async () => { await window.AcuSesion.cerrar(sb, null); pasoLogin(1); vista('login'); });
 
 /* --- Pedir enlace de recuperación --- */
 $('#v-olvido').addEventListener('submit', async e => {
