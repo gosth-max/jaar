@@ -62,7 +62,7 @@ const esPoligono = l => l instanceof L.Polygon;
 const esLinea = l => l instanceof L.Polyline && !(l instanceof L.Polygon);
 
 function datosBase(tipo){
-  if (tipo === 'casa') return {numero:'', responsable:'', telefono:'', nucleos:1, personas:'', inicioCobro:'', cuotaEspecial:'', deudaAnterior:'', pagos:[], notas:''};
+  if (tipo === 'casa') return {numero:'', responsable:'', telefono:'', nucleos:1, personas:'', inicioCobro:'', cuotaEspecial:'', tarifa:'', cobroActivo:true, notas:''};
   if (tipo === 'tuberia') return {nombre:'', clase:'principal', flujo:'', sectores:[], diametro:'', material:'PVC', notas:''};
   if (tipo === 'llave') return {nombre:'', estado:'abierta', notas:''};
   if (tipo === 'sector') return {nombre:'', opacidad:0.35, activo:false, activoDesde:'', notas:''};
@@ -145,23 +145,22 @@ const guardarConfig = debounce(() => {
     whatsapp_activo:!!s.whatsappActivo, correo_contacto:s.correoContacto || null, editado_por:CLIENTE_ID}), 'No se pudo guardar la configuración');
 }, 600);
 
-const pagoDesdeFila = p => ({id:p.id, fecha:p.fecha, monto:num(p.monto), nota:p.nota || ''});
-function aqDesdeFila(r, pagos){
+function aqDesdeFila(r){
   const tipo = TIPOS[r.tipo] ? r.tipo : 'sin';
   const datos = Object.assign(datosBase(tipo), r.datos || {});
-  datos.pagos = pagos || [];
+  delete datos.pagos;
   return {id:r.id, tipo, color:r.color || TIPOS[tipo].color, colorManual:!!r.color_manual, datos};
 }
 function aplicarFilaConfig(r){
-  state.settings = {nombre:r.nombre || 'Mi acueducto', cuota:num(r.cuota), moneda:r.moneda ?? 'B/.', colorPorPago:!!r.color_por_pago,
+  state.settings = {nombre:r.nombre || 'Mi acueducto', cuota:num(r.cuota), moneda:r.moneda ?? 'B/.', colorPorPago:!!r.color_por_pago, tarifaDefecto:r.tarifa_defecto || 'estandar',
     whatsapp:r.whatsapp || '', whatsappMensaje:r.whatsapp_mensaje || '', whatsappActivo:!!r.whatsapp_activo, correoContacto:r.correo_contacto || ''};
 }
 
 async function cargarTodo(){
-  const [cfg, formas, pagos, incs, tipos] = await Promise.all([
+  const [cfg, formas, , incs, tipos] = await Promise.all([
     sb.from('configuracion').select('*').eq('id', 1).maybeSingle(),
     Acu.traerTodo(sb, 'formas'),
-    Acu.traerTodo(sb, 'pagos'),
+    cargarCobros(),
     Acu.traerTodo(sb, 'incidencias'),
     sb.from('tipos_incidencia').select('*').order('orden').order('nombre')
   ]);
@@ -171,13 +170,11 @@ async function cargarTodo(){
   tiposInc = tipos.data || [];
   incidencias.clear();
   incs.forEach(r => incidencias.set(r.id, r));
-  const porForma = {};
-  pagos.forEach(p => (porForma[p.forma_id] = porForma[p.forma_id] || []).push(pagoDesdeFila(p)));
   cerrarPanel();
   capa.clearLayers(); capas.clear(); versionGeo++;
   formas.forEach(r => {
     const layer = Acu.capaDesdeGeom(r.geometria);
-    if (layer) agregarCapa(layer, aqDesdeFila(r, porForma[r.id]));
+    if (layer) agregarCapa(layer, aqDesdeFila(r));
   });
   ordenarSectores();
   cargarConfigEnFormulario();
@@ -200,17 +197,9 @@ function suscribir(){
       if (r.editado_por === CLIENTE_ID || pendientes.has(r.id)) return;
       aplicarFilaForma(r);
     })
-    .on('postgres_changes', {event:'*', schema:'public', table:'pagos'}, p => {
-      const r = p.eventType === 'DELETE' ? p.old : p.new;
-      const l = capas.get(r.forma_id); if (!l) return;
-      const lista = l.aq.datos.pagos = l.aq.datos.pagos || [];
-      const i = lista.findIndex(x => x.id === r.id);
-      if (p.eventType === 'DELETE'){ if (i >= 0) lista.splice(i, 1); else return; }
-      else if (i >= 0) lista[i] = pagoDesdeFila(r);
-      else lista.push(pagoDesdeFila(r));
-      refrescarForma(l);
-      if (selected === l) renderPagos();
-    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'pagos'}, p => movimientoEnVivo(pagosDe, p))
+    .on('postgres_changes', {event:'*', schema:'public', table:'cobros'}, p => movimientoEnVivo(cobrosDe, p))
+    .on('postgres_changes', {event:'*', schema:'public', table:'tarifas'}, cargarTarifas)
     .on('postgres_changes', {event:'*', schema:'public', table:'configuracion'}, p => {
       if (!p.new || p.new.editado_por === CLIENTE_ID) return;
       aplicarFilaConfig(p.new);
@@ -254,32 +243,6 @@ function aplicarFilaForma(r){
   renderResumenPronto();
 }
 
-/* ================= Cuotas ================= */
-function cuenta(aq){
-  const d = aq.datos || {};
-  const nuc = Math.max(0, num(d.nucleos));
-  const especial = d.cuotaEspecial !== '' && d.cuotaEspecial != null && isFinite(Number(d.cuotaEspecial));
-  const cuotaMes = especial ? num(d.cuotaEspecial) : nuc * num(state.settings.cuota);
-  let meses = 0;
-  if (d.inicioCobro && /^\d{4}-\d{2}$/.test(d.inicioCobro)){
-    const [y, m] = d.inicioCobro.split('-').map(Number);
-    const h = new Date();
-    meses = Math.max(0, (h.getFullYear()*12 + h.getMonth() + 1) - (y*12 + m) + 1);
-  }
-  const pagado = (d.pagos || []).reduce((s, p) => s + num(p.monto), 0);
-  const esperado = meses * cuotaMes + num(d.deudaAnterior);
-  const saldo = Math.round((esperado - pagado) * 100) / 100;
-  const atraso = saldo > 0 ? (cuotaMes > 0 ? Math.ceil(saldo / cuotaMes - 1e-9) : 1) : 0;
-  const aplica = !!d.inicioCobro || num(d.deudaAnterior) > 0 || (d.pagos || []).length > 0;
-  const nivel = saldo <= 0 ? 'ok' : (atraso <= 1 ? 'warn' : 'bad');
-  return {cuotaMes, meses, pagado, esperado, saldo, atraso, aplica, nivel, especial};
-}
-function textoEstado(c){
-  if (!c.aplica) return {cls:'nada', txt:'Sin cobro'};
-  if (c.saldo < 0) return {cls:'ok', txt:'Adelantado ' + dinero(-c.saldo)};
-  if (c.saldo === 0) return {cls:'ok', txt:'Al día'};
-  return {cls:c.nivel, txt:`Debe ${dinero(c.saldo)}`};
-}
 function longitud(layer){
   if (!esLinea(layer)) return 0;
   const pts = layer.getLatLngs().flat(Infinity);
@@ -1253,7 +1216,7 @@ function enfocar(layer){
    Barra de acciones rápidas, recuadro de estado, pestañas y "Más opciones".
    ===================================================================== */
 const tabActivo = {};                     // pestaña elegida por tipo de forma
-const NOMBRE_TAB = {datos:'Datos', agua:'Agua', cuotas:'Cuotas', inc:'Incidencias'};
+const NOMBRE_TAB = {datos:'Datos', agua:'Agua', cuotas:'Cobros', inc:'Incidencias'};
 const TABS_DE = {casa:['datos','cuotas','inc'], tuberia:['datos','agua','inc'], sector:['datos','inc'], llave:['datos'], conector:['datos'], sin:[]};
 
 function campo(label, k, val, type = 'text', extra = ''){
@@ -1328,21 +1291,14 @@ function renderPanel(){
   if (aq.tipo === 'casa'){
     pestañas.datos = `
       <div class="dos">${campo('Número de casa','numero',d.numero)}${campo('Teléfono','telefono',d.telefono,'tel')}</div>
-      ${campo('Responsable de la casa','responsable',d.responsable)}
-      <div class="dos">${campo('Núcleos familiares','nucleos',d.nucleos,'number','min="0" step="1"')}${campo('Personas','personas',d.personas,'number','min="0" step="1"')}</div>
+      ${campo('Representante legal de la casa','responsable',d.responsable)}
+      <div class="resumen-nucleos"><span>👪 <b>${nucleosDe(d)}</b> ${nucleosDe(d) === 1 ? 'núcleo familiar' : 'núcleos familiares'} · <b>${personasDe(d)}</b> ${personasDe(d) === 1 ? 'persona' : 'personas'}</span>
+        <button class="btn chico" id="pNucleos">Ver y editar</button></div>
       ${areaNotas(d.notas)}`;
     pestañas.cuotas = `
       <div class="cuenta" id="cuentaBox"></div>
-      <div class="dos">${campo('Cobrar desde','inicioCobro',d.inicioCobro,'month')}${campo('Deuda anterior','deudaAnterior',d.deudaAnterior,'number','min="0" step="0.01" placeholder="0.00"')}</div>
-      <label class="campo"><span>Cuota mensual especial (opcional)</span><input data-k="cuotaEspecial" type="number" min="0" step="0.01" value="${esc(d.cuotaEspecial)}" id="inCuotaEsp"></label>
-      <h4>Registrar pago</h4>
-      <div class="pago-form">
-        <label class="campo" style="margin:0"><span>Fecha</span><input type="date" id="pgFecha" value="${hoyISO()}"></label>
-        <label class="campo" style="margin:0"><span>Monto</span><input type="number" id="pgMonto" min="0" step="0.01"></label>
-        <label class="campo ancho" style="margin:0"><span>Detalle</span><input type="text" id="pgNota" placeholder="Ej. cuota de septiembre"></label>
-        <button class="btn primario ancho" id="pgAgregar">Registrar pago</button>
-      </div>
-      <ul class="pagos" id="listaPagos"></ul>`;
+      <div class="fila"><button class="btn primario" id="pPagar">Registrar pago</button><button class="btn" id="pFicha">Abrir ficha de cobros</button></div>
+      <p class="nota">En la ficha verás el estado de cuenta completo, los núcleos familiares, la tarifa y los recibos.</p>`;
   } else if (aq.tipo === 'tuberia'){
     const m = longitud(layer), materiales = ['PVC','PEAD / polietileno','Hierro galvanizado','Otro'];
     pestañas.datos = `
@@ -1497,7 +1453,12 @@ function enlazarPanel(layer, cuerpo){
   marcarExtremos(layer);
   formIncAbierto = false;
   renderIncidenciasPanel();
-  if (aq.tipo === 'casa'){ refrescarCuenta(); renderPagos(); $('#pgAgregar').addEventListener('click', () => registrarPago(layer)); }
+  if (aq.tipo === 'casa'){
+    refrescarCuenta();
+    $('#pPagar').addEventListener('click', () => abrirFicha(aq.id, 'pago'));
+    $('#pFicha').addEventListener('click', () => abrirFicha(aq.id, 'cuenta'));
+    $('#pNucleos').addEventListener('click', () => abrirFicha(aq.id, 'nucleos'));
+  }
 }
 
 /* =====================================================================
@@ -1531,25 +1492,6 @@ function terminarEdicion(){
   if (selected === layer) renderPanel();
 }
 
-async function registrarPago(layer){
-  const aq = layer.aq;
-  const monto = Math.round(num($('#pgMonto').value) * 100) / 100;
-  const fecha = $('#pgFecha').value || hoyISO();
-  if (monto <= 0){ aviso('Escribe un monto mayor que cero.'); $('#pgMonto').focus(); return; }
-  const btn = $('#pgAgregar'); btn.disabled = true;
-  const pago = {id:uid(), fecha, monto, nota:$('#pgNota').value.trim()};
-  await flush();
-  const ok = await tarea(sb.from('pagos').insert({id:pago.id, forma_id:aq.id, fecha, monto, nota:pago.nota}), 'No se pudo registrar el pago');
-  if (ok){
-    aq.datos.pagos = aq.datos.pagos || [];
-    if (!aq.datos.pagos.some(p => p.id === pago.id)) aq.datos.pagos.push(pago);
-    refrescarForma(layer);
-    if (selected === layer){ $('#pgNota').value = ''; $('#pgMonto').value = ''; renderPagos(); }
-    aviso('Pago registrado: ' + dinero(monto));
-  }
-  if (btn.isConnected) btn.disabled = false;
-}
-
 function actualizarTituloPanel(){
   if (!selected) return;
   const aq = selected.aq;
@@ -1562,39 +1504,16 @@ function actualizarTituloPanel(){
 }
 
 function refrescarCuenta(){
-  const box = $('#cuentaBox'); if (!box || !selected) return;
+  const box = $('#cuentaBox'); if (!box || !selected || selected.aq.tipo !== 'casa') return;
   const aq = selected.aq, c = cuenta(aq), est = textoEstado(c);
-  const auto = Math.max(0, num(aq.datos.nucleos)) * num(state.settings.cuota);
-  const inEsp = $('#inCuotaEsp'); if (inEsp) inEsp.placeholder = 'Automática: ' + dinero(auto);
   box.innerHTML = `
     <div class="estado"><span>Estado de cuenta</span><span class="pill ${est.cls}">${esc(est.txt)}</span></div>
     ${c.aplica ? `<dl>
-      <dt>Cuota mensual${c.especial ? ' (especial)' : ''}</dt><dd>${dinero(c.cuotaMes)}</dd>
-      <dt>Meses cobrados</dt><dd>${c.meses}</dd>
-      <dt>Total a pagar</dt><dd>${dinero(c.esperado)}</dd>
-      <dt>Pagado</dt><dd>${dinero(c.pagado)}</dd>
-      <dt>Saldo</dt><dd class="total">${dinero(c.saldo)}</dd>
-      ${c.atraso ? `<dt>Cuotas atrasadas</dt><dd class="total">${c.atraso}</dd>` : ''}
-    </dl>` : '<p class="nota" style="margin:0">Indica desde qué mes se cobra para calcular lo que debe.</p>'}`;
-  const pm = $('#pgMonto'); if (pm && c.cuotaMes) pm.placeholder = c.cuotaMes.toFixed(2);
-}
-
-function renderPagos(){
-  const ul = $('#listaPagos'); if (!ul || !selected) return;
-  const layer = selected;
-  const pagos = [...(layer.aq.datos.pagos || [])].sort((a, b) => (b.fecha || '').localeCompare(a.fecha || ''));
-  if (!pagos.length){ ul.innerHTML = '<li class="nota">Todavía no hay pagos registrados.</li>'; return; }
-  ul.innerHTML = pagos.map(p => `<li><span>${esc(p.fecha)}${p.nota ? '<br><small class="nota">' + esc(p.nota) + '</small>' : ''}</span>
-    <span><b>${dinero(p.monto)}</b> <button class="x" data-borrar="${esc(p.id)}" aria-label="Borrar pago">×</button></span></li>`).join('');
-  ul.querySelectorAll('[data-borrar]').forEach(b => b.addEventListener('click', async () => {
-    if (!confirm('¿Borrar este pago?')) return;
-    const id = b.dataset.borrar;
-    const ok = await tarea(sb.from('pagos').delete().eq('id', id), 'No se pudo borrar el pago');
-    if (!ok) return;
-    layer.aq.datos.pagos = layer.aq.datos.pagos.filter(p => p.id !== id);
-    refrescarForma(layer);
-    if (selected === layer) renderPagos();
-  }));
+      <dt>Cuota mensual</dt><dd>${dinero(c.cuotaMes)}<small> · ${esc(textoCuota(c.cuota))}</small></dd>
+      <dt>${c.saldo < 0 ? 'Saldo a favor' : 'Saldo'}</dt><dd class="total">${dinero(Math.abs(c.saldo))}</dd>
+      <dt>Meses de atraso</dt><dd>${c.atraso}</dd>
+      <dt>Último pago</dt><dd>${c.ultimoPago ? esc(dinero(c.ultimoPago.monto) + ' · ' + fechaCorta(c.ultimoPago.fecha)) : '—'}</dd>
+    </dl>` : '<p class="nota" style="margin:0">Esta casa todavía no genera cuotas. Abre la ficha de cobros e indica la tarifa y desde qué mes se cobra.</p>'}`;
 }
 
 function cambio(){
@@ -1608,12 +1527,8 @@ async function cambiarTipo(nuevo){
   if (nuevo === aq.tipo) return;
   if (nuevo === 'sector' && !esPoligono(layer)){ aviso('Un sector debe ser un área cerrada.'); return; }
   if (nuevo === 'conector' && !esPunto(layer)){ aviso('Un conector es un punto: dibújalo con «Conector en T» o «en Y».'); return; }
-  const tienePagos = aq.tipo === 'casa' && (aq.datos.pagos || []).length;
-  if (tienePagos && !confirm('Esta casa tiene pagos registrados. Si cambias su función se borrarán. ¿Continuar?')) return;
-  if (tienePagos){
-    const ok = await tarea(sb.from('pagos').delete().eq('forma_id', aq.id), 'No se pudieron borrar los pagos');
-    if (!ok) return;
-  }
+  const tieneMovs = aq.tipo === 'casa' && ((pagosDe.get(aq.id) || []).length || (cobrosDe.get(aq.id) || []).length);
+  if (tieneMovs && !confirm('Esta casa tiene cobros y pagos registrados. Si cambias su función dejará de generar cuotas, pero su historial de cobros se conserva. ¿Continuar?')) return;
   const base = datosBase(nuevo);
   Object.keys(base).forEach(k => { if (k in aq.datos && k !== 'pagos') base[k] = aq.datos[k]; });
   aq.tipo = nuevo;
@@ -1654,13 +1569,17 @@ const RENDER = {
   'usuarios/vecinos': renderVecinos,
   'usuarios/administradores': renderAdministradores,
   'sectores': renderSectoresVista,
-  'casas': renderCasasVista
+  'cobros/resumen': renderCobResumen,
+  'cobros/casas': renderCobCasas,
+  'cobros/pagos': renderCobPagos,
+  'cobros/tarifas': renderCobTarifas
 };
 const GRUPO_DE = {'inicio':'inicio', 'resumen':'inicio', 'mapa':'mapa', 'incidencias/abiertas':'incidencias',
-  'incidencias/resueltas':'incidencias', 'incidencias/calendario':'incidencias', 'incidencias/reportes':'incidencias', 'usuarios/solicitudes':'usuarios', 'usuarios/vecinos':'usuarios', 'usuarios/administradores':'usuarios', 'sectores':'gestion', 'casas':'gestion', 'configuracion':'config'};
+  'incidencias/resueltas':'incidencias', 'incidencias/calendario':'incidencias', 'incidencias/reportes':'incidencias', 'usuarios/solicitudes':'usuarios', 'usuarios/vecinos':'usuarios', 'usuarios/administradores':'usuarios', 'sectores':'gestion', 'cobros/resumen':'cobros', 'cobros/casas':'cobros', 'cobros/pagos':'cobros', 'cobros/tarifas':'cobros', 'configuracion':'config'};
 
 function router(){
-  const ruta = location.hash.replace(/^#\/?/, '') || 'inicio';
+  let ruta = location.hash.replace(/^#\/?/, '') || 'inicio';
+  if (ruta === 'casas'){ history.replaceState(null, '', '#/cobros/casas'); ruta = 'cobros/casas'; }
   let base = ruta, extra = null;
   if (ruta.startsWith('mapa/dibujar/')){ base = 'mapa'; extra = ruta.split('/')[2]; }
   else if (ruta.startsWith('configuracion/')){ base = 'configuracion'; extra = ruta.split('/')[1]; }
@@ -1910,7 +1829,7 @@ function renderInicio(){
     const c = cuenta(l.aq);
     if (c.saldo > 0){ total += c.saldo; conDeuda.push({l, c}); }
     if (!estaConectada(l.aq.id)) sinCon++;
-    (l.aq.datos.pagos || []).forEach(p => { pagos.push({l, p}); if (String(p.fecha).startsWith(mes)) cobradoMes += num(p.monto); });
+    (pagosDe.get(l.aq.id) || []).filter(p => !p.anulado).forEach(p => { pagos.push({l, p}); if (String(p.fecha).startsWith(mes)) cobradoMes += num(p.monto); });
   });
   conDeuda.sort((a, b) => b.c.saldo - a.c.saldo);
   pagos.sort((a, b) => String(b.p.fecha).localeCompare(String(a.p.fecha)));
@@ -1930,9 +1849,9 @@ function renderInicio(){
           abiertas.length ? 'La más reciente ' + esc(Acu.hace(abiertas[0].creada_en)) : 'Todo en orden', abiertas.length ? 'alerta' : 'ok')}
       ${kpi('#/sectores', `${conAgua} <span>de ${sectores.length}</span>`, 'Sectores con agua',
           sectores.length ? (conAgua === sectores.length ? 'Todos con servicio' : `${sectores.length - conAgua} sin agua`) : 'Aún no hay sectores')}
-      ${kpi('#/casas', casas.length, 'Casas', sinCon ? `${sinCon} sin conexión a tubería` : (casas.length ? 'Todas conectadas' : 'Aún no hay casas'), sinCon ? 'aviso' : '')}
-      ${kpi('#/casas', esc(dinero(total)), 'Por cobrar', `${conDeuda.length} ${conDeuda.length === 1 ? 'casa' : 'casas'} con deuda`, total > 0 ? 'deuda' : '')}
-      ${kpi('#/resumen', esc(dinero(cobradoMes)), 'Cobrado este mes', 'Ver el resumen de cobros')}
+      ${kpi('#/cobros/casas', casas.length, 'Casas', sinCon ? `${sinCon} sin conexión a tubería` : (casas.length ? 'Todas conectadas' : 'Aún no hay casas'), sinCon ? 'aviso' : '')}
+      ${kpi('#/cobros/casas', esc(dinero(total)), 'Por cobrar', `${conDeuda.length} ${conDeuda.length === 1 ? 'casa' : 'casas'} con deuda`, total > 0 ? 'deuda' : '')}
+      ${kpi('#/cobros/resumen', esc(dinero(cobradoMes)), 'Cobrado este mes', 'Ver el resumen de cobros')}
     </div>
     <div class="rejilla">
       <article class="tarjeta">
@@ -1944,16 +1863,16 @@ function renderInicio(){
         ${sectores.length ? `<ul class="lista">${sectores.map(filaSector).join('')}</ul>` : '<p class="vacio">Aún no hay sectores. <a href="#/mapa/dibujar/sector">Dibujar un sector</a></p>'}
       </article>
       <article class="tarjeta">
-        <header><h2>Casas con más deuda</h2><a href="#/casas">Ver casas</a></header>
+        <header><h2>Casas con más deuda</h2><a href="#/cobros/casas">Ver casas</a></header>
         ${conDeuda.length ? `<ul class="lista">${conDeuda.slice(0, 6).map(({l, c}) => {
             const est = textoEstado(c);
-            return `<li><button class="item" data-ver="${esc(l.aq.id)}"><span>${esc(nombreCasa(l.aq.datos))}<small>${esc(l.aq.datos.responsable || 'Sin responsable')}</small></span><span class="pill ${est.cls}">${esc(est.txt)}</span></button></li>`;
+            return `<li><button class="item" data-ficha-inicio="${esc(l.aq.id)}"><span>${esc(nombreCasa(l.aq.datos))}<small>${esc(l.aq.datos.responsable || 'Sin responsable')}</small></span><span class="pill ${est.cls}">${esc(est.txt)}</span></button></li>`;
           }).join('')}</ul>` : '<p class="vacio">✓ Ninguna casa tiene deuda.</p>'}
       </article>
       <article class="tarjeta">
-        <header><h2>Últimos pagos</h2><a href="#/resumen">Resumen</a></header>
+        <header><h2>Últimos pagos</h2><a href="#/cobros/pagos">Ver pagos</a></header>
         ${pagos.length ? `<ul class="lista">${pagos.slice(0, 6).map(({l, p}) =>
-            `<li><button class="item" data-ver="${esc(l.aq.id)}"><span>${esc(nombreCasa(l.aq.datos))}<small>${esc(p.fecha)}${p.nota ? ' · ' + esc(p.nota) : ''}</small></span><b class="monto">${esc(dinero(p.monto))}</b></button></li>`).join('')}</ul>`
+            `<li><button class="item" data-recibo-inicio="${esc(p.id)}"><span>${esc(nombreCasa(l.aq.datos))}<small>${esc(fechaCorta(p.fecha))} · ${esc(numRecibo(p.recibo))}</small></span><b class="monto">${esc(dinero(p.monto))}</b></button></li>`).join('')}</ul>`
           : '<p class="vacio">Todavía no hay pagos registrados.</p>'}
       </article>
       <article class="tarjeta ancha">
@@ -1963,11 +1882,13 @@ function renderInicio(){
           <a class="acceso" href="#/mapa/dibujar/tuberia">＋ Dibujar tubería</a>
           <a class="acceso" href="#/mapa/dibujar/llave">＋ Marcar llave</a>
           <a class="acceso" href="#/mapa/dibujar/sector">＋ Dibujar sector</a>
-          <a class="acceso" href="#/casas">Buscar una casa</a>
+          <a class="acceso" href="#/cobros/casas">Buscar una casa</a>
           <a class="acceso" href="../../../index.html" target="_blank" rel="noopener">Ver mapa público ↗</a>
         </div>
       </article>
     </div>`;
+  cont.querySelectorAll('[data-ficha-inicio]').forEach(b => b.addEventListener('click', () => abrirFicha(b.dataset.fichaInicio)));
+  cont.querySelectorAll('[data-recibo-inicio]').forEach(b => b.addEventListener('click', () => mostrarRecibo(b.dataset.reciboInicio)));
   enlazar(cont);
 }
 
@@ -1989,13 +1910,13 @@ function renderResumenVista(){
   let nucleos = 0, personas = 0, sinCon = 0, esperado = 0, porCobrar = 0, deben = 0, alDia = 0, adelantadas = 0, cobradoMes = 0, cobradoTotal = 0;
   casas.forEach(l => {
     const d = l.aq.datos, c = cuenta(l.aq);
-    nucleos += num(d.nucleos); personas += num(d.personas);
+    nucleos += nucleosDe(d); personas += personasDe(d);
     if (!estaConectada(l.aq.id)) sinCon++;
     if (c.aplica){
       esperado += c.cuotaMes;
       if (c.saldo > 0){ deben++; porCobrar += c.saldo; } else if (c.saldo < 0) adelantadas++; else alDia++;
     }
-    (d.pagos || []).forEach(p => {
+    (pagosDe.get(l.aq.id) || []).filter(p => !p.anulado).forEach(p => {
       const k = String(p.fecha).slice(0, 7), m = num(p.monto);
       cobradoTotal += m;
       if (k === mes) cobradoMes += m;
@@ -2029,7 +1950,7 @@ function renderResumenVista(){
         </div>
       </section>
       <section class="tarjeta">
-        <header><h2>Casas</h2><a href="#/casas">Ver casas</a></header>
+        <header><h2>Casas</h2><a href="#/cobros/casas">Ver casas</a></header>
         <div class="stats">
           ${stat(casas.length, 'Casas')}${stat(nucleos, 'Núcleos familiares')}
           ${stat(personas || '—', 'Personas')}${stat(casas.length - sinCon, 'Conectadas a la red')}
@@ -2184,57 +2105,6 @@ function flujoTodos(activo){
 }
 $('#secTodosOn').addEventListener('click', () => flujoTodos(true));
 $('#secTodosOff').addEventListener('click', () => flujoTodos(false));
-
-/* ================= Sección: Casas ================= */
-function filasCasas(){
-  return datosGenerales().casas.map(l => ({
-    l, d:l.aq.datos, c:cuenta(l.aq), conectada:estaConectada(l.aq.id), sector:nombreSectorDe(l), inc:textoIncidencias(l.aq.id)
-  }));
-}
-function renderCasasVista(){
-  const todas = filasCasas();
-  const q = $('#busca').value.trim().toLowerCase(), f = $('#filtro').value;
-  const lista = todas
-    .filter(x => !q || [x.d.numero, x.d.responsable, x.d.telefono, x.sector].join(' ').toLowerCase().includes(q))
-    .filter(x => f === 'todas' || (f === 'deben' && x.c.saldo > 0) || (f === 'aldia' && x.c.saldo <= 0)
-              || (f === 'sinconexion' && !x.conectada) || (f === 'incidencia' && x.inc))
-    .sort((a, b) => b.c.saldo - a.c.saldo || String(a.d.numero).localeCompare(String(b.d.numero), 'es', {numeric:true}));
-  casasFiltradas = lista;
-  $('#casasConteo').textContent = `${lista.length} de ${todas.length} casas`;
-  const cont = $('#casasTabla');
-  if (!todas.length){
-    cont.innerHTML = '<div class="vacio-grande">Aún no hay casas.<br><small><a href="#/mapa/dibujar/casa">Dibuja la primera en el mapa</a>.</small></div>';
-    return;
-  }
-  if (!lista.length){ cont.innerHTML = '<div class="vacio-grande">Ninguna casa coincide con la búsqueda.</div>'; return; }
-  cont.innerHTML = `<div class="tabla-cont"><table class="tabla">
-    <thead><tr><th>Casa</th><th>Responsable</th><th>Teléfono</th><th class="num">Núcleos</th><th>Sector</th><th>Conexión</th><th>Estado de cuenta</th><th></th></tr></thead>
-    <tbody>${lista.map(x => {
-      const est = textoEstado(x.c);
-      return `<tr>
-        <td><b>${esc(nombreCasa(x.d))}</b>${x.inc ? `<br><small class="rojo">⚠ ${esc(x.inc)}</small>` : ''}</td>
-        <td>${esc(x.d.responsable || '—')}</td>
-        <td>${x.d.telefono ? `<a href="tel:${esc(String(x.d.telefono).replace(/[^\d+]/g, ''))}">${esc(x.d.telefono)}</a>` : '—'}</td>
-        <td class="num">${esc(x.d.nucleos || 0)}</td>
-        <td>${esc(x.sector || '—')}</td>
-        <td><span class="pill ${x.conectada ? 'ok' : 'warn'}">${x.conectada ? 'Conectada' : 'Sin conexión'}</span></td>
-        <td><span class="pill ${est.cls}">${esc(est.txt)}</span></td>
-        <td><button class="btn chico" data-ver="${esc(x.l.aq.id)}">Ver</button></td>
-      </tr>`;
-    }).join('')}</tbody></table></div>`;
-  enlazar(cont);
-}
-$('#busca').addEventListener('input', debounce(renderCasasVista, 200));
-$('#filtro').addEventListener('change', renderCasasVista);
-$('#casasCsv').addEventListener('click', () => {
-  if (!casasFiltradas.length){ aviso('No hay casas para exportar.'); return; }
-  const enc = ['Número','Responsable','Teléfono','Núcleos','Personas','Sector','Conectada','Cuota mensual','Pagado','Saldo','Estado'];
-  const filas = casasFiltradas.map(x => [x.d.numero, x.d.responsable, x.d.telefono, x.d.nucleos, x.d.personas, x.sector,
-    x.conectada ? 'Sí' : 'No', x.c.cuotaMes.toFixed(2), x.c.pagado.toFixed(2), x.c.saldo.toFixed(2), textoEstado(x.c).txt]);
-  const csv = [enc, ...filas].map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
-  descargar('\ufeff' + csv, `casas-${hoyISO()}.csv`, 'text/csv;charset=utf-8');
-  aviso('Lista descargada. Se abre con Excel o Google Sheets.');
-});
 
 /* ================= Sección: Calendario de incidencias ================= */
 let calMes = (() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); })();
@@ -2786,6 +2656,744 @@ function renderReportes(){
 $('#repFiltro').addEventListener('change', renderReportes);
 $('#repBusca').addEventListener('input', debounce(renderReportes, 200));
 
+/* =====================================================================
+   SISTEMA DE COBROS
+   · tarifas: cuánto se cobra al mes y cómo (por casa, por núcleo o por persona)
+   · cobros: cargos de cada casa (cuotas mensuales automáticas, deuda anterior, cargos extra)
+   · pagos: abonos con número de recibo. Nada se borra: se anula con un motivo.
+   Saldo = cargos no anulados − pagos no anulados.
+   ===================================================================== */
+let tarifas = [];
+const cobrosDe = new Map(), pagosDe = new Map();
+const METODOS = {efectivo:'Efectivo', transferencia:'Transferencia', yappy:'Yappy', cheque:'Cheque', otro:'Otro'};
+const MODOS_TARIFA = {casa:'Monto fijo por casa', nucleo:'Por cada núcleo familiar', persona:'Por cada persona'};
+const CONCEPTOS_EXTRA = ['Multa', 'Reconexión del servicio', 'Instalación o acometida nueva', 'Materiales', 'Deuda anterior', 'Otro'];
+const round2 = n => Math.round(num(n) * 100) / 100;
+const mesActual = () => hoyISO().slice(0, 7);
+function nombreMes(per, corto){
+  if (!/^\d{4}-\d{2}$/.test(per || '')) return per || '';
+  const [y, m] = per.split('-').map(Number);
+  return capitalizar(new Date(y, m - 1, 1).toLocaleDateString('es', corto ? {month:'short', year:'numeric'} : {month:'long', year:'numeric'}));
+}
+const fechaCorta = f => f ? new Date(String(f).slice(0, 10) + 'T12:00:00').toLocaleDateString('es', {day:'numeric', month:'short', year:'numeric'}) : '—';
+const numRecibo = n => n ? 'N.º ' + String(n).padStart(6, '0') : '—';
+
+function ponerMovimiento(mapa, fila){
+  if (!mapa.has(fila.forma_id)) mapa.set(fila.forma_id, []);
+  const l = mapa.get(fila.forma_id), i = l.findIndex(x => x.id === fila.id);
+  if (i >= 0) l[i] = fila; else l.push(fila);
+}
+function quitarMovimiento(mapa, id){
+  for (const [forma, l] of mapa){ const i = l.findIndex(x => x.id === id); if (i >= 0){ l.splice(i, 1); return forma; } }
+  return null;
+}
+const todosLosPagos = () => [...pagosDe.values()].flat();
+const nucleosDe = d => Array.isArray(d.nucleosLista) ? d.nucleosLista.length : Math.max(0, num(d.nucleos));
+const personasDe = d => Array.isArray(d.nucleosLista) ? d.nucleosLista.reduce((s, n) => s + Math.max(0, num(n.personas)), 0) : Math.max(0, num(d.personas));
+const tarifaDe = d => tarifas.find(t => t.id === (d.tarifa || state.settings.tarifaDefecto)) || null;
+const tieneEspecial = d => d.cuotaEspecial !== '' && d.cuotaEspecial != null && isFinite(Number(d.cuotaEspecial));
+
+/* Cuota mensual de una casa (misma regla que la base de datos) */
+function cuotaMensual(d){
+  const t = tarifaDe(d);
+  if (tieneEspecial(d)) return {monto:round2(d.cuotaEspecial), especial:true, tarifa:t, unidades:1};
+  if (!t) return {monto:0, especial:false, tarifa:null, unidades:0};
+  const n = t.modo === 'nucleo' ? nucleosDe(d) : t.modo === 'persona' ? personasDe(d) : 1;
+  return {monto:round2(num(t.monto) * n), especial:false, tarifa:t, unidades:n};
+}
+function textoCuota(q){
+  if (q.especial) return 'Cuota especial';
+  if (!q.tarifa) return 'Sin tarifa';
+  if (q.tarifa.modo === 'nucleo') return `${q.unidades} ${q.unidades === 1 ? 'núcleo' : 'núcleos'} × ${dinero(q.tarifa.monto)}`;
+  if (q.tarifa.modo === 'persona') return `${q.unidades} ${q.unidades === 1 ? 'persona' : 'personas'} × ${dinero(q.tarifa.monto)}`;
+  return q.tarifa.nombre;
+}
+const ordenCargo = (a, b) => String(a.fecha).localeCompare(String(b.fecha)) || String(a.periodo || '').localeCompare(String(b.periodo || ''))
+  || (a.tipo === 'saldo_inicial' ? -1 : b.tipo === 'saldo_inicial' ? 1 : 0) || String(a.created_at).localeCompare(String(b.created_at));
+
+/* Estado de cuenta de una casa. Los pagos se aplican a los cargos más antiguos primero. */
+function cuenta(aq, excluirPago){
+  const d = aq.datos || {}, id = aq.id;
+  const cargos = (cobrosDe.get(id) || []).filter(c => !c.anulado).sort(ordenCargo);
+  const pagos = (pagosDe.get(id) || []).filter(p => !p.anulado && p.id !== excluirPago);
+  const cargado = round2(cargos.reduce((s, c) => s + num(c.monto), 0));
+  const pagado = round2(pagos.reduce((s, p) => s + num(p.monto), 0));
+  const saldo = round2(cargado - pagado);
+  let resto = pagado;
+  const pendientes = [];
+  cargos.forEach(c => {
+    const m = num(c.monto);
+    if (resto >= m - 0.005) resto = round2(resto - m);
+    else { pendientes.push({...c, falta:round2(m - resto)}); resto = 0; }
+  });
+  const mes = mesActual();
+  const atraso = pendientes.filter(c => c.tipo === 'cuota' && c.periodo < mes).length;
+  const q = cuotaMensual(d);
+  const ultimoPago = pagos.reduce((a, p) => (!a || String(p.fecha) > String(a.fecha) ? p : a), null);
+  const exonerada = d.cobroActivo === false;
+  const aplica = cargos.length > 0 || pagos.length > 0 || !!d.inicioCobro;
+  const nivel = saldo <= 0 ? 'ok' : atraso >= 3 ? 'bad' : 'warn';
+  return {cuotaMes:q.monto, cuota:q, cargado, esperado:cargado, pagado, saldo, atraso, pendientes, aplica, exonerada, nivel,
+    ultimoPago, especial:q.especial, meses:cargos.filter(c => c.tipo === 'cuota').length};
+}
+function textoEstado(c){
+  if (!c.aplica) return {cls:'nada', txt:c.exonerada ? 'Exonerada' : 'Sin cobro'};
+  if (c.saldo < 0) return {cls:'ok', txt:'Adelantado ' + dinero(-c.saldo)};
+  if (c.saldo === 0) return {cls:'ok', txt:c.exonerada ? 'Exonerada · al día' : 'Al día'};
+  if (c.atraso >= 3) return {cls:'bad', txt:`Morosa · debe ${dinero(c.saldo)}`};
+  if (c.atraso >= 1) return {cls:'warn', txt:`Debe ${dinero(c.saldo)} · ${c.atraso} ${c.atraso === 1 ? 'mes' : 'meses'}`};
+  return {cls:'warn', txt:`Pendiente ${dinero(c.saldo)} (este mes)`};
+}
+/* Hasta qué mes queda cubierta una casa con saldo a favor o al día */
+function cubreHasta(aq, c){
+  const cuotas = (cobrosDe.get(aq.id) || []).filter(x => x.tipo === 'cuota' && !x.anulado).map(x => x.periodo).sort();
+  if (c.saldo > 0 || !cuotas.length) return '';
+  let [y, m] = cuotas[cuotas.length - 1].split('-').map(Number);
+  const extra = c.cuotaMes > 0 ? Math.floor((-c.saldo + 0.005) / c.cuotaMes) : 0;
+  m += extra; while (m > 12){ m -= 12; y++; }
+  return `${y}-${String(m).padStart(2, '0')}`;
+}
+
+/* ---------- Carga y cambios en vivo ---------- */
+async function cargarCobros(){
+  try { await sb.rpc('generar_cuotas', {p_forma:null}); } catch (e){ console.warn('generar_cuotas', e); }
+  const [cob, pag, tar] = await Promise.all([
+    Acu.traerTodo(sb, 'cobros').catch(e => { console.warn(e); return []; }),
+    Acu.traerTodo(sb, 'pagos'),
+    sb.from('tarifas').select('*').order('orden').order('nombre')
+  ]);
+  cobrosDe.clear(); pagosDe.clear();
+  cob.forEach(c => ponerMovimiento(cobrosDe, c));
+  pag.forEach(p => ponerMovimiento(pagosDe, p));
+  if (!tar.error) tarifas = tar.data || [];
+}
+async function recargarCobrosDe(id){
+  const {data} = await sb.from('cobros').select('*').eq('forma_id', id);
+  if (data){ cobrosDe.set(id, data); }
+  refrescarCobrosUI(id);
+}
+function movimientoEnVivo(mapa, p){
+  let forma;
+  if (p.eventType === 'DELETE') forma = quitarMovimiento(mapa, p.old.id);
+  else { ponerMovimiento(mapa, p.new); forma = p.new.forma_id; }
+  if (forma) refrescarCobrosUI(forma);
+}
+function refrescarCobrosUI(id){
+  const l = capas.get(id);
+  if (l){ refrescarForma(l); if (selected === l) refrescarCuenta(); }
+  if (fichaId === id && $('#dlgFicha').open) renderFicha();
+  if (/^cobros\/|^inicio$|^resumen$/.test(vistaActual || '')) renderVistaPronto();
+}
+const renderVistaPronto = debounce(() => renderVistaActual(), 250);
+async function cargarTarifas(){
+  const {data} = await sb.from('tarifas').select('*').order('orden').order('nombre');
+  if (data){ tarifas = data; capa.eachLayer(l => { if (l.aq && l.aq.tipo === 'casa') refrescarForma(l); }); renderVistaPronto(); if ($('#dlgFicha').open) renderFicha(); }
+}
+
+/* =====================================================================
+   FICHA DE LA CASA (ventana central)
+   ===================================================================== */
+let fichaId = null, fichaTab = 'cuenta', fichaExtraAbierto = false;
+function abrirFicha(id, tab){
+  const l = capas.get(id);
+  if (!l || l.aq.tipo !== 'casa'){ aviso('Esa casa ya no existe en el mapa.'); return; }
+  fichaId = id; fichaTab = tab || 'cuenta'; fichaExtraAbierto = false;
+  renderFicha();
+  if (!$('#dlgFicha').open) $('#dlgFicha').showModal();
+}
+function renderFicha(){
+  const l = capas.get(fichaId); if (!l){ $('#dlgFicha').close(); return; }
+  const aq = l.aq, d = aq.datos, c = cuenta(aq), est = textoEstado(c);
+  $('#fcTitulo').textContent = nombreCasa(d);
+  $('#fcSub').innerHTML = `${esc(d.responsable || 'Sin representante registrado')}${d.telefono ? ' · ' + telLink(d.telefono) : ''}
+    · ${nucleosDe(d)} ${nucleosDe(d) === 1 ? 'núcleo' : 'núcleos'}, ${personasDe(d)} ${personasDe(d) === 1 ? 'persona' : 'personas'}`;
+  $('#fcSaldo').innerHTML = `<span>${c.saldo < 0 ? 'Saldo a favor' : 'Saldo'}</span><b class="${c.saldo > 0 ? 'debe' : ''}">${esc(dinero(Math.abs(c.saldo)))}</b><span class="pill ${est.cls}">${esc(est.txt)}</span>`;
+  document.querySelectorAll('[data-fc-tab]').forEach(b => b.setAttribute('aria-selected', String(b.dataset.fcTab === fichaTab)));
+  const cuerpo = $('#fcCuerpo');
+  cuerpo.innerHTML = ({cuenta:fichaCuenta, pago:fichaPago, nucleos:fichaNucleos, datos:fichaDatos})[fichaTab](aq, c);
+  ({cuenta:enlazarCuenta, pago:enlazarPago, nucleos:enlazarNucleos, datos:enlazarDatos})[fichaTab](aq, c, cuerpo);
+}
+document.querySelectorAll('[data-fc-tab]').forEach(b => b.addEventListener('click', () => { fichaTab = b.dataset.fcTab; renderFicha(); }));
+$('#fcMapa').addEventListener('click', () => { const l = capas.get(fichaId); $('#dlgFicha').close(); if (l){ location.hash = '#/mapa'; asegurarMapa(); enfocar(l); seleccionar(l); } });
+
+/* --- Estado de cuenta --- */
+function fichaCuenta(aq, c){
+  const d = aq.datos, pend = c.pendientes, hasta = cubreHasta(aq, c);
+  const aviso0 = !d.inicioCobro && !c.aplica
+    ? `<div class="fc-aviso">Esta casa todavía no genera cuotas. Ve a <button class="enlace" data-ir-tab="datos">Datos y tarifa</button> e indica desde qué mes se cobra.</div>` : '';
+  const movs = [
+    ...(cobrosDe.get(aq.id) || []).map(x => ({...x, _tipo:'cargo'})),
+    ...(pagosDe.get(aq.id) || []).map(x => ({...x, _tipo:'pago'}))
+  ].sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)) || (a._tipo === b._tipo ? ordenCargo(a, b) : a._tipo === 'cargo' ? -1 : 1));
+  let saldo = 0;
+  const filas = movs.map(m => {
+    if (!m.anulado) saldo = round2(saldo + (m._tipo === 'cargo' ? num(m.monto) : -num(m.monto)));
+    const concepto = m._tipo === 'cargo'
+      ? esc(m.concepto) + (m.tipo === 'extra' && m.creado_por_nombre ? `<small>Agregado por ${esc(m.creado_por_nombre)}</small>` : '')
+      : `Pago ${esc(numRecibo(m.recibo))} · ${esc(METODOS[m.metodo] || m.metodo || '')}${m.referencia ? ' · ref. ' + esc(m.referencia) : ''}${m.nota ? `<small>${esc(m.nota)}</small>` : ''}${m.registrado_por_nombre ? `<small>Recibió: ${esc(m.registrado_por_nombre)}</small>` : ''}`;
+    return `<tr class="${m.anulado ? 'anulado' : ''} ${m._tipo}">
+      <td>${esc(m.periodo && m.tipo === 'cuota' ? nombreMes(m.periodo, true) : fechaCorta(m.fecha))}</td>
+      <td>${concepto}${m.anulado ? `<small class="motivo">Anulado por ${esc(m.anulado_por_nombre || '—')}: ${esc(m.motivo_anulacion || '')}</small>` : ''}</td>
+      <td class="num">${m._tipo === 'cargo' ? esc(dinero(m.monto)) : ''}</td>
+      <td class="num abono">${m._tipo === 'pago' ? esc(dinero(m.monto)) : ''}</td>
+      <td class="num">${m.anulado ? '' : esc(dinero(saldo))}</td>
+      <td class="acc">${m._tipo === 'pago' ? `<button class="btn chico" data-recibo="${esc(m.id)}">Recibo</button>` : ''}
+        ${m.anulado ? '' : `<button class="btn chico" data-anular="${m._tipo}:${esc(m.id)}">Anular</button>`}</td></tr>`;
+  }).reverse();
+  return `${aviso0}
+    <div class="fc-kpis">
+      <div><span>Cuota mensual</span><b>${esc(dinero(c.cuotaMes))}</b><small>${esc(textoCuota(c.cuota))}${c.exonerada ? ' · exonerada' : ''}</small></div>
+      <div><span>Meses de atraso</span><b class="${c.atraso >= 3 ? 'rojo' : ''}">${c.atraso}</b><small>${c.atraso ? 'Cuotas vencidas sin pagar' : 'Ninguno'}</small></div>
+      <div><span>Último pago</span><b>${c.ultimoPago ? esc(dinero(c.ultimoPago.monto)) : '—'}</b><small>${c.ultimoPago ? esc(fechaCorta(c.ultimoPago.fecha)) : 'Sin pagos'}</small></div>
+      <div><span>${c.saldo > 0 ? 'Pendiente' : 'Cubierto hasta'}</span><b>${c.saldo > 0 ? pend.length : (hasta ? esc(nombreMes(hasta, true)) : '—')}</b>
+        <small>${c.saldo > 0 ? (pend.length === 1 ? 'cargo por pagar' : 'cargos por pagar') : 'con lo ya pagado'}</small></div>
+    </div>
+    ${pend.length ? `<div class="fc-pendiente"><b>Por pagar:</b> ${pend.slice(0, 8).map(x => `<span class="chip">${esc(x.tipo === 'cuota' ? nombreMes(x.periodo, true) : x.concepto)} · ${esc(dinero(x.falta))}</span>`).join('')}${pend.length > 8 ? ` <span class="chip">y ${pend.length - 8} más</span>` : ''}</div>` : ''}
+    <div class="fila fc-acciones">
+      <button class="btn primario" data-ir-tab="pago">Registrar pago</button>
+      <button class="btn" id="fcExtraBtn">${fichaExtraAbierto ? 'Cancelar cargo' : 'Agregar cargo extra'}</button>
+      <button class="btn" id="fcImprimir">Imprimir estado de cuenta</button>
+    </div>
+    <form class="fc-extra" id="fcExtra" ${fichaExtraAbierto ? '' : 'hidden'}>
+      <label class="campo"><span>Concepto</span><select name="concepto">${CONCEPTOS_EXTRA.map(x => `<option>${x}</option>`).join('')}</select></label>
+      <label class="campo"><span>Detalle (opcional)</span><input name="detalle" maxlength="80" placeholder="Ej. conexión sin permiso"></label>
+      <label class="campo"><span>Monto</span><input name="monto" type="number" min="0.01" step="0.01" required></label>
+      <label class="campo"><span>Fecha</span><input name="fecha" type="date" value="${hoyISO()}"></label>
+      <div class="fila"><button class="btn primario" type="submit">Agregar cargo</button></div>
+    </form>
+    <h3 class="fc-sub">Movimientos</h3>
+    ${filas.length ? `<div class="tabla-cont"><table class="tabla libreta">
+      <thead><tr><th>Fecha</th><th>Concepto</th><th class="num">Cargo</th><th class="num">Abono</th><th class="num">Saldo</th><th></th></tr></thead>
+      <tbody>${filas.join('')}</tbody></table></div>` : '<p class="vacio">Todavía no hay movimientos.</p>'}`;
+}
+function enlazarCuenta(aq, c, cuerpo){
+  cuerpo.querySelectorAll('[data-ir-tab]').forEach(b => b.addEventListener('click', () => { fichaTab = b.dataset.irTab; renderFicha(); }));
+  $('#fcExtraBtn').addEventListener('click', () => { fichaExtraAbierto = !fichaExtraAbierto; renderFicha(); });
+  $('#fcImprimir').addEventListener('click', () => imprimirEstadoCuenta(aq));
+  $('#fcExtra').addEventListener('submit', async e => {
+    e.preventDefault();
+    const f = Object.fromEntries(new FormData(e.target).entries()), monto = round2(f.monto);
+    if (monto <= 0){ aviso('Escribe un monto mayor que cero.'); return; }
+    const concepto = f.concepto + (f.detalle.trim() ? ': ' + f.detalle.trim() : '');
+    const fila = await consultaConFila(sb.from('cobros').insert({forma_id:aq.id, tipo:'extra', concepto, monto, fecha:f.fecha || hoyISO()}).select().single(), 'No se pudo agregar el cargo');
+    if (!fila) return;
+    ponerMovimiento(cobrosDe, fila); fichaExtraAbierto = false;
+    aviso('Cargo agregado: ' + concepto + ' · ' + dinero(monto));
+    refrescarCobrosUI(aq.id);
+  });
+  cuerpo.querySelectorAll('[data-recibo]').forEach(b => b.addEventListener('click', () => mostrarRecibo(b.dataset.recibo)));
+  cuerpo.querySelectorAll('[data-anular]').forEach(b => b.addEventListener('click', async () => {
+    const [tipo, id] = b.dataset.anular.split(':');
+    const lista = (tipo === 'pago' ? pagosDe : cobrosDe).get(aq.id) || [], m = lista.find(x => x.id === id); if (!m) return;
+    const que = tipo === 'pago' ? `el pago ${numRecibo(m.recibo)} de ${dinero(m.monto)}` : `el cargo «${m.concepto}» de ${dinero(m.monto)}`;
+    const motivo = prompt(`¿Por qué se anula ${que}?\nQueda registrado quién lo anuló y el motivo. No se puede deshacer.`, '');
+    if (motivo === null) return;
+    if (!motivo.trim()){ aviso('Escribe el motivo de la anulación.'); return; }
+    const fila = await consultaConFila(sb.from(tipo === 'pago' ? 'pagos' : 'cobros').update({anulado:true, motivo_anulacion:motivo.trim()}).eq('id', id).select().single(), 'No se pudo anular');
+    if (!fila) return;
+    ponerMovimiento(tipo === 'pago' ? pagosDe : cobrosDe, fila);
+    aviso('Movimiento anulado.');
+    refrescarCobrosUI(aq.id);
+  }));
+}
+
+/* --- Registrar pago --- */
+let pagoMetodo = 'efectivo';
+function fichaPago(aq, c){
+  const cuota = c.cuotaMes, saldo = Math.max(0, c.saldo);
+  const chips = [];
+  if (saldo > 0) chips.push([saldo, `Todo el saldo · ${dinero(saldo)}`]);
+  if (c.pendientes.length && c.pendientes[0].falta !== saldo) chips.push([c.pendientes[0].falta, `Lo más antiguo · ${dinero(c.pendientes[0].falta)}`]);
+  if (cuota > 0) [1, 3, 6, 12].forEach(n => chips.push([round2(cuota * n), `${n} ${n === 1 ? 'mes' : 'meses'} · ${dinero(cuota * n)}`]));
+  return `<div class="fc-pago">
+    <div>
+      <label class="campo"><span>Monto recibido (${esc(state.settings.moneda || '')})</span>
+        <input type="number" id="pgMonto" class="monto-grande" min="0.01" step="0.01" value="${saldo > 0 ? saldo.toFixed(2) : cuota ? cuota.toFixed(2) : ''}"></label>
+      <div class="chips">${chips.map(([v, t]) => `<button type="button" class="chip-btn" data-monto="${v.toFixed(2)}">${esc(t)}</button>`).join('')}</div>
+      <label class="campo"><span>Forma de pago</span></label>
+      <div class="segmento" role="group" aria-label="Forma de pago">${Object.entries(METODOS).map(([k, v]) => `<button type="button" data-metodo="${k}" class="${k === pagoMetodo ? 'on' : ''}">${v}</button>`).join('')}</div>
+      <div class="dos">
+        <label class="campo"><span>Fecha del pago</span><input type="date" id="pgFecha" value="${hoyISO()}"></label>
+        <label class="campo" id="pgRefBox" ${pagoMetodo === 'efectivo' ? 'hidden' : ''}><span>Referencia o N.º de comprobante</span><input type="text" id="pgRef" maxlength="60"></label>
+      </div>
+      <label class="campo"><span>Nota (opcional)</span><input type="text" id="pgNota" maxlength="200" placeholder="Ej. pagó su hija"></label>
+      <button class="btn primario grande" id="pgGuardar">Registrar pago y ver recibo</button>
+    </div>
+    <aside class="fc-previa" id="pgPrevia"></aside>
+  </div>`;
+}
+function previaPago(aq, c){
+  const m = round2($('#pgMonto').value), despues = round2(c.saldo - m);
+  let resto = m; const cubre = [];
+  c.pendientes.forEach(p => { if (resto <= 0) return; const aplica = Math.min(resto, p.falta); resto = round2(resto - aplica);
+    cubre.push(`${p.tipo === 'cuota' ? nombreMes(p.periodo, true) : p.concepto}${aplica < p.falta ? ' (parcial)' : ''}`); });
+  const adelanto = despues < 0 && c.cuotaMes > 0 ? Math.floor((-despues + 0.005) / c.cuotaMes) : 0;
+  $('#pgPrevia').innerHTML = m > 0 ? `
+    <h4>Con este pago</h4>
+    <p>Saldo actual: <b>${esc(dinero(c.saldo))}</b></p>
+    <p>Pago: <b class="abono">− ${esc(dinero(m))}</b></p>
+    <p class="resultado ${despues > 0 ? 'debe' : 'ok'}">${despues > 0 ? `Seguirá debiendo <b>${esc(dinero(despues))}</b>` : despues === 0 ? '<b>Queda al día</b>' : `Queda con <b>${esc(dinero(-despues))}</b> a favor`}</p>
+    ${cubre.length ? `<p class="nota">Cubre: ${esc(cubre.join(', '))}</p>` : ''}
+    ${adelanto ? `<p class="nota">Adelanta ${adelanto} ${adelanto === 1 ? 'mes' : 'meses'} de cuota.</p>` : ''}`
+    : '<p class="nota">Escribe el monto recibido para ver cómo queda la cuenta.</p>';
+}
+function enlazarPago(aq, c, cuerpo){
+  const actualizar = () => previaPago(aq, c);
+  $('#pgMonto').addEventListener('input', actualizar);
+  cuerpo.querySelectorAll('[data-monto]').forEach(b => b.addEventListener('click', () => { $('#pgMonto').value = b.dataset.monto; actualizar(); }));
+  cuerpo.querySelectorAll('[data-metodo]').forEach(b => b.addEventListener('click', () => {
+    pagoMetodo = b.dataset.metodo;
+    cuerpo.querySelectorAll('[data-metodo]').forEach(x => x.classList.toggle('on', x === b));
+    $('#pgRefBox').hidden = pagoMetodo === 'efectivo';
+  }));
+  $('#pgGuardar').addEventListener('click', async () => {
+    const monto = round2($('#pgMonto').value);
+    if (monto <= 0){ aviso('Escribe un monto mayor que cero.'); $('#pgMonto').focus(); return; }
+    if (!confirm(`¿Registrar un pago de ${dinero(monto)} (${METODOS[pagoMetodo]}) para ${nombreCasa(aq.datos)}?`)) return;
+    const btn = $('#pgGuardar'); btn.disabled = true;
+    const fila = await consultaConFila(sb.from('pagos').insert({id:uid(), forma_id:aq.id, fecha:$('#pgFecha').value || hoyISO(), monto,
+      metodo:pagoMetodo, referencia:($('#pgRef').value || '').trim() || null, nota:$('#pgNota').value.trim() || null}).select().single(), 'No se pudo registrar el pago');
+    btn.disabled = false;
+    if (!fila) return;
+    ponerMovimiento(pagosDe, fila);
+    fichaTab = 'cuenta';
+    refrescarCobrosUI(aq.id);
+    mostrarRecibo(fila.id);
+  });
+  actualizar();
+}
+
+/* --- Núcleos familiares --- */
+let nucleosEdicion = null;
+function nucleosIniciales(d){
+  if (Array.isArray(d.nucleosLista)) return d.nucleosLista.map(n => ({...n}));
+  const n = Math.max(0, num(d.nucleos));
+  return Array.from({length:n}, (_, i) => ({nombre:i === 0 ? (d.responsable || '') : '', personas:n === 1 ? (d.personas || '') : '', nota:''}));
+}
+function fichaNucleos(aq){
+  const d = aq.datos, t = tarifaDe(d);
+  if (!nucleosEdicion || nucleosEdicion.id !== aq.id) nucleosEdicion = {id:aq.id, lista:nucleosIniciales(d)};
+  const lista = nucleosEdicion.lista, tot = lista.reduce((s, n) => s + Math.max(0, num(n.personas)), 0);
+  const cobro = tieneEspecial(d) ? 'Esta casa tiene una cuota especial: el número de núcleos no cambia lo que paga.'
+    : !t ? 'Esta casa no tiene tarifa asignada.'
+    : t.modo === 'nucleo' ? `La tarifa «${t.nombre}» se cobra por núcleo: ${lista.length} × ${dinero(t.monto)} = <b>${dinero(lista.length * num(t.monto))}</b> al mes.`
+    : t.modo === 'persona' ? `La tarifa «${t.nombre}» se cobra por persona: ${tot} × ${dinero(t.monto)} = <b>${dinero(tot * num(t.monto))}</b> al mes.`
+    : `La tarifa «${t.nombre}» es un monto fijo por casa (${dinero(t.monto)}), sin importar los núcleos.`;
+  return `<p class="nota" style="margin-top:0">Un núcleo familiar es cada familia u hogar que vive en la casa. Anota quién es el jefe o jefa de cada núcleo y cuántas personas lo forman.</p>
+    <div class="fc-aviso info">${cobro}</div>
+    <div class="tabla-cont"><table class="tabla nucleos">
+      <thead><tr><th>#</th><th>Jefe o jefa del núcleo</th><th class="num">Personas</th><th>Nota</th><th></th></tr></thead>
+      <tbody>${lista.map((n, i) => `<tr>
+        <td>${i + 1}</td>
+        <td><input data-n="${i}" data-c="nombre" value="${esc(n.nombre || '')}" maxlength="120" placeholder="Nombre completo"></td>
+        <td class="num"><input data-n="${i}" data-c="personas" type="number" min="0" step="1" value="${esc(n.personas ?? '')}" class="corto"></td>
+        <td><input data-n="${i}" data-c="nota" value="${esc(n.nota || '')}" maxlength="120" placeholder="Opcional"></td>
+        <td><button class="btn chico peligro" data-quitar-n="${i}" aria-label="Quitar núcleo">Quitar</button></td></tr>`).join('')
+      || '<tr><td colspan="5" class="vacio">No hay núcleos registrados.</td></tr>'}</tbody>
+      <tfoot><tr><td></td><td><b>${lista.length} ${lista.length === 1 ? 'núcleo' : 'núcleos'}</b></td><td class="num"><b>${tot}</b></td><td colspan="2"></td></tr></tfoot>
+    </table></div>
+    <div class="fila"><button class="btn" id="nAgregar">＋ Agregar núcleo</button><button class="btn primario" id="nGuardar">Guardar núcleos</button></div>
+    <p class="nota">Al guardar, si la cuota mensual cambia, se ajusta la cuota de este mes. Los meses anteriores no cambian.</p>`;
+}
+function enlazarNucleos(aq, c, cuerpo){
+  const ed = nucleosEdicion;
+  cuerpo.querySelectorAll('[data-n]').forEach(inp => inp.addEventListener('input', () => { ed.lista[Number(inp.dataset.n)][inp.dataset.c] = inp.value; }));
+  cuerpo.querySelectorAll('[data-quitar-n]').forEach(b => b.addEventListener('click', () => { ed.lista.splice(Number(b.dataset.quitarN), 1); renderFicha(); }));
+  $('#nAgregar').addEventListener('click', () => { ed.lista.push({nombre:'', personas:'', nota:''}); renderFicha();
+    const ins = cuerpo.querySelectorAll('[data-c="nombre"]'); if (ins.length) ins[ins.length - 1].focus(); });
+  $('#nGuardar').addEventListener('click', async () => {
+    const lista = ed.lista.map(n => ({nombre:String(n.nombre || '').trim(), personas:Math.max(0, Math.round(num(n.personas))), nota:String(n.nota || '').trim()}));
+    const antes = cuotaMensual(aq.datos).monto;
+    Object.assign(aq.datos, {nucleosLista:lista, nucleos:lista.length, personas:lista.reduce((s, n) => s + n.personas, 0)});
+    await guardarDatosCobro(aq, antes, 'Núcleos guardados.');
+    nucleosEdicion = null;
+    renderFicha();
+  });
+}
+
+/* --- Datos y tarifa --- */
+function fichaDatos(aq, c){
+  const d = aq.datos, q = cuotaMensual(d), activas = tarifas.filter(t => t.activa || t.id === d.tarifa);
+  const cuenta = perfilesLista.find(p => p.casa_id === aq.id);
+  return `<div class="dos-col">
+    <section>
+      <h3 class="fc-sub">Representante</h3>
+      <label class="campo"><span>Número de casa</span><input id="fdNumero" value="${esc(d.numero || '')}" maxlength="20"></label>
+      <label class="campo"><span>Representante legal de la casa</span><input id="fdResp" value="${esc(d.responsable || '')}" maxlength="120"></label>
+      <label class="campo"><span>Teléfono</span><input id="fdTel" type="tel" value="${esc(d.telefono || '')}" maxlength="20"></label>
+      <p class="nota">${cuenta ? `Cuenta en el sitio: <b>${esc(cuenta.nombre || cuenta.email)}</b> (vecino).` : 'Nadie tiene una cuenta vinculada a esta casa.'}</p>
+    </section>
+    <section>
+      <h3 class="fc-sub">Cobro</h3>
+      <label class="campo"><span>Tarifa</span><select id="fdTarifa">
+        ${activas.map(t => `<option value="${esc(t.id)}" ${t.id === (d.tarifa || state.settings.tarifaDefecto) ? 'selected' : ''}>${esc(t.nombre)} · ${esc(dinero(t.monto))} ${t.modo === 'nucleo' ? 'por núcleo' : t.modo === 'persona' ? 'por persona' : 'por casa'}</option>`).join('')}
+      </select></label>
+      <label class="campo"><span>Cuota especial (opcional)</span><input id="fdEspecial" type="number" min="0" step="0.01" value="${esc(tieneEspecial(d) ? d.cuotaEspecial : '')}" placeholder="Vacío: se usa la tarifa"></label>
+      <label class="campo"><span>Cobrar desde</span><input id="fdInicio" type="month" value="${esc(d.inicioCobro || '')}"></label>
+      <label class="campo"><span>Estado de cobro</span><select id="fdActivo">
+        <option value="1" ${d.cobroActivo !== false ? 'selected' : ''}>Activo: genera una cuota cada mes</option>
+        <option value="0" ${d.cobroActivo === false ? 'selected' : ''}>Exonerada: no genera cuotas nuevas</option></select></label>
+      <label class="campo" id="fdMotivoBox" ${d.cobroActivo === false ? '' : 'hidden'}><span>Motivo de la exoneración</span><input id="fdMotivo" value="${esc(d.motivoExoneracion || '')}" maxlength="160" placeholder="Ej. casa deshabitada"></label>
+      <div class="fc-aviso info" id="fdCuota">Cuota mensual actual: <b>${esc(dinero(q.monto))}</b> (${esc(textoCuota(q))}).</div>
+    </section>
+  </div>
+  <div class="fila"><button class="btn primario" id="fdGuardar">Guardar cambios</button></div>
+  <details class="fc-corregir">
+    <summary>Corregir cuotas ya generadas</summary>
+    <p class="nota">Las cuotas de meses pasados quedan fijas aunque cambies la tarifa. Si una tarifa estaba mal puesta, aplica la cuota actual (${esc(dinero(q.monto))}) a las cuotas desde un mes. Las anuladas no cambian.</p>
+    <div class="fila"><input type="month" id="fdDesde" value="${mesActual()}"><button class="btn" id="fdRecalcular">Aplicar la cuota actual</button></div>
+  </details>`;
+}
+function enlazarDatos(aq){
+  const d = aq.datos;
+  const previa = () => {
+    const tmp = {...d, tarifa:$('#fdTarifa').value, cuotaEspecial:$('#fdEspecial').value};
+    const q = cuotaMensual(tmp);
+    $('#fdCuota').innerHTML = `Cuota mensual con estos datos: <b>${esc(dinero(q.monto))}</b> (${esc(textoCuota(q))}).`;
+  };
+  ['#fdTarifa', '#fdEspecial'].forEach(s => $(s).addEventListener('input', previa));
+  $('#fdActivo').addEventListener('change', () => { $('#fdMotivoBox').hidden = $('#fdActivo').value === '1'; });
+  $('#fdGuardar').addEventListener('click', async () => {
+    const antes = cuotaMensual(d).monto;
+    Object.assign(d, {numero:$('#fdNumero').value.trim(), responsable:$('#fdResp').value.trim(), telefono:$('#fdTel').value.trim(),
+      tarifa:$('#fdTarifa').value, cuotaEspecial:$('#fdEspecial').value.trim(), inicioCobro:$('#fdInicio').value,
+      cobroActivo:$('#fdActivo').value === '1', motivoExoneracion:$('#fdActivo').value === '1' ? '' : $('#fdMotivo').value.trim()});
+    actualizarTooltip(capas.get(aq.id));
+    await guardarDatosCobro(aq, antes, 'Datos guardados.');
+    renderFicha();
+  });
+  $('#fdRecalcular').addEventListener('click', async () => {
+    const desde = $('#fdDesde').value;
+    if (!desde){ aviso('Elige desde qué mes.'); return; }
+    if (!confirm(`¿Aplicar la cuota de ${dinero(cuotaMensual(d).monto)} a las cuotas desde ${nombreMes(desde)}?`)) return;
+    await flush();
+    const {data, error} = await sb.rpc('recalcular_cuotas', {p_forma:aq.id, p_desde:desde});
+    if (error){ aviso(explicarError(error)); return; }
+    aviso(data ? `${data} ${data === 1 ? 'cuota actualizada' : 'cuotas actualizadas'}.` : 'No había cuotas que cambiar.');
+    recargarCobrosDe(aq.id);
+  });
+}
+/* Guarda datos que afectan el cobro, genera cuotas faltantes y ajusta la del mes si cambió la cuota */
+async function guardarDatosCobro(aq, cuotaAntes, msg){
+  guardarForma(aq.id);
+  await flush();
+  const {error} = await sb.rpc('generar_cuotas', {p_forma:aq.id});
+  if (error){ aviso(explicarError(error), 8000); return; }
+  const ahora = cuotaMensual(aq.datos).monto;
+  if (ahora !== cuotaAntes && aq.datos.inicioCobro && aq.datos.inicioCobro <= mesActual())
+    await sb.rpc('recalcular_cuotas', {p_forma:aq.id, p_desde:mesActual()});
+  await recargarCobrosDe(aq.id);
+  refrescarForma(capas.get(aq.id));
+  aviso(msg + (ahora !== cuotaAntes ? ` Cuota mensual: ${dinero(ahora)}.` : ''));
+}
+
+/* =====================================================================
+   RECIBOS E IMPRESIÓN
+   ===================================================================== */
+function buscarPago(id){ for (const l of pagosDe.values()){ const p = l.find(x => x.id === id); if (p) return p; } return null; }
+function datosRecibo(pagoId){
+  const p = buscarPago(pagoId); if (!p) return null;
+  const l = capas.get(p.forma_id), aq = l && l.aq;
+  const antes = aq ? cuenta(aq, p.id) : null, despues = aq ? cuenta(aq) : null;
+  let resto = num(p.monto); const cubre = [];
+  if (antes) antes.pendientes.forEach(x => { if (resto <= 0) return; const a = Math.min(resto, x.falta); resto = round2(resto - a);
+    cubre.push(`${x.tipo === 'cuota' ? nombreMes(x.periodo) : x.concepto}${a < x.falta ? ' (abono parcial)' : ''}`); });
+  if (resto > 0.005) cubre.push('Saldo a favor ' + dinero(resto));
+  return {p, aq, cubre, saldoDespues:despues ? (p.anulado ? despues.saldo : despues.saldo) : null};
+}
+function htmlRecibo(r){
+  const d = r.aq ? r.aq.datos : {};
+  return `<div class="recibo">
+    <div class="rc-cab"><div><b>${esc(state.settings.nombre || 'Acueducto')}</b><small>Comprobante de pago</small></div>
+      <div class="rc-num">${esc(numRecibo(r.p.recibo))}</div></div>
+    ${r.p.anulado ? `<div class="rc-anulado">ANULADO · ${esc(r.p.motivo_anulacion || '')}</div>` : ''}
+    <dl>
+      <dt>Fecha</dt><dd>${esc(fechaCorta(r.p.fecha))}</dd>
+      <dt>Casa</dt><dd>${esc(r.aq ? nombreCasa(d) : 'Casa eliminada')}</dd>
+      <dt>Representante</dt><dd>${esc(d.responsable || '—')}</dd>
+      <dt>Forma de pago</dt><dd>${esc(METODOS[r.p.metodo] || r.p.metodo)}${r.p.referencia ? ' · ref. ' + esc(r.p.referencia) : ''}</dd>
+      <dt>Aplicado a</dt><dd>${esc(r.cubre.join(', ') || 'Abono a cuenta')}</dd>
+      ${r.p.nota ? `<dt>Nota</dt><dd>${esc(r.p.nota)}</dd>` : ''}
+      <dt>Recibió</dt><dd>${esc(r.p.registrado_por_nombre || '—')}</dd>
+    </dl>
+    <div class="rc-monto"><span>Monto pagado</span><b>${esc(dinero(r.p.monto))}</b></div>
+    ${r.saldoDespues != null ? `<p class="rc-saldo">Saldo de la cuenta hoy: <b>${esc(r.saldoDespues > 0 ? dinero(r.saldoDespues) : r.saldoDespues < 0 ? dinero(-r.saldoDespues) + ' a favor' : 'al día')}</b></p>` : ''}
+  </div>`;
+}
+function mostrarRecibo(pagoId){
+  const r = datosRecibo(pagoId); if (!r) return;
+  $('#rcCuerpo').innerHTML = htmlRecibo(r);
+  const tel = r.aq && numeroWhatsapp(r.aq.datos.telefono);
+  const texto = `${state.settings.nombre || 'Acueducto'}: recibimos su pago ${numRecibo(r.p.recibo)} de ${dinero(r.p.monto)} el ${fechaCorta(r.p.fecha)} (${r.aq ? nombreCasa(r.aq.datos) : ''}). Aplicado a: ${r.cubre.join(', ') || 'abono a cuenta'}. ¡Gracias!`;
+  $('#rcWhatsapp').hidden = !tel;
+  if (tel) $('#rcWhatsapp').href = `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
+  $('#rcImprimir').onclick = () => imprimir(`Recibo ${numRecibo(r.p.recibo)}`, htmlRecibo(r));
+  $('#dlgRecibo').showModal();
+}
+function imprimirEstadoCuenta(aq){
+  const c = cuenta(aq), d = aq.datos;
+  const movs = [...(cobrosDe.get(aq.id) || []).map(x => ({...x, _t:'c'})), ...(pagosDe.get(aq.id) || []).map(x => ({...x, _t:'p'}))]
+    .filter(m => !m.anulado).sort((a, b) => String(a.fecha).localeCompare(String(b.fecha)) || (a._t === 'c' ? -1 : 1));
+  let s = 0;
+  const filas = movs.map(m => { s = round2(s + (m._t === 'c' ? num(m.monto) : -num(m.monto)));
+    return `<tr><td>${esc(m._t === 'c' && m.tipo === 'cuota' ? nombreMes(m.periodo) : fechaCorta(m.fecha))}</td><td>${esc(m._t === 'c' ? m.concepto : 'Pago ' + numRecibo(m.recibo))}</td>
+      <td class="n">${m._t === 'c' ? esc(dinero(m.monto)) : ''}</td><td class="n">${m._t === 'p' ? esc(dinero(m.monto)) : ''}</td><td class="n">${esc(dinero(s))}</td></tr>`; }).join('');
+  imprimir(`Estado de cuenta ${nombreCasa(d)}`, `<div class="recibo ancho">
+    <div class="rc-cab"><div><b>${esc(state.settings.nombre || 'Acueducto')}</b><small>Estado de cuenta al ${esc(fechaCorta(hoyISO()))}</small></div></div>
+    <dl><dt>Casa</dt><dd>${esc(nombreCasa(d))}</dd><dt>Representante</dt><dd>${esc(d.responsable || '—')}</dd>
+      <dt>Cuota mensual</dt><dd>${esc(dinero(c.cuotaMes))} (${esc(textoCuota(c.cuota))})</dd></dl>
+    <table><thead><tr><th>Fecha</th><th>Concepto</th><th class="n">Cargo</th><th class="n">Abono</th><th class="n">Saldo</th></tr></thead><tbody>${filas}</tbody></table>
+    <div class="rc-monto"><span>${c.saldo < 0 ? 'Saldo a favor' : 'Saldo pendiente'}</span><b>${esc(dinero(Math.abs(c.saldo)))}</b></div></div>`);
+}
+function imprimir(titulo, cuerpo){
+  const v = window.open('', '_blank', 'width=720,height=900');
+  if (!v){ aviso('Permite las ventanas emergentes para imprimir.'); return; }
+  v.document.write(`<!DOCTYPE html><html lang="es"><head><meta charset="utf-8"><title>${esc(titulo)}</title><style>
+    body{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#15323B;margin:24px}
+    .recibo{max-width:420px;margin:0 auto;border:1px solid #cfd8da;border-radius:10px;padding:18px}
+    .recibo.ancho{max-width:720px}
+    .rc-cab{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #1D6FA3;padding-bottom:10px;margin-bottom:10px}
+    .rc-cab b{font-size:18px;display:block}.rc-cab small{color:#5B7078}
+    .rc-num{font-weight:700;font-size:16px;color:#1D6FA3}
+    .rc-anulado{background:#FDECEA;color:#8C1D18;font-weight:700;padding:6px 8px;border-radius:6px;margin-bottom:8px}
+    dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0 0 12px;font-size:14px}dt{color:#5B7078}dd{margin:0}
+    .rc-monto{display:flex;justify-content:space-between;align-items:center;background:#E1EEF6;border-radius:8px;padding:10px 12px;margin-top:10px}
+    .rc-monto b{font-size:22px}.rc-saldo{font-size:13px;color:#5B7078}
+    table{width:100%;border-collapse:collapse;font-size:13px}th,td{text-align:left;padding:5px 6px;border-bottom:1px solid #e3e9eb}.n{text-align:right}
+    @media print{body{margin:0}.recibo{border:0}}
+  </style></head><body>${cuerpo}<script>window.onload=()=>{window.print();}<\/script></body></html>`);
+  v.document.close();
+}
+
+/* =====================================================================
+   SECCIONES DE COBROS
+   ===================================================================== */
+function filasCobro(){
+  return datosGenerales().casas.map(l => ({l, d:l.aq.datos, c:cuenta(l.aq), q:cuotaMensual(l.aq.datos)}));
+}
+/* --- Resumen --- */
+function renderCobResumen(){
+  const mes = $('#crMes').value || mesActual();
+  if (!$('#crMes').value) $('#crMes').value = mes;
+  const filas = filasCobro();
+  let porCobrar = 0, aFavor = 0, alDia = 0, deben = 0, morosas = 0, exoneradas = 0, sinCobro = 0;
+  filas.forEach(x => {
+    if (x.c.exonerada) exoneradas++;
+    if (!x.c.aplica){ sinCobro++; return; }
+    if (x.c.saldo > 0){ porCobrar += x.c.saldo; deben++; if (x.c.atraso >= 3) morosas++; }
+    else { alDia++; if (x.c.saldo < 0) aFavor -= x.c.saldo; }
+  });
+  const pagos = todosLosPagos().filter(p => !p.anulado);
+  const delMes = pagos.filter(p => String(p.fecha).startsWith(mes));
+  const cobrado = round2(delMes.reduce((s, p) => s + num(p.monto), 0));
+  const esperado = round2([...cobrosDe.values()].flat().filter(c => !c.anulado && c.tipo === 'cuota' && c.periodo === mes).reduce((s, c) => s + num(c.monto), 0));
+  const porMetodo = {}; delMes.forEach(p => { porMetodo[p.metodo] = (porMetodo[p.metodo] || 0) + num(p.monto); });
+  const meses = []; const [y0, m0] = mesActual().split('-').map(Number);
+  for (let i = 5; i >= 0; i--){ const dd = new Date(y0, m0 - 1 - i, 1); meses.push(`${dd.getFullYear()}-${String(dd.getMonth() + 1).padStart(2, '0')}`); }
+  const serie = meses.map(k => [k, round2(pagos.filter(p => String(p.fecha).startsWith(k)).reduce((s, p) => s + num(p.monto), 0))]);
+  const maxS = Math.max(1, ...serie.map(s => s[1])), maxM = Math.max(1, ...Object.values(porMetodo));
+  const top = filas.filter(x => x.c.saldo > 0).sort((a, b) => b.c.saldo - a.c.saldo).slice(0, 8);
+  const ultimos = pagos.sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || num(b.recibo) - num(a.recibo)).slice(0, 8);
+  const pct = esperado ? Math.round(cobrado / esperado * 100) : null;
+  $('#crCont').innerHTML = `
+    <div class="kpis">
+      ${kpiCob(dinero(porCobrar), 'Por cobrar', `${deben} ${deben === 1 ? 'casa debe' : 'casas deben'}`, porCobrar > 0 ? 'deuda' : 'ok')}
+      ${kpiCob(dinero(cobrado), 'Cobrado en ' + nombreMes(mes, true), `${delMes.length} ${delMes.length === 1 ? 'pago' : 'pagos'}`)}
+      ${kpiCob(pct == null ? '—' : pct + '%', 'Cumplimiento del mes', `Cuotas del mes: ${dinero(esperado)}`, pct != null && pct < 60 ? 'aviso' : '')}
+      ${kpiCob(`${alDia} <span>de ${filas.length - sinCobro}</span>`, 'Casas al día', `${morosas} ${morosas === 1 ? 'morosa' : 'morosas'} (3 meses o más)`, morosas ? 'aviso' : 'ok')}
+      ${kpiCob(dinero(aFavor), 'Saldo a favor', `${exoneradas} exoneradas · ${sinCobro} sin cobro`)}
+    </div>
+    <div class="rejilla">
+      <article class="tarjeta"><header><h2>Casas con más deuda</h2><a href="#/cobros/casas">Ver todas</a></header>
+        ${top.length ? `<ul class="lista">${top.map(x => { const e = textoEstado(x.c); return `<li><button class="item" data-ficha="${esc(x.l.aq.id)}">
+          <span>${esc(nombreCasa(x.d))}<small>${esc(x.d.responsable || 'Sin representante')}</small></span><span class="pill ${e.cls}">${esc(e.txt)}</span></button></li>`; }).join('')}</ul>`
+          : '<p class="vacio">✓ Ninguna casa tiene deuda.</p>'}</article>
+      <article class="tarjeta"><header><h2>Últimos pagos</h2><a href="#/cobros/pagos">Ver pagos</a></header>
+        ${ultimos.length ? `<ul class="lista">${ultimos.map(p => { const l = capas.get(p.forma_id); return `<li><button class="item" data-recibo="${esc(p.id)}">
+          <span>${esc(l ? nombreCasa(l.aq.datos) : 'Casa eliminada')}<small>${esc(fechaCorta(p.fecha))} · ${esc(METODOS[p.metodo] || '')} · ${esc(numRecibo(p.recibo))}</small></span><b class="monto">${esc(dinero(p.monto))}</b></button></li>`; }).join('')}</ul>`
+          : '<p class="vacio">Todavía no hay pagos.</p>'}</article>
+      <article class="tarjeta"><header><h2>Cobrado por mes</h2></header>
+        <div class="barras">${serie.map(([k, v]) => `<div class="barra-mes"><div class="relleno" style="height:${Math.round(v / maxS * 100)}%"></div><span>${esc(nombreMes(k, true))}</span><b>${esc(dinero(v))}</b></div>`).join('')}</div></article>
+      <article class="tarjeta"><header><h2>Formas de pago en ${esc(nombreMes(mes, true))}</h2></header>
+        ${Object.keys(porMetodo).length ? Object.entries(porMetodo).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<div class="barra-h"><span>${esc(METODOS[k] || k)}</span><div><i style="width:${Math.round(v / maxM * 100)}%"></i></div><b>${esc(dinero(v))}</b></div>`).join('')
+          : '<p class="vacio">No hubo pagos ese mes.</p>'}</article>
+    </div>`;
+  $('#crCont').querySelectorAll('[data-ficha]').forEach(b => b.addEventListener('click', () => abrirFicha(b.dataset.ficha)));
+  $('#crCont').querySelectorAll('[data-recibo]').forEach(b => b.addEventListener('click', () => mostrarRecibo(b.dataset.recibo)));
+}
+const kpiCob = (v, t, s, cls = '') => `<div class="kpi ${cls}"><span class="kpi-t">${t}</span><b>${v}</b><small>${esc(s)}</small></div>`;
+$('#crMes').addEventListener('change', renderCobResumen);
+/* Buscador rápido para registrar un pago */
+function llenarBuscadorCasas(){
+  $('#casasDatalist').innerHTML = datosGenerales().casas.map(l => `<option value="${esc(nombreCasa(l.aq.datos) + (l.aq.datos.responsable ? ' — ' + l.aq.datos.responsable : ''))}"></option>`).join('');
+}
+$('#crBuscar').addEventListener('focus', llenarBuscadorCasas);
+$('#crBuscar').addEventListener('change', () => {
+  const v = $('#crBuscar').value;
+  const l = datosGenerales().casas.find(x => v === nombreCasa(x.aq.datos) + (x.aq.datos.responsable ? ' — ' + x.aq.datos.responsable : ''));
+  if (l){ abrirFicha(l.aq.id, 'pago'); $('#crBuscar').value = ''; }
+});
+
+/* --- Casas y cuentas --- */
+let cobCasasFiltradas = [];
+function renderCobCasas(){
+  const sel = $('#ccTarifa'), prev = sel.value;
+  sel.innerHTML = '<option value="">Todas las tarifas</option>' + tarifas.map(t => `<option value="${esc(t.id)}" ${t.id === prev ? 'selected' : ''}>${esc(t.nombre)}</option>`).join('');
+  const q = $('#ccBusca').value.trim().toLowerCase(), f = $('#ccEstado').value, tf = sel.value;
+  const todas = filasCobro();
+  const lista = todas.filter(x => !q || [x.d.numero, x.d.responsable, x.d.telefono].join(' ').toLowerCase().includes(q))
+    .filter(x => !tf || (x.d.tarifa || state.settings.tarifaDefecto) === tf)
+    .filter(x => f === 'todas' || (f === 'deben' && x.c.saldo > 0) || (f === 'morosas' && x.c.atraso >= 3) || (f === 'aldia' && x.c.aplica && x.c.saldo <= 0)
+      || (f === 'favor' && x.c.saldo < 0) || (f === 'exoneradas' && x.c.exonerada) || (f === 'sincobro' && !x.c.aplica))
+    .sort((a, b) => b.c.saldo - a.c.saldo || String(a.d.numero).localeCompare(String(b.d.numero), 'es', {numeric:true}));
+  cobCasasFiltradas = lista;
+  const total = round2(lista.reduce((s, x) => s + Math.max(0, x.c.saldo), 0));
+  $('#ccConteo').textContent = `${lista.length} de ${todas.length} casas · por cobrar ${dinero(total)}`;
+  const cont = $('#ccTabla');
+  if (!todas.length){ cont.innerHTML = '<div class="vacio-grande">Aún no hay casas. <a href="#/mapa/dibujar/casa">Dibuja la primera en el mapa</a>.</div>'; return; }
+  if (!lista.length){ cont.innerHTML = '<div class="vacio-grande">Ninguna casa coincide con el filtro.</div>'; return; }
+  cont.innerHTML = `<div class="tabla-cont"><table class="tabla clicable">
+    <thead><tr><th>Casa</th><th>Representante</th><th class="num">Núcleos</th><th class="num">Personas</th><th>Tarifa</th><th class="num">Cuota</th><th>Último pago</th><th class="num">Saldo</th><th>Estado</th></tr></thead>
+    <tbody>${lista.map(x => { const e = textoEstado(x.c); return `<tr data-ficha="${esc(x.l.aq.id)}" tabindex="0">
+      <td><b>${esc(nombreCasa(x.d))}</b></td><td>${esc(x.d.responsable || '—')}</td>
+      <td class="num">${nucleosDe(x.d)}</td><td class="num">${personasDe(x.d) || '—'}</td>
+      <td>${esc(x.q.especial ? 'Especial' : (x.q.tarifa ? x.q.tarifa.nombre : '—'))}</td>
+      <td class="num">${esc(dinero(x.q.monto))}</td>
+      <td>${x.c.ultimoPago ? esc(fechaCorta(x.c.ultimoPago.fecha)) : '—'}</td>
+      <td class="num"><b class="${x.c.saldo > 0 ? 'rojo' : ''}">${esc(dinero(x.c.saldo))}</b></td>
+      <td><span class="pill ${e.cls}">${esc(e.txt)}</span></td></tr>`; }).join('')}</tbody></table></div>`;
+  cont.querySelectorAll('[data-ficha]').forEach(tr => {
+    tr.addEventListener('click', () => abrirFicha(tr.dataset.ficha));
+    tr.addEventListener('keydown', e => { if (e.key === 'Enter') abrirFicha(tr.dataset.ficha); });
+  });
+}
+['#ccBusca'].forEach(s => $(s).addEventListener('input', debounce(renderCobCasas, 200)));
+['#ccEstado', '#ccTarifa'].forEach(s => $(s).addEventListener('change', renderCobCasas));
+$('#ccCsv').addEventListener('click', () => {
+  if (!cobCasasFiltradas.length){ aviso('No hay casas para exportar.'); return; }
+  const enc = ['Casa','Representante','Teléfono','Núcleos','Personas','Tarifa','Cuota mensual','Total cargado','Total pagado','Saldo','Meses de atraso','Último pago','Estado'];
+  const filas = cobCasasFiltradas.map(x => [x.d.numero, x.d.responsable, x.d.telefono, nucleosDe(x.d), personasDe(x.d),
+    x.q.especial ? 'Especial' : (x.q.tarifa ? x.q.tarifa.nombre : ''), x.q.monto.toFixed(2), x.c.cargado.toFixed(2), x.c.pagado.toFixed(2),
+    x.c.saldo.toFixed(2), x.c.atraso, x.c.ultimoPago ? x.c.ultimoPago.fecha : '', textoEstado(x.c).txt]);
+  descargarCsv(enc, filas, `cuentas-${hoyISO()}.csv`);
+});
+function descargarCsv(enc, filas, nombre){
+  const csv = [enc, ...filas].map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')).join('\r\n');
+  descargar('\ufeff' + csv, nombre, 'text/csv;charset=utf-8');
+  aviso('Lista descargada. Se abre con Excel o Google Sheets.');
+}
+
+/* --- Pagos registrados --- */
+let pagosFiltrados = [];
+function renderCobPagos(){
+  if (!$('#cpMes').value && !$('#cpMes').dataset.tocado) $('#cpMes').value = mesActual();
+  const mes = $('#cpMes').value, met = $('#cpMetodo').value, anul = $('#cpAnulados').checked, q = $('#cpBusca').value.trim().toLowerCase();
+  const lista = todosLosPagos().filter(p => (!mes || String(p.fecha).startsWith(mes)) && (!met || p.metodo === met) && (anul || !p.anulado))
+    .filter(p => { if (!q) return true; const l = capas.get(p.forma_id), d = l ? l.aq.datos : {};
+      return [d.numero, d.responsable, p.recibo, p.referencia, p.nota, p.registrado_por_nombre].join(' ').toLowerCase().includes(q); })
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)) || num(b.recibo) - num(a.recibo));
+  pagosFiltrados = lista;
+  const validos = lista.filter(p => !p.anulado), total = round2(validos.reduce((s, p) => s + num(p.monto), 0));
+  const porMet = {}; validos.forEach(p => { porMet[p.metodo] = round2((porMet[p.metodo] || 0) + num(p.monto)); });
+  $('#cpConteo').innerHTML = `${validos.length} ${validos.length === 1 ? 'pago' : 'pagos'} · <b>${esc(dinero(total))}</b>${Object.keys(porMet).length ? ' · ' + Object.entries(porMet).map(([k, v]) => `${esc(METODOS[k] || k)} ${esc(dinero(v))}`).join(' · ') : ''}`;
+  const cont = $('#cpTabla');
+  if (!lista.length){ cont.innerHTML = '<div class="vacio-grande">No hay pagos con estos filtros.</div>'; return; }
+  cont.innerHTML = `<div class="tabla-cont"><table class="tabla clicable">
+    <thead><tr><th>Recibo</th><th>Fecha</th><th>Casa</th><th>Representante</th><th>Forma de pago</th><th class="num">Monto</th><th>Recibió</th><th></th></tr></thead>
+    <tbody>${lista.map(p => { const l = capas.get(p.forma_id), d = l ? l.aq.datos : {}; return `<tr class="${p.anulado ? 'anulado' : ''}" data-recibo="${esc(p.id)}" tabindex="0">
+      <td><b>${esc(numRecibo(p.recibo))}</b></td><td>${esc(fechaCorta(p.fecha))}</td>
+      <td>${l ? `<button class="enlace" data-ficha="${esc(p.forma_id)}">${esc(nombreCasa(d))}</button>` : 'Casa eliminada'}</td>
+      <td>${esc(d.responsable || '—')}</td><td>${esc(METODOS[p.metodo] || p.metodo)}${p.referencia ? `<small> · ${esc(p.referencia)}</small>` : ''}</td>
+      <td class="num"><b>${esc(dinero(p.monto))}</b></td><td>${esc(p.registrado_por_nombre || '—')}</td>
+      <td>${p.anulado ? `<span class="pill bad" title="${esc(p.motivo_anulacion || '')}">Anulado</span>` : ''}</td></tr>`; }).join('')}</tbody></table></div>`;
+  cont.querySelectorAll('[data-ficha]').forEach(b => b.addEventListener('click', e => { e.stopPropagation(); abrirFicha(b.dataset.ficha); }));
+  cont.querySelectorAll('tr[data-recibo]').forEach(tr => tr.addEventListener('click', () => mostrarRecibo(tr.dataset.recibo)));
+}
+$('#cpMes').addEventListener('change', () => { $('#cpMes').dataset.tocado = '1'; renderCobPagos(); });
+['#cpMetodo', '#cpAnulados'].forEach(s => $(s).addEventListener('change', renderCobPagos));
+$('#cpBusca').addEventListener('input', debounce(renderCobPagos, 200));
+$('#cpTodos').addEventListener('click', () => { $('#cpMes').value = ''; $('#cpMes').dataset.tocado = '1'; renderCobPagos(); });
+$('#cpCsv').addEventListener('click', () => {
+  if (!pagosFiltrados.length){ aviso('No hay pagos para exportar.'); return; }
+  descargarCsv(['Recibo','Fecha','Casa','Representante','Forma de pago','Referencia','Monto','Recibió','Nota','Anulado','Motivo de anulación'],
+    pagosFiltrados.map(p => { const l = capas.get(p.forma_id), d = l ? l.aq.datos : {};
+      return [p.recibo, p.fecha, d.numero || '', d.responsable || '', METODOS[p.metodo] || p.metodo, p.referencia || '', num(p.monto).toFixed(2),
+        p.registrado_por_nombre || '', p.nota || '', p.anulado ? 'Sí' : 'No', p.motivo_anulacion || '']; }),
+    `pagos-${$('#cpMes').value || 'todos'}.csv`);
+});
+
+/* --- Tarifas --- */
+function renderCobTarifas(){
+  const casas = datosGenerales().casas;
+  const uso = id => casas.filter(l => (l.aq.datos.tarifa || state.settings.tarifaDefecto) === id && !tieneEspecial(l.aq.datos)).length;
+  const especiales = casas.filter(l => tieneEspecial(l.aq.datos)).length;
+  $('#ctLista').innerHTML = tarifas.map(t => `<article class="tarjeta tarifa ${t.activa ? '' : 'inactiva'}" data-tarifa="${esc(t.id)}">
+      <div class="dos">
+        <label class="campo"><span>Nombre</span><input data-t="nombre" value="${esc(t.nombre)}" maxlength="80"></label>
+        <label class="campo"><span>Monto (${esc(state.settings.moneda || '')})</span><input data-t="monto" type="number" min="0" step="0.01" value="${esc(num(t.monto).toFixed(2))}"></label>
+      </div>
+      <label class="campo"><span>Cómo se cobra</span><select data-t="modo">${Object.entries(MODOS_TARIFA).map(([k, v]) => `<option value="${k}" ${k === t.modo ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label class="campo"><span>Descripción (opcional)</span><input data-t="descripcion" value="${esc(t.descripcion || '')}" maxlength="160"></label>
+      <div class="fila">
+        <label class="check"><input type="radio" name="tarifaDefecto" value="${esc(t.id)}" ${t.id === state.settings.tarifaDefecto ? 'checked' : ''}><span>Tarifa para casas nuevas</span></label>
+        <label class="check"><input type="checkbox" data-t="activa" ${t.activa ? 'checked' : ''}><span>Disponible</span></label>
+      </div>
+      <p class="nota">${uso(t.id)} ${uso(t.id) === 1 ? 'casa usa' : 'casas usan'} esta tarifa.</p>
+      <div class="fila"><button class="btn primario chico" data-guardar-tarifa>Guardar</button>
+        ${uso(t.id) || t.id === state.settings.tarifaDefecto ? '' : '<button class="btn peligro chico" data-borrar-tarifa>Quitar</button>'}</div>
+    </article>`).join('') + (especiales ? `<p class="nota">${especiales} ${especiales === 1 ? 'casa tiene' : 'casas tienen'} una cuota especial que no depende de la tarifa.</p>` : '');
+  $('#ctLista').querySelectorAll('[data-tarifa]').forEach(card => {
+    const id = card.dataset.tarifa, t = tarifas.find(x => x.id === id);
+    card.querySelector('[data-guardar-tarifa]').addEventListener('click', async () => {
+      const v = k => card.querySelector(`[data-t="${k}"]`);
+      const cambios = {nombre:v('nombre').value.trim(), monto:round2(v('monto').value), modo:v('modo').value, descripcion:v('descripcion').value.trim() || null, activa:v('activa').checked};
+      if (cambios.nombre.length < 2){ aviso('Escribe el nombre de la tarifa.'); return; }
+      const cambiaCuota = cambios.monto !== round2(t.monto) || cambios.modo !== t.modo;
+      if (!await tarea(sb.from('tarifas').update(cambios).eq('id', id), 'No se pudo guardar la tarifa')) return;
+      Object.assign(t, cambios);
+      if (cambiaCuota && uso(id) && confirm(`Tarifa guardada. Los meses pasados no cambian.\n\n¿Aplicar el nuevo monto también a la cuota de ${nombreMes(mesActual())} de las ${uso(id)} casas con esta tarifa?`)){
+        const ids = casas.filter(l => (l.aq.datos.tarifa || state.settings.tarifaDefecto) === id && !tieneEspecial(l.aq.datos)).map(l => l.aq.id);
+        for (const fid of ids) await sb.rpc('recalcular_cuotas', {p_forma:fid, p_desde:mesActual()});
+        await cargarCobros();
+      }
+      aviso('Tarifa guardada.'); capa.eachLayer(l => { if (l.aq && l.aq.tipo === 'casa') refrescarForma(l); }); renderCobTarifas();
+    });
+    const borrar = card.querySelector('[data-borrar-tarifa]');
+    if (borrar) borrar.addEventListener('click', async () => {
+      if (!confirm(`¿Quitar la tarifa «${t.nombre}»?`)) return;
+      if (await tarea(sb.from('tarifas').delete().eq('id', id), 'No se pudo quitar la tarifa')){ tarifas = tarifas.filter(x => x.id !== id); renderCobTarifas(); }
+    });
+  });
+  $('#ctLista').querySelectorAll('input[name=tarifaDefecto]').forEach(r => r.addEventListener('change', async () => {
+    if (await tarea(sb.from('configuracion').update({tarifa_defecto:r.value, editado_por:CLIENTE_ID}).eq('id', 1), 'No se pudo guardar')){
+      state.settings.tarifaDefecto = r.value; aviso('Las casas nuevas usarán esta tarifa.'); renderCobTarifas();
+    }
+  }));
+}
+$('#ctNueva').addEventListener('submit', async e => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target).entries());
+  if ((f.nombre || '').trim().length < 2){ aviso('Escribe el nombre de la tarifa.'); return; }
+  const id = f.nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || uid();
+  if (tarifas.some(t => t.id === id)){ aviso('Ya existe una tarifa con ese nombre.'); return; }
+  const fila = await consultaConFila(sb.from('tarifas').insert({id, nombre:f.nombre.trim(), monto:round2(f.monto), modo:f.modo, orden:tarifas.length + 1}).select().single(), 'No se pudo crear la tarifa');
+  if (fila){ tarifas.push(fila); e.target.reset(); aviso('Tarifa creada.'); renderCobTarifas(); }
+});
+$('#ctGenerar').addEventListener('click', async () => {
+  const {data, error} = await sb.rpc('generar_cuotas', {p_forma:null});
+  if (error){ aviso(explicarError(error)); return; }
+  aviso(data ? `Se generaron ${data} ${data === 1 ? 'cuota' : 'cuotas'}.` : 'Todas las cuotas hasta este mes ya estaban generadas.');
+  await cargarCobros(); renderVistaActual();
+});
+
+/* Diálogos de cobros */
+['#dlgFicha', '#dlgRecibo'].forEach(sel => {
+  const dl = $(sel);
+  dl.querySelectorAll('[data-cerrar]').forEach(x => x.addEventListener('click', () => dl.close()));
+  dl.addEventListener('click', e => { if (e.target === dl) dl.close(); });
+});
+$('#dlgFicha').addEventListener('close', () => { nucleosEdicion = null; });
+
 /* ================= Sección: Configuración ================= */
 function cargarConfigEnFormulario(){
   $('#cfgNombre').value = state.settings.nombre;
@@ -2831,8 +3439,9 @@ function empaquetar(){
     gj.properties = JSON.parse(JSON.stringify(l.aq));
     features.push(gj);
   });
-  return {app:'mapa-acueducto', version:4, guardado:new Date().toISOString(), settings:state.settings,
+  return {app:'mapa-acueducto', version:5, guardado:new Date().toISOString(), settings:state.settings,
     tiposIncidencia:tiposInc, incidencias:[...incidencias.values()],
+    tarifas, cobros:[...cobrosDe.values()].flat(), pagos:todosLosPagos(),
     geojson:{type:'FeatureCollection', features}};
 }
 
@@ -2855,9 +3464,20 @@ async function subirCopia(data){
   for (let i = 0; i < filas.length; i += 500){
     const {error} = await sb.from('formas').upsert(filas.slice(i, i + 500)); if (error) throw error;
   }
+  // Copias nuevas (versión 5): tarifas, cargos y pagos con su recibo
+  if (Array.isArray(data.tarifas) && data.tarifas.length){
+    const {error} = await sb.from('tarifas').upsert(data.tarifas.map(({created_at, updated_at, ...t}) => t)); if (error) throw error;
+  }
+  if (Array.isArray(data.pagos)) data.pagos.forEach(x => pagos.push({id:x.id, forma_id:x.forma_id, fecha:x.fecha, monto:num(x.monto), nota:x.nota || '',
+    metodo:x.metodo || 'efectivo', referencia:x.referencia || null, ...(x.recibo ? {recibo:x.recibo} : {})}));
   for (let i = 0; i < pagos.length; i += 500){
     const {error} = await sb.from('pagos').upsert(pagos.slice(i, i + 500)); if (error) throw error;
   }
+  if (Array.isArray(data.cobros) && data.cobros.length){
+    const cob = data.cobros.map(x => ({id:x.id, forma_id:x.forma_id, tipo:x.tipo, periodo:x.periodo || null, concepto:x.concepto, monto:num(x.monto), fecha:x.fecha}));
+    for (let i = 0; i < cob.length; i += 500){ const {error} = await sb.from('cobros').upsert(cob.slice(i, i + 500)); if (error) throw error; }
+  }
+  await sb.rpc('generar_cuotas', {p_forma:null});
   if (Array.isArray(data.tiposIncidencia) && data.tiposIncidencia.length){
     const existentes = new Set(tiposInc.map(t => t.nombre.toLowerCase()));
     const nuevos = data.tiposIncidencia.filter(t => t && t.nombre && !existentes.has(String(t.nombre).toLowerCase()))
@@ -2969,6 +3589,9 @@ async function verificarBaseDatos(){
     ['configuracion', 'id,whatsapp,whatsapp_activo,correo_contacto'],
     ['incidencias', 'id,publica,detalle_publico'],
     ['perfiles', 'id,cargo,genero'],
+    ['tarifas', 'id,monto,modo'],
+    ['cobros', 'id,tipo,periodo,anulado'],
+    ['pagos', 'id,recibo,metodo,anulado'],
     ['incidencias', 'id,atendida_por,atendida_por_nombre,nota_cierre'],
     ['cargos', 'id']
   ];

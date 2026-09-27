@@ -61,7 +61,15 @@
         <button class="nav-btn" aria-expanded="false">Gestión <i class="flecha"></i></button>
         <ul class="submenu">
           <li><a href="#/sectores" data-ruta="sectores"><span>Sectores y flujo de agua<small>Dar o quitar el agua por zona</small></span></a></li>
-          <li><a href="#/casas" data-ruta="casas"><span>Casas y cobros<small>Buscar, filtrar y exportar la lista</small></span></a></li>
+        </ul>
+      </li>
+      <li class="grupo" data-grupo="cobros">
+        <button class="nav-btn" aria-expanded="false">Cobros <i class="flecha"></i></button>
+        <ul class="submenu">
+          <li><a href="#/cobros/resumen" data-ruta="cobros/resumen"><span>Resumen de cobros<small>Cuánto se debe y cuánto se cobró</small></span></a></li>
+          <li><a href="#/cobros/casas" data-ruta="cobros/casas"><span>Casas y cuentas<small>Estado de cuenta de cada casa</small></span></a></li>
+          <li><a href="#/cobros/pagos" data-ruta="cobros/pagos"><span>Pagos registrados<small>Recibos, formas de pago y anulaciones</small></span></a></li>
+          <li><a href="#/cobros/tarifas" data-ruta="cobros/tarifas"><span>Tarifas<small>Cuánto se cobra y cómo</small></span></a></li>
         </ul>
       </li>
       <li class="grupo" data-grupo="usuarios">
@@ -239,21 +247,64 @@
     <div id="secLista"></div>
   </section>
 
-  <section class="vista" data-vista="casas" hidden>
-    <div class="cab-vista"><div><h1>Casas y cobros</h1><p>Toca «Ver» para abrir la casa en el mapa y registrar pagos.</p></div>
-      <button class="btn" id="casasCsv">Descargar lista (Excel)</button></div>
+  <!-- ======================= COBROS ======================= -->
+  <section class="vista" data-vista="cobros/resumen" hidden>
+    <div class="cab-vista"><div><h1>Resumen de cobros</h1><p>Cuánto se debe, cuánto se cobró y quién está atrasado.</p></div>
+      <div class="fila">
+        <label class="campo compacto"><span>Mes</span><input type="month" id="crMes"></label>
+        <label class="campo compacto buscar-casa"><span>Registrar un pago</span><input type="search" id="crBuscar" list="casasDatalist" placeholder="Escribe el número de casa o el nombre"></label>
+        <datalist id="casasDatalist"></datalist>
+      </div></div>
+    <div id="crCont"></div>
+  </section>
+
+  <section class="vista" data-vista="cobros/casas" hidden>
+    <div class="cab-vista"><div><h1>Casas y cuentas</h1><p>Toca una casa para abrir su ficha: estado de cuenta, pagos, núcleos familiares y tarifa.</p></div>
+      <button class="btn" id="ccCsv">Descargar lista (Excel)</button></div>
     <div class="filtros">
-      <input type="text" id="busca" placeholder="Buscar número, responsable, teléfono o sector" aria-label="Buscar casa">
-      <select id="filtro" aria-label="Filtrar casas">
-        <option value="todas">Todas</option>
-        <option value="deben">Con deuda</option>
-        <option value="aldia">Al día</option>
-        <option value="sinconexion">Sin conexión a tubería</option>
-        <option value="incidencia">Con incidencia</option>
+      <input type="text" id="ccBusca" placeholder="Buscar número, representante o teléfono" aria-label="Buscar casa">
+      <select id="ccEstado" aria-label="Filtrar por estado">
+        <option value="todas">Todas</option><option value="deben">Con deuda</option><option value="morosas">Morosas (3 meses o más)</option>
+        <option value="aldia">Al día</option><option value="favor">Con saldo a favor</option><option value="exoneradas">Exoneradas</option><option value="sincobro">Sin cobro configurado</option>
       </select>
-      <span class="conteo" id="casasConteo"></span>
+      <select id="ccTarifa" aria-label="Filtrar por tarifa"></select>
+      <span class="conteo" id="ccConteo"></span>
     </div>
-    <div id="casasTabla"></div>
+    <div id="ccTabla"></div>
+  </section>
+
+  <section class="vista" data-vista="cobros/pagos" hidden>
+    <div class="cab-vista"><div><h1>Pagos registrados</h1><p>Cada pago tiene su número de recibo. Toca uno para verlo o volver a imprimirlo.</p></div>
+      <button class="btn" id="cpCsv">Descargar (Excel)</button></div>
+    <div class="filtros">
+      <input type="month" id="cpMes" aria-label="Mes"><button class="btn chico" id="cpTodos">Todos los meses</button>
+      <select id="cpMetodo" aria-label="Forma de pago"><option value="">Todas las formas de pago</option><option value="efectivo">Efectivo</option><option value="transferencia">Transferencia</option><option value="yappy">Yappy</option><option value="cheque">Cheque</option><option value="otro">Otro</option></select>
+      <input type="text" id="cpBusca" placeholder="Buscar casa, recibo o referencia" aria-label="Buscar pago">
+      <label class="check"><input type="checkbox" id="cpAnulados"><span>Mostrar anulados</span></label>
+    </div>
+    <p class="conteo-grande" id="cpConteo"></p>
+    <div id="cpTabla"></div>
+  </section>
+
+  <section class="vista" data-vista="cobros/tarifas" hidden>
+    <div class="cab-vista"><div><h1>Tarifas</h1><p>Cuánto se cobra cada mes y cómo se calcula. Al cambiar una tarifa, los meses ya cobrados no cambian.</p></div></div>
+    <div id="ctLista" class="lista-tarifas"></div>
+    <div class="rejilla">
+      <article class="tarjeta">
+        <header><h2>Nueva tarifa</h2></header>
+        <form id="ctNueva">
+          <div class="dos"><label class="campo"><span>Nombre</span><input name="nombre" maxlength="80" placeholder="Ej. Comercial"></label>
+            <label class="campo"><span>Monto</span><input name="monto" type="number" min="0" step="0.01" required></label></div>
+          <label class="campo"><span>Cómo se cobra</span><select name="modo"><option value="casa">Monto fijo por casa</option><option value="nucleo">Por cada núcleo familiar</option><option value="persona">Por cada persona</option></select></label>
+          <div class="fila"><button class="btn primario" type="submit">Crear tarifa</button></div>
+        </form>
+      </article>
+      <article class="tarjeta">
+        <header><h2>Cuotas mensuales automáticas</h2></header>
+        <p class="nota" style="margin-top:0">Cada mes el sistema agrega sola la cuota de cada casa con cobro activo, según su tarifa, desde el mes indicado en «Cobrar desde». Se hace al abrir la administración; también puedes hacerlo ahora.</p>
+        <div class="fila"><button class="btn" id="ctGenerar">Generar cuotas pendientes</button></div>
+      </article>
+    </div>
   </section>
 
   <section class="vista" data-vista="configuracion" hidden>
@@ -263,10 +314,11 @@
         <header><h2>General</h2></header>
         <label class="campo"><span>Nombre del acueducto</span><input type="text" id="cfgNombre"></label>
         <div class="dos">
-          <label class="campo"><span>Cuota mensual por núcleo</span><input type="number" id="cfgCuota" min="0" step="0.01"></label>
+          <label class="campo" hidden><span>Cuota mensual</span><input type="number" id="cfgCuota" min="0" step="0.01"></label>
+          <p class="nota">Las cuotas ahora se configuran en <a href="#/cobros/tarifas">Cobros → Tarifas</a>.</p>
           <label class="campo"><span>Moneda</span><input type="text" id="cfgMoneda" maxlength="5"></label>
         </div>
-        <label class="check"><input type="checkbox" id="cfgColorPago"><span>Colorear las casas según su estado de pago (verde al día, amarillo 1 mes, rojo 2 o más). Solo se ve en la administración, nunca en el mapa público.</span></label>
+        <label class="check"><input type="checkbox" id="cfgColorPago"><span>Colorear las casas según su estado de pago (verde al día, amarillo con deuda, rojo morosa: 3 meses o más). Solo se ve en la administración, nunca en el mapa público.</span></label>
         <p class="nota">El nombre del acueducto también aparece en el mapa público.</p>
       </article>
 
@@ -311,6 +363,30 @@
     </div>
   </section>
 </main>
+
+<dialog id="dlgFicha" class="modal ficha" aria-labelledby="fcTitulo">
+  <header class="fc-cab">
+    <div class="fc-quien"><h2 id="fcTitulo"></h2><p id="fcSub"></p></div>
+    <div class="fc-saldo" id="fcSaldo"></div>
+    <div class="fc-botones"><button class="btn chico" id="fcMapa">Ver en el mapa</button><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></div>
+  </header>
+  <nav class="fc-tabs" role="tablist">
+    <button role="tab" data-fc-tab="cuenta">Estado de cuenta</button>
+    <button role="tab" data-fc-tab="pago">Registrar pago</button>
+    <button role="tab" data-fc-tab="nucleos">Núcleos familiares</button>
+    <button role="tab" data-fc-tab="datos">Datos y tarifa</button>
+  </nav>
+  <div class="fc-cuerpo" id="fcCuerpo"></div>
+</dialog>
+
+<dialog id="dlgRecibo" class="modal" aria-labelledby="rcTitulo">
+  <header><h2 id="rcTitulo">Recibo de pago</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
+  <div class="modal-cuerpo">
+    <div id="rcCuerpo"></div>
+    <div class="fila" style="margin-top:12px"><button class="btn primario" id="rcImprimir">Imprimir</button>
+      <a class="btn" id="rcWhatsapp" target="_blank" rel="noopener" hidden>Enviar por WhatsApp</a><button class="btn" data-cerrar>Cerrar</button></div>
+  </div>
+</dialog>
 
 <dialog id="dlgResolver" class="modal" aria-labelledby="resCab">
   <header><h2 id="resCab">Marcar como resuelta</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>

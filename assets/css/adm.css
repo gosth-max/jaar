@@ -456,3 +456,96 @@ input[type=password]{background:var(--blanco);border:1px solid var(--linea);bord
 .control{background:#F4F7F8;border-left:3px solid #5F7F89;border-radius:6px;padding:6px 9px;margin:6px 0;font-size:13px;line-height:1.55;color:var(--tinta)}
 .banner-hist .control{font-size:12.5px}
 .control .ex{color:var(--suave);font-size:12px}
+
+/* =====================================================================
+   COBROS
+   ===================================================================== */
+.campo.compacto{margin:0;min-width:150px}
+.campo.compacto input{padding:6px 8px}
+.buscar-casa{min-width:280px}
+.conteo-grande{font-size:14px;margin:-4px 0 10px;color:var(--suave)}
+.tabla.clicable tbody tr{cursor:pointer}
+.tabla.clicable tbody tr:hover,.tabla.clicable tbody tr:focus{background:var(--agua-claro);outline:none}
+.tabla tr.anulado td{color:var(--suave);text-decoration:line-through}
+.tabla tr.anulado td .pill,.tabla tr.anulado td .motivo{text-decoration:none}
+.rojo{color:var(--bad)}
+.kpi .kpi-t{font-size:13px;color:var(--suave);font-weight:700}
+.kpi.deuda b{color:var(--bad)} .kpi.aviso b{color:#8A6208} .kpi.ok b{color:var(--ok)}
+.barras{display:flex;gap:8px;align-items:flex-end;height:170px;padding-top:6px}
+.barras .barra-mes{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;gap:3px;font-size:11.5px}
+.barras .barra-mes .relleno{width:70%;background:var(--agua);border-radius:6px 6px 0 0;min-height:2px}
+.barras .barra-mes span{color:var(--suave)} .barras .barra-mes b{font-size:11px}
+.barra-h{display:grid;grid-template-columns:110px 1fr auto;gap:8px;align-items:center;margin:6px 0;font-size:14px}
+.barra-h div{background:var(--papel);border-radius:6px;height:12px;overflow:hidden}
+.barra-h i{display:block;height:100%;background:var(--agua);border-radius:6px}
+.lista-tarifas{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px;margin-bottom:14px}
+.tarjeta.tarifa.inactiva{opacity:.65}
+.resumen-nucleos{display:flex;justify-content:space-between;align-items:center;gap:8px;background:var(--papel);border-radius:10px;padding:8px 10px;margin:8px 0;font-size:14px}
+
+/* Ficha central de la casa */
+.modal.ficha{width:min(1040px,96vw);height:min(90vh,920px);max-height:none;padding:0}
+.modal.ficha[open]{display:flex;flex-direction:column}
+.fc-cab{display:flex;align-items:center;gap:16px;padding:14px 18px;border-bottom:1px solid var(--linea);flex-wrap:wrap}
+.fc-quien{flex:1;min-width:220px}
+.fc-quien h2{margin:0;font-size:20px}
+.fc-quien p{margin:2px 0 0;color:var(--suave);font-size:13.5px}
+.fc-saldo{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.fc-saldo span:first-child{font-size:12px;color:var(--suave);font-weight:700}
+.fc-saldo b{font-size:24px;line-height:1.1;color:var(--ok)} .fc-saldo b.debe{color:var(--bad)}
+.fc-botones{display:flex;gap:6px;align-items:center}
+.fc-tabs{display:flex;gap:2px;padding:0 18px;border-bottom:1px solid var(--linea);overflow-x:auto;flex:none}
+.fc-tabs button{background:none;border:0;border-bottom:3px solid transparent;padding:10px 12px 9px;font-weight:700;color:var(--suave);white-space:nowrap}
+.fc-tabs button[aria-selected="true"]{color:var(--agua);border-bottom-color:var(--agua)}
+.fc-cuerpo{flex:1;overflow-y:auto;padding:16px 18px 22px}
+.fc-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:12px}
+.fc-kpis>div{background:var(--papel);border-radius:12px;padding:10px 12px}
+.fc-kpis span{display:block;font-size:12.5px;color:var(--suave);font-weight:700}
+.fc-kpis b{display:block;font-size:20px;line-height:1.25}
+.fc-kpis small{color:var(--suave);font-size:12px}
+.fc-aviso{background:#FBF0D8;color:#5C4304;border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:14px}
+.fc-aviso.info{background:var(--agua-claro);color:var(--tinta)}
+.fc-pendiente{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:12px;font-size:14px}
+.chip{background:#FDECEA;color:#8C1D18;border-radius:999px;padding:2px 9px;font-size:12.5px;font-weight:700}
+.fc-acciones{margin-bottom:10px}
+.fc-extra{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:0 12px;background:var(--papel);border-radius:12px;padding:6px 12px 12px;margin-bottom:12px}
+.fc-extra .fila{grid-column:1/-1}
+.fc-sub{font-size:15px;margin:16px 0 8px}
+.libreta td small{display:block;color:var(--suave);font-size:12px}
+.libreta td.abono,.abono{color:var(--ok);font-weight:700}
+.libreta .motivo{color:var(--bad)!important}
+.libreta td.acc{white-space:nowrap;text-align:right}
+.libreta tr.pago td:first-child{border-left:3px solid var(--ok)}
+.fc-pago{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,.7fr);gap:20px;align-items:start}
+.monto-grande{font-size:28px!important;font-weight:700;padding:10px 12px!important}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:-2px 0 8px}
+.chip-btn{border:1px solid var(--linea);background:var(--blanco);border-radius:999px;padding:5px 11px;font-size:13px;font-weight:700}
+.chip-btn:hover{border-color:var(--agua);background:var(--agua-claro)}
+.fc-previa{background:var(--papel);border-radius:14px;padding:14px 16px;position:sticky;top:0}
+.fc-previa h4{margin:0 0 8px}
+.fc-previa p{margin:4px 0}
+.fc-previa .resultado{margin-top:10px;padding:8px 10px;border-radius:8px;background:#E3F2E9;color:#1F6B42}
+.fc-previa .resultado.debe{background:#FBF0D8;color:#5C4304}
+.tabla.nucleos input{width:100%;border:1px solid var(--linea);border-radius:6px;padding:5px 7px;background:var(--blanco)}
+.tabla.nucleos input.corto{width:80px;text-align:right}
+.dos-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.fc-corregir{margin-top:16px;border-top:1px solid var(--linea);padding-top:10px}
+.fc-corregir summary{cursor:pointer;font-weight:700;color:var(--suave)}
+.fc-corregir input[type=month]{border:1px solid var(--linea);border-radius:7px;padding:6px 8px}
+.enlace{background:none;border:0;color:var(--agua);text-decoration:underline;padding:0;font:inherit;cursor:pointer}
+/* Recibo */
+.recibo{border:1px solid var(--linea);border-radius:12px;padding:14px 16px}
+.rc-cab{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid var(--agua);padding-bottom:8px;margin-bottom:10px}
+.rc-cab b{display:block;font-size:17px} .rc-cab small{color:var(--suave)}
+.rc-num{font-weight:700;color:var(--agua)}
+.rc-anulado{background:#FDECEA;color:#8C1D18;font-weight:700;padding:6px 8px;border-radius:6px;margin-bottom:8px}
+.recibo dl{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0 0 10px;font-size:14px}
+.recibo dt{color:var(--suave)} .recibo dd{margin:0}
+.rc-monto{display:flex;justify-content:space-between;align-items:center;background:var(--agua-claro);border-radius:10px;padding:10px 12px}
+.rc-monto b{font-size:22px}
+.rc-saldo{font-size:13px;color:var(--suave);margin:8px 0 0}
+@media (max-width:760px){
+  .fc-kpis{grid-template-columns:1fr 1fr}
+  .fc-pago,.dos-col{grid-template-columns:1fr}
+  .modal.ficha{width:100vw;height:100vh;border-radius:0}
+  .fc-saldo{align-items:flex-start}
+}
