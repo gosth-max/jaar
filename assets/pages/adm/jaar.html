@@ -69,6 +69,7 @@
           <li><a href="#/cobros/resumen" data-ruta="cobros/resumen"><span>Resumen de cobros<small>Cuánto se debe y cuánto se cobró</small></span></a></li>
           <li><a href="#/cobros/casas" data-ruta="cobros/casas"><span>Casas y cuentas<small>Estado de cuenta de cada casa</small></span></a></li>
           <li><a href="#/cobros/pagos" data-ruta="cobros/pagos"><span>Pagos registrados<small>Recibos, formas de pago y anulaciones</small></span></a></li>
+          <li><a href="#/cobros/historial" data-ruta="cobros/historial"><span>Historial de cobros<small>Todo lo que se hizo, con fecha y hora</small></span></a></li>
           <li><a href="#/cobros/tarifas" data-ruta="cobros/tarifas"><span>Tarifas<small>Cuánto se cobra y cómo</small></span></a></li>
         </ul>
       </li>
@@ -137,6 +138,21 @@
     </div>
     <p class="pista-mapa" id="pista" role="status" hidden></p>
     <div class="banner-hist" id="bannerHist" role="status" hidden></div>
+    <button class="btn-alinear" id="alinearFondo" title="Mover el mapa de fondo hasta que coincida con lo dibujado">⇔ Alinear fondo</button>
+    <div class="panel-alinear" id="panelAlinear" hidden>
+      <b>Alinear fondo: <span id="alFondo"></span></b>
+      <p class="nota">Mueve el fondo hasta que los techos y caminos coincidan con tus casas y tuberías. Cambia de fondo con el botón de capas (abajo a la izquierda). También puedes usar las flechas del teclado.</p>
+      <p class="nota aviso-ref" id="alAviso" hidden>Tus formas se dibujaron sobre este fondo: normalmente no hace falta moverlo.</p>
+      <div class="flechas">
+        <span></span><button class="btn" data-mover="0,1" aria-label="Mover al norte">↑</button><span></span>
+        <button class="btn" data-mover="-1,0" aria-label="Mover al oeste">←</button>
+        <select id="alPaso" aria-label="Paso"><option value="0.25">0,25 m</option><option value="0.5">0,5 m</option><option value="1" selected>1 m</option><option value="2">2 m</option><option value="5">5 m</option></select>
+        <button class="btn" data-mover="1,0" aria-label="Mover al este">→</button>
+        <span></span><button class="btn" data-mover="0,-1" aria-label="Mover al sur">↓</button><span></span>
+      </div>
+      <p class="valor" id="alValor"></p>
+      <div class="fila"><button class="btn primario chico" id="alGuardar">Guardar para todos</button><button class="btn chico" id="alRestablecer">Sin ajuste</button><button class="btn chico" id="alCerrar">Cerrar</button></div>
+    </div>
     <section id="panel" aria-label="Detalles de la forma seleccionada">
       <div class="p-cab"><h3 id="pTitulo">—</h3><button class="cerrar" id="pCerrar" aria-label="Cerrar panel">×</button></div>
       <div class="p-cuerpo" id="pCuerpo"></div>
@@ -284,6 +300,28 @@
     </div>
     <p class="conteo-grande" id="cpConteo"></p>
     <div id="cpTabla"></div>
+  </section>
+
+  <section class="vista" data-vista="cobros/historial" hidden>
+    <div class="cab-vista"><div><h1>Historial de cobros</h1><p>Cada pago, cargo y anulación con su fecha, hora y quién lo hizo. Toca un registro para ver el recibo o la ficha de la casa.</p></div>
+      <button class="btn" id="chCsv">Descargar (Excel)</button></div>
+    <div class="filtros">
+      <input type="search" id="chBusca" placeholder="Nombre o número de casa" aria-label="Buscar por nombre o número de casa">
+      <select id="chTipo" aria-label="Tipo de movimiento">
+        <option value="todo">Pagos, cargos y anulaciones</option>
+        <option value="pagos">Solo pagos</option>
+        <option value="cargos">Solo cargos extra</option>
+        <option value="anulaciones">Solo anulaciones</option>
+        <option value="cuotas">Solo cuotas mensuales automáticas</option>
+        <option value="completo">Todo (incluye cuotas automáticas)</option>
+      </select>
+      <label class="rango"><span>Desde</span><input type="date" id="chDesde"></label>
+      <label class="rango"><span>Hasta</span><input type="date" id="chHasta"></label>
+      <button class="btn chico" id="chLimpiar">Limpiar filtros</button>
+    </div>
+    <p class="conteo-grande" id="chConteo"></p>
+    <div id="chTabla"></div>
+    <nav class="paginacion" id="chPaginas" aria-label="Páginas del historial"></nav>
   </section>
 
   <section class="vista" data-vista="cobros/tarifas" hidden>

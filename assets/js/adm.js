@@ -153,7 +153,9 @@ function aqDesdeFila(r){
 }
 function aplicarFilaConfig(r){
   state.settings = {nombre:r.nombre || 'Mi acueducto', cuota:num(r.cuota), moneda:r.moneda ?? 'B/.', colorPorPago:!!r.color_por_pago, tarifaDefecto:r.tarifa_defecto || 'estandar',
+    ajusteFondos:r.ajuste_fondos || {},
     whatsapp:r.whatsapp || '', whatsappMensaje:r.whatsapp_mensaje || '', whatsappActivo:!!r.whatsapp_activo, correoContacto:r.correo_contacto || ''};
+  if (typeof map !== 'undefined' && map.ajustarFondos && !ajusteEdicion) map.ajustarFondos(state.settings.ajusteFondos);
 }
 
 async function cargarTodo(){
@@ -200,6 +202,8 @@ function suscribir(){
     .on('postgres_changes', {event:'*', schema:'public', table:'pagos'}, p => movimientoEnVivo(pagosDe, p))
     .on('postgres_changes', {event:'*', schema:'public', table:'cobros'}, p => movimientoEnVivo(cobrosDe, p))
     .on('postgres_changes', {event:'*', schema:'public', table:'tarifas'}, cargarTarifas)
+    .on('postgres_changes', {event:'*', schema:'public', table:'arreglos_pago'}, async p => { await cargarArreglos(); const r = p.new && p.new.forma_id ? p.new : p.old; if (r && r.forma_id) refrescarCobrosUI(r.forma_id); })
+    .on('postgres_changes', {event:'*', schema:'public', table:'casas_vecino'}, cargarUsuariosPronto)
     .on('postgres_changes', {event:'*', schema:'public', table:'configuracion'}, p => {
       if (!p.new || p.new.editado_por === CLIENTE_ID) return;
       aplicarFilaConfig(p.new);
@@ -1572,10 +1576,11 @@ const RENDER = {
   'cobros/resumen': renderCobResumen,
   'cobros/casas': renderCobCasas,
   'cobros/pagos': renderCobPagos,
-  'cobros/tarifas': renderCobTarifas
+  'cobros/tarifas': renderCobTarifas,
+  'cobros/historial': renderCobHistorial
 };
 const GRUPO_DE = {'inicio':'inicio', 'resumen':'inicio', 'mapa':'mapa', 'incidencias/abiertas':'incidencias',
-  'incidencias/resueltas':'incidencias', 'incidencias/calendario':'incidencias', 'incidencias/reportes':'incidencias', 'usuarios/solicitudes':'usuarios', 'usuarios/vecinos':'usuarios', 'usuarios/administradores':'usuarios', 'sectores':'gestion', 'cobros/resumen':'cobros', 'cobros/casas':'cobros', 'cobros/pagos':'cobros', 'cobros/tarifas':'cobros', 'configuracion':'config'};
+  'incidencias/resueltas':'incidencias', 'incidencias/calendario':'incidencias', 'incidencias/reportes':'incidencias', 'usuarios/solicitudes':'usuarios', 'usuarios/vecinos':'usuarios', 'usuarios/administradores':'usuarios', 'sectores':'gestion', 'cobros/resumen':'cobros', 'cobros/casas':'cobros', 'cobros/pagos':'cobros', 'cobros/tarifas':'cobros', 'cobros/historial':'cobros', 'configuracion':'config'};
 
 function router(){
   let ruta = location.hash.replace(/^#\/?/, '') || 'inicio';
@@ -2215,18 +2220,20 @@ async function cargarUsuarios(){
     const limite = new Date(Date.now() - 183 * 864e5).toISOString();
     sb.from('solicitudes_registro').delete().neq('estado', 'pendiente').lt('revisada_en', limite).then(() => {}, () => {});
   }
-  const [s, p, r, c, a] = await Promise.all([
+  const [s, p, r, c, a, v] = await Promise.all([
     sb.from('solicitudes_registro').select('*').order('created_at', {ascending:false}).limit(300),
     sb.from('perfiles').select('*').order('created_at', {ascending:true}),
     sb.from('reportes').select('*, perfiles(nombre, celular, numero_casa, email)').order('created_at', {ascending:false}).limit(500),
     sb.from('cargos').select('*'),
-    sb.rpc('lista_administradores')
+    sb.rpc('lista_administradores'),
+    sb.from('casas_vecino').select('*')
   ]);
   if (!s.error) solicitudes = s.data || [];
   if (!p.error) perfilesLista = p.data || [];
   if (!r.error) reportesLista = r.data || [];
   if (!c.error) cargosLista = c.data || [];
   if (!a.error) adminsLista = a.data || [];
+  if (!v.error) vinculos = v.data || [];
   const yo = adminsLista.find(x => x.id === miPerfil.id);
   if (yo){ Object.assign(miPerfil, {cargo:yo.cargo, genero:yo.genero}); document.querySelectorAll('[data-rol]').forEach(e => { e.textContent = etiquetaCuenta(miPerfil); }); }
   actualizarBadges();
@@ -2443,6 +2450,7 @@ function enlazarCuentas(cont){
     const r = await llamarFuncion({accion:'eliminar', id:p.id});
     if (r && r.ok){ aviso(r.mensaje); cargarUsuarios(); }
   }));
+  enlazarChipsCasas(cont);
   cont.querySelectorAll('[data-casa-perfil]').forEach(s => s.addEventListener('change', () => {
     const l = capas.get(s.value);
     cambiarPerfil(s.dataset.casaPerfil, {casa_id:s.value || null, ...(l ? {numero_casa:l.aq.datos.numero || null} : {})}, 'Casa vinculada.');
@@ -2464,8 +2472,7 @@ function tablaCuentas(lista, opciones){
         <td><b>${esc(p.nombre || '—')}</b></td>
         <td>${esc(p.email)}</td>
         <td>${telLink(p.celular)}</td>
-        <td>${puede && opciones.editarCasa ? `<select data-casa-perfil="${esc(p.id)}" class="sel-chico">${opcionesCasas(p.casa_id)}</select>`
-             : esc(casa ? nombreCasa(casa.aq.datos) : (p.numero_casa ? 'Casa ' + p.numero_casa : '—'))}</td>
+        <td>${opciones.editarCasa ? chipsCasas(p.id, puede) : esc(casa ? nombreCasa(casa.aq.datos) : (p.numero_casa ? 'Casa ' + p.numero_casa : '—'))}</td>
         ${opciones.conRol ? `<td>${puede && p.id !== miPerfil.id ? `<select data-rol-perfil="${esc(p.id)}" class="sel-chico">
             <option value="administrador" ${p.rol === 'administrador' ? 'selected' : ''}>Administrador</option>
             <option value="desarrollador" ${p.rol === 'desarrollador' ? 'selected' : ''}>Desarrollador</option></select>`
@@ -2732,14 +2739,16 @@ function cuenta(aq, excluirPago){
   const ultimoPago = pagos.reduce((a, p) => (!a || String(p.fecha) > String(a.fecha) ? p : a), null);
   const exonerada = d.cobroActivo === false;
   const aplica = cargos.length > 0 || pagos.length > 0 || !!d.inicioCobro;
-  const nivel = saldo <= 0 ? 'ok' : atraso >= 3 ? 'bad' : 'warn';
+  const arreglo = arregloVigente(id), avance = arreglo ? avanceArreglo(arreglo, saldo) : null;
+  const nivel = saldo <= 0 ? 'ok' : arreglo ? (avance.atrasado ? 'bad' : 'warn') : atraso >= 3 ? 'bad' : 'warn';
   return {cuotaMes:q.monto, cuota:q, cargado, esperado:cargado, pagado, saldo, atraso, pendientes, aplica, exonerada, nivel,
-    ultimoPago, especial:q.especial, meses:cargos.filter(c => c.tipo === 'cuota').length};
+    ultimoPago, especial:q.especial, meses:cargos.filter(c => c.tipo === 'cuota').length, arreglo, avance};
 }
 function textoEstado(c){
   if (!c.aplica) return {cls:'nada', txt:c.exonerada ? 'Exonerada' : 'Sin cobro'};
   if (c.saldo < 0) return {cls:'ok', txt:'Adelantado ' + dinero(-c.saldo)};
   if (c.saldo === 0) return {cls:'ok', txt:c.exonerada ? 'Exonerada · al día' : 'Al día'};
+  if (c.arreglo) return {cls:c.avance.atrasado ? 'bad' : 'warn', txt:`Arreglo de pago · ${c.avance.cubiertas}/${c.arreglo.cuotas}${c.avance.atrasado ? ' · atrasado' : ''}`};
   if (c.atraso >= 3) return {cls:'bad', txt:`Morosa · debe ${dinero(c.saldo)}`};
   if (c.atraso >= 1) return {cls:'warn', txt:`Debe ${dinero(c.saldo)} · ${c.atraso} ${c.atraso === 1 ? 'mes' : 'meses'}`};
   return {cls:'warn', txt:`Pendiente ${dinero(c.saldo)} (este mes)`};
@@ -2754,6 +2763,73 @@ function cubreHasta(aq, c){
   return `${y}-${String(m).padStart(2, '0')}`;
 }
 
+/* ---------- Arreglos de pago ---------- */
+const arreglosDe = new Map();
+async function cargarArreglos(){
+  const {data, error} = await sb.from('arreglos_pago').select('*').order('created_at');
+  if (error) return;
+  arreglosDe.clear();
+  (data || []).forEach(a => { if (!arreglosDe.has(a.forma_id)) arreglosDe.set(a.forma_id, []); arreglosDe.get(a.forma_id).push(a); });
+}
+const arregloVigente = id => (arreglosDe.get(id) || []).find(a => a.estado === 'vigente') || null;
+function sumarMeses(per, n){ let [y, m] = per.split('-').map(Number); m += n; while (m > 12){ m -= 12; y++; } while (m < 1){ m += 12; y--; } return `${y}-${String(m).padStart(2, '0')}`; }
+/* Avance de un arreglo: lo que ha bajado la deuda desde que se acordó */
+function avanceArreglo(a, saldo){
+  const deuda = num(a.deuda), avance = Math.min(deuda, Math.max(0, round2(deuda - Math.max(0, saldo))));
+  const cubiertas = Math.min(a.cuotas, Math.floor((avance + 0.005) / num(a.monto_cuota)));
+  const inicio = String(a.inicio).slice(0, 7), proxima = cubiertas < a.cuotas ? sumarMeses(inicio, cubiertas) : null;
+  const atrasado = !!proxima && mesActual() > proxima;
+  return {avance, cubiertas, proxima, atrasado, restante:round2(deuda - avance)};
+}
+/* Meses que cubre un saldo a favor, empezando después de la última cuota generada */
+function mesesAdelantados(aq, favor, cuotaMes){
+  if (favor <= 0 || cuotaMes <= 0) return [];
+  const cuotas = (cobrosDe.get(aq.id) || []).filter(x => x.tipo === 'cuota' && !x.anulado).map(x => x.periodo).sort();
+  const desde = cuotas.length ? sumarMeses(cuotas[cuotas.length - 1], 1) : mesActual();
+  const n = Math.floor((favor + 0.005) / cuotaMes);
+  return Array.from({length:Math.min(n, 24)}, (_, i) => sumarMeses(desde, i));
+}
+
+/* ---------- Casas de cada vecino (un vecino puede tener varias) ---------- */
+let vinculos = [];
+const casasDeUsuario = id => vinculos.filter(v => v.usuario_id === id).map(v => v.forma_id);
+const usuariosDeCasa = fid => vinculos.filter(v => v.forma_id === fid).map(v => v.usuario_id);
+async function vincularCasa(uid, fid){
+  if (!uid || !fid) return;
+  if (!await tarea(sb.from('casas_vecino').insert({usuario_id:uid, forma_id:fid}), 'No se pudo vincular la casa')) return;
+  const p = perfilesLista.find(x => x.id === uid);
+  if (p && !p.casa_id) await sb.from('perfiles').update({casa_id:fid}).eq('id', uid);
+  aviso('Casa vinculada.'); await cargarUsuarios();
+  if ($('#dlgFicha').open) renderFicha();
+}
+async function desvincularCasa(uid, fid){
+  if (!await tarea(sb.from('casas_vecino').delete().eq('usuario_id', uid).eq('forma_id', fid), 'No se pudo quitar la casa')) return;
+  const p = perfilesLista.find(x => x.id === uid);
+  if (p && p.casa_id === fid){
+    const otra = casasDeUsuario(uid).find(x => x !== fid) || null;
+    await sb.from('perfiles').update({casa_id:otra}).eq('id', uid);
+  }
+  aviso('Casa desvinculada.'); await cargarUsuarios();
+  if ($('#dlgFicha').open) renderFicha();
+}
+function chipsCasas(uid, editable){
+  const ids = casasDeUsuario(uid);
+  const chips = ids.map(fid => { const l = capas.get(fid);
+    return `<span class="chip-casa">${esc(l ? nombreCasa(l.aq.datos) : 'Casa eliminada')}${editable ? `<button data-quitar-casa="${esc(uid)}|${esc(fid)}" aria-label="Quitar casa">×</button>` : ''}</span>`; }).join('');
+  const libres = datosGenerales().casas.filter(l => !ids.includes(l.aq.id))
+    .sort((a, b) => String(a.aq.datos.numero).localeCompare(String(b.aq.datos.numero), 'es', {numeric:true}));
+  return `<div class="casas-vecino">${chips || '<span class="nota">Sin casa</span>'}
+    ${editable ? `<select class="sel-chico" data-agregar-casa="${esc(uid)}"><option value="">＋ Agregar casa</option>${libres.map(l => `<option value="${esc(l.aq.id)}">${esc(nombreCasa(l.aq.datos))}${l.aq.datos.responsable ? ' — ' + esc(l.aq.datos.responsable) : ''}</option>`).join('')}</select>` : ''}</div>`;
+}
+function enlazarChipsCasas(cont){
+  cont.querySelectorAll('[data-quitar-casa]').forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    const [uid, fid] = b.dataset.quitarCasa.split('|'), l = capas.get(fid);
+    if (confirm(`¿Quitar ${l ? nombreCasa(l.aq.datos) : 'esta casa'} de esta cuenta? El vecino dejará de ver su estado de cuenta.`)) desvincularCasa(uid, fid);
+  }));
+  cont.querySelectorAll('[data-agregar-casa]').forEach(s => s.addEventListener('change', () => { if (s.value) vincularCasa(s.dataset.agregarCasa, s.value); }));
+}
+
 /* ---------- Carga y cambios en vivo ---------- */
 async function cargarCobros(){
   try { await sb.rpc('generar_cuotas', {p_forma:null}); } catch (e){ console.warn('generar_cuotas', e); }
@@ -2764,6 +2840,7 @@ async function cargarCobros(){
   ]);
   cobrosDe.clear(); pagosDe.clear();
   cob.forEach(c => ponerMovimiento(cobrosDe, c));
+  await cargarArreglos();
   pag.forEach(p => ponerMovimiento(pagosDe, p));
   if (!tar.error) tarifas = tar.data || [];
 }
@@ -2848,6 +2925,9 @@ function fichaCuenta(aq, c){
       <div><span>${c.saldo > 0 ? 'Pendiente' : 'Cubierto hasta'}</span><b>${c.saldo > 0 ? pend.length : (hasta ? esc(nombreMes(hasta, true)) : '—')}</b>
         <small>${c.saldo > 0 ? (pend.length === 1 ? 'cargo por pagar' : 'cargos por pagar') : 'con lo ya pagado'}</small></div>
     </div>
+    ${c.saldo < 0 && c.cuotaMes > 0 ? (() => { const m = mesesAdelantados(aq, -c.saldo, c.cuotaMes);
+        return `<div class="fc-aviso info">💚 <b>Pagos adelantados:</b> ${m.length ? `cubre ${m.length} ${m.length === 1 ? 'mes' : 'meses'} (${esc(m.map(x => nombreMes(x, true)).join(', '))})` : 'tiene saldo a favor'}${round2(-c.saldo - m.length * c.cuotaMes) > 0 ? ` y le sobran ${esc(dinero(round2(-c.saldo - m.length * c.cuotaMes)))}` : ''}. Cada mes la cuota se descuenta sola con el valor de su tarifa.</div>`; })() : ''}
+    ${fichaArreglo(aq, c)}
     ${pend.length ? `<div class="fc-pendiente"><b>Por pagar:</b> ${pend.slice(0, 8).map(x => `<span class="chip">${esc(x.tipo === 'cuota' ? nombreMes(x.periodo, true) : x.concepto)} · ${esc(dinero(x.falta))}</span>`).join('')}${pend.length > 8 ? ` <span class="chip">y ${pend.length - 8} más</span>` : ''}</div>` : ''}
     <div class="fila fc-acciones">
       <button class="btn primario" data-ir-tab="pago">Registrar pago</button>
@@ -2866,7 +2946,61 @@ function fichaCuenta(aq, c){
       <thead><tr><th>Fecha</th><th>Concepto</th><th class="num">Cargo</th><th class="num">Abono</th><th class="num">Saldo</th><th></th></tr></thead>
       <tbody>${filas.join('')}</tbody></table></div>` : '<p class="vacio">Todavía no hay movimientos.</p>'}`;
 }
+let arregloFormAbierto = false;
+function fichaArreglo(aq, c){
+  const a = c.arreglo, previos = (arreglosDe.get(aq.id) || []).filter(x => x.estado !== 'vigente');
+  const hist = previos.length ? `<p class="nota">Arreglos anteriores: ${previos.map(x => `${esc(dinero(x.deuda))} en ${x.cuotas} cuotas (${x.estado === 'cumplido' ? 'cumplido' : 'cancelado'})`).join(' · ')}</p>` : '';
+  if (a){
+    const av = c.avance, pct = Math.round(av.avance / num(a.deuda) * 100);
+    return `<section class="arreglo ${av.atrasado ? 'atrasado' : ''}">
+      <header><b>🤝 Arreglo de pago vigente</b><span class="pill ${av.atrasado ? 'bad' : 'ok'}">${av.atrasado ? 'Atrasado' : 'Al día'}</span></header>
+      <p>Deuda acordada <b>${esc(dinero(a.deuda))}</b> en <b>${a.cuotas}</b> cuotas de <b>${esc(dinero(a.monto_cuota))}</b>, desde ${esc(nombreMes(String(a.inicio).slice(0, 7)))}. Además debe pagar la cuota mensual normal.</p>
+      <div class="progreso"><i style="width:${pct}%"></i></div>
+      <p class="nota">Avance: ${esc(dinero(av.avance))} de ${esc(dinero(a.deuda))} · ${av.cubiertas} de ${a.cuotas} cuotas${av.proxima ? ` · próxima: ${esc(nombreMes(av.proxima))}` : ' · completado'}${a.nota ? ' · ' + esc(a.nota) : ''}${a.creado_por_nombre ? ' · acordado con ' + esc(a.creado_por_nombre) : ''}</p>
+      <div class="fila"><button class="btn chico" data-arreglo="cumplido">Marcar cumplido</button><button class="btn chico peligro" data-arreglo="cancelado">Cancelar arreglo</button></div>
+      ${hist}</section>`;
+  }
+  if (c.saldo <= 0) return hist;
+  const n = 6, sugerido = round2(c.saldo / n);
+  return `<div class="fila"><button class="btn chico" id="arrNuevoBtn">${arregloFormAbierto ? 'Cancelar' : '🤝 Crear arreglo de pago'}</button></div>
+    <form class="fc-extra" id="arrForm" ${arregloFormAbierto ? '' : 'hidden'}>
+      <label class="campo"><span>Deuda acordada</span><input name="deuda" type="number" min="0.01" step="0.01" value="${c.saldo.toFixed(2)}"></label>
+      <label class="campo"><span>Número de cuotas</span><input name="cuotas" type="number" min="1" max="60" step="1" value="${n}"></label>
+      <label class="campo"><span>Monto de cada cuota</span><input name="monto_cuota" type="number" min="0.01" step="0.01" value="${sugerido.toFixed(2)}"></label>
+      <label class="campo"><span>Primera cuota</span><input name="inicio" type="month" value="${sumarMeses(mesActual(), 1)}"></label>
+      <label class="campo" style="grid-column:1/-1"><span>Nota (opcional)</span><input name="nota" maxlength="500" placeholder="Ej. acordado en reunión de junta del 10 de octubre"></label>
+      <div class="fila"><button class="btn primario" type="submit">Guardar arreglo</button></div>
+    </form>${hist}`;
+}
+function enlazarArreglo(aq, c, cuerpo){
+  if ($('#arrNuevoBtn')) $('#arrNuevoBtn').addEventListener('click', () => { arregloFormAbierto = !arregloFormAbierto; renderFicha(); });
+  const f = $('#arrForm');
+  if (f){
+    const recalc = () => { const d = num(f.deuda.value), n = Math.max(1, Math.round(num(f.cuotas.value))); f.monto_cuota.value = round2(d / n).toFixed(2); };
+    f.deuda.addEventListener('input', recalc); f.cuotas.addEventListener('input', recalc);
+    f.addEventListener('submit', async e => {
+      e.preventDefault();
+      const deuda = round2(f.deuda.value), cuotas = Math.round(num(f.cuotas.value)), monto = round2(f.monto_cuota.value);
+      if (deuda <= 0 || cuotas < 1 || monto <= 0){ aviso('Revisa la deuda, el número de cuotas y el monto.'); return; }
+      const fila = await consultaConFila(sb.from('arreglos_pago').insert({forma_id:aq.id, estado:'vigente', deuda, cuotas, monto_cuota:monto,
+        inicio:(f.inicio.value || mesActual()) + '-01', nota:f.nota.value.trim() || null}).select().single(), 'No se pudo guardar el arreglo');
+      if (!fila) return;
+      if (!arreglosDe.has(aq.id)) arreglosDe.set(aq.id, []);
+      arreglosDe.get(aq.id).push(fila); arregloFormAbierto = false;
+      aviso('Arreglo de pago guardado.'); refrescarCobrosUI(aq.id);
+    });
+  }
+  cuerpo.querySelectorAll('[data-arreglo]').forEach(b => b.addEventListener('click', async () => {
+    const estado = b.dataset.arreglo;
+    if (!confirm(estado === 'cumplido' ? '¿Marcar el arreglo como cumplido?' : '¿Cancelar el arreglo de pago? La deuda sigue pendiente.')) return;
+    const fila = await consultaConFila(sb.from('arreglos_pago').update({estado}).eq('id', c.arreglo.id).select().single(), 'No se pudo actualizar el arreglo');
+    if (!fila) return;
+    const l = arreglosDe.get(aq.id), i = l.findIndex(x => x.id === fila.id); if (i >= 0) l[i] = fila;
+    aviso(estado === 'cumplido' ? 'Arreglo cumplido.' : 'Arreglo cancelado.'); refrescarCobrosUI(aq.id);
+  }));
+}
 function enlazarCuenta(aq, c, cuerpo){
+  enlazarArreglo(aq, c, cuerpo);
   cuerpo.querySelectorAll('[data-ir-tab]').forEach(b => b.addEventListener('click', () => { fichaTab = b.dataset.irTab; renderFicha(); }));
   $('#fcExtraBtn').addEventListener('click', () => { fichaExtraAbierto = !fichaExtraAbierto; renderFicha(); });
   $('#fcImprimir').addEventListener('click', () => imprimirEstadoCuenta(aq));
@@ -2927,14 +3061,14 @@ function previaPago(aq, c){
   let resto = m; const cubre = [];
   c.pendientes.forEach(p => { if (resto <= 0) return; const aplica = Math.min(resto, p.falta); resto = round2(resto - aplica);
     cubre.push(`${p.tipo === 'cuota' ? nombreMes(p.periodo, true) : p.concepto}${aplica < p.falta ? ' (parcial)' : ''}`); });
-  const adelanto = despues < 0 && c.cuotaMes > 0 ? Math.floor((-despues + 0.005) / c.cuotaMes) : 0;
+  const adelantoMeses = despues < 0 ? mesesAdelantados(aq, -despues, c.cuotaMes) : [], adelanto = adelantoMeses.length;
   $('#pgPrevia').innerHTML = m > 0 ? `
     <h4>Con este pago</h4>
     <p>Saldo actual: <b>${esc(dinero(c.saldo))}</b></p>
     <p>Pago: <b class="abono">− ${esc(dinero(m))}</b></p>
     <p class="resultado ${despues > 0 ? 'debe' : 'ok'}">${despues > 0 ? `Seguirá debiendo <b>${esc(dinero(despues))}</b>` : despues === 0 ? '<b>Queda al día</b>' : `Queda con <b>${esc(dinero(-despues))}</b> a favor`}</p>
     ${cubre.length ? `<p class="nota">Cubre: ${esc(cubre.join(', '))}</p>` : ''}
-    ${adelanto ? `<p class="nota">Adelanta ${adelanto} ${adelanto === 1 ? 'mes' : 'meses'} de cuota.</p>` : ''}`
+    ${adelanto ? `<p class="nota">Adelanta ${adelanto} ${adelanto === 1 ? 'mes' : 'meses'}: ${esc(adelantoMeses.map(x => nombreMes(x, true)).join(', '))}. Se descontarán solos cada mes con el valor de su tarifa (${esc(dinero(c.cuotaMes))}).</p>` : ''}`
     : '<p class="nota">Escribe el monto recibido para ver cómo queda la cuenta.</p>';
 }
 function enlazarPago(aq, c, cuerpo){
@@ -3014,14 +3148,18 @@ function enlazarNucleos(aq, c, cuerpo){
 /* --- Datos y tarifa --- */
 function fichaDatos(aq, c){
   const d = aq.datos, q = cuotaMensual(d), activas = tarifas.filter(t => t.activa || t.id === d.tarifa);
-  const cuenta = perfilesLista.find(p => p.casa_id === aq.id);
+  const vinculadas = usuariosDeCasa(aq.id).map(id => perfilesLista.find(p => p.id === id) || adminsLista.find(p => p.id === id)).filter(Boolean);
+  const disponibles = perfilesLista.filter(p => p.rol === 'vecino' && p.estado === 'activo' && !vinculadas.some(v => v.id === p.id));
   return `<div class="dos-col">
     <section>
       <h3 class="fc-sub">Representante</h3>
       <label class="campo"><span>Número de casa</span><input id="fdNumero" value="${esc(d.numero || '')}" maxlength="20"></label>
       <label class="campo"><span>Representante legal de la casa</span><input id="fdResp" value="${esc(d.responsable || '')}" maxlength="120"></label>
       <label class="campo"><span>Teléfono</span><input id="fdTel" type="tel" value="${esc(d.telefono || '')}" maxlength="20"></label>
-      <p class="nota">${cuenta ? `Cuenta en el sitio: <b>${esc(cuenta.nombre || cuenta.email)}</b> (vecino).` : 'Nadie tiene una cuenta vinculada a esta casa.'}</p>
+      <h3 class="fc-sub">Cuentas vinculadas</h3>
+      <p class="nota" style="margin-top:0">Quienes tengan esta casa vinculada verán su estado de cuenta en su perfil del sitio.</p>
+      <div class="vinculadas">${vinculadas.map(p => `<span class="chip-casa">${esc(p.nombre || p.email || 'Cuenta')}<button data-quitar-casa="${esc(p.id)}|${esc(aq.id)}" aria-label="Desvincular">×</button></span>`).join('') || '<span class="nota">Nadie tiene esta casa vinculada.</span>'}</div>
+      ${disponibles.length ? `<select class="sel-chico" id="fdVincular"><option value="">＋ Vincular a un vecino…</option>${disponibles.map(p => `<option value="${esc(p.id)}">${esc(p.nombre || p.email)}${casasDeUsuario(p.id).length ? ' (ya tiene ' + casasDeUsuario(p.id).length + ')' : ''}</option>`).join('')}</select>` : ''}
     </section>
     <section>
       <h3 class="fc-sub">Cobro</h3>
@@ -3046,6 +3184,8 @@ function fichaDatos(aq, c){
 }
 function enlazarDatos(aq){
   const d = aq.datos;
+  enlazarChipsCasas($('#fcCuerpo'));
+  if ($('#fdVincular')) $('#fdVincular').addEventListener('change', e => { if (e.target.value) vincularCasa(e.target.value, aq.id); });
   const previa = () => {
     const tmp = {...d, tarifa:$('#fdTarifa').value, cuotaEspecial:$('#fdEspecial').value};
     const q = cuotaMensual(tmp);
@@ -3098,7 +3238,13 @@ function datosRecibo(pagoId){
   let resto = num(p.monto); const cubre = [];
   if (antes) antes.pendientes.forEach(x => { if (resto <= 0) return; const a = Math.min(resto, x.falta); resto = round2(resto - a);
     cubre.push(`${x.tipo === 'cuota' ? nombreMes(x.periodo) : x.concepto}${a < x.falta ? ' (abono parcial)' : ''}`); });
-  if (resto > 0.005) cubre.push('Saldo a favor ' + dinero(resto));
+  if (resto > 0.005 && aq){
+    const c = cuenta(aq), favorPrevio = antes ? Math.max(0, -antes.saldo) : 0;
+    const meses = mesesAdelantados(aq, favorPrevio + resto, c.cuotaMes).slice(Math.floor((favorPrevio + 0.005) / (c.cuotaMes || Infinity)));
+    if (meses.length) cubre.push('Adelanto de ' + meses.map(x => nombreMes(x)).join(', '));
+    const sobra = round2(resto - meses.length * c.cuotaMes);
+    if (sobra > 0.005) cubre.push('Saldo a favor ' + dinero(sobra));
+  } else if (resto > 0.005) cubre.push('Saldo a favor ' + dinero(resto));
   return {p, aq, cubre, saldoDespues:despues ? (p.anulado ? despues.saldo : despues.saldo) : null};
 }
 function htmlRecibo(r){
@@ -3386,6 +3532,105 @@ $('#ctGenerar').addEventListener('click', async () => {
   await cargarCobros(); renderVistaActual();
 });
 
+/* --- Historial de cobros: todo lo que se hizo, con fecha y hora, en páginas de 20 --- */
+const POR_PAGINA = 20;
+let histPagina = 1, histFiltrado = [];
+const TIPO_EVENTO = {
+  pago:{txt:'Pago registrado', cls:'ok', icono:'💵'}, pago_anulado:{txt:'Pago anulado', cls:'bad', icono:'⛔'},
+  extra:{txt:'Cargo extra', cls:'warn', icono:'➕'}, saldo_inicial:{txt:'Deuda anterior', cls:'warn', icono:'📄'},
+  cuota:{txt:'Cuota mensual', cls:'nada', icono:'📅'}, cargo_anulado:{txt:'Cargo anulado', cls:'bad', icono:'⛔'}
+};
+const cuandoISO = (ts, fecha) => ts || (fecha ? String(fecha).slice(0, 10) + 'T12:00:00' : '');
+function eventosCobro(){
+  const ev = [];
+  todosLosPagos().forEach(p => {
+    ev.push({tipo:'pago', cuando:cuandoISO(p.created_at, p.fecha), forma_id:p.forma_id, monto:num(p.monto), signo:-1, por:p.registrado_por_nombre,
+      detalle:`Recibo ${numRecibo(p.recibo)} · ${METODOS[p.metodo] || p.metodo || ''}${p.referencia ? ' · ref. ' + p.referencia : ''}${p.fecha ? ' · fecha del pago ' + fechaCorta(p.fecha) : ''}${p.nota ? ' · ' + p.nota : ''}`,
+      pagoId:p.id, anulado:p.anulado});
+    if (p.anulado) ev.push({tipo:'pago_anulado', cuando:cuandoISO(p.anulado_en, p.fecha), forma_id:p.forma_id, monto:num(p.monto), signo:0,
+      por:p.anulado_por_nombre, detalle:`Recibo ${numRecibo(p.recibo)} · motivo: ${p.motivo_anulacion || '—'}`, pagoId:p.id});
+  });
+  [...cobrosDe.values()].flat().forEach(c => {
+    ev.push({tipo:c.tipo, cuando:cuandoISO(c.created_at, c.fecha), forma_id:c.forma_id, monto:num(c.monto), signo:1,
+      por:c.creado_por_nombre || (c.tipo === 'cuota' ? 'Automático' : ''), detalle:c.concepto, anulado:c.anulado});
+    if (c.anulado) ev.push({tipo:'cargo_anulado', cuando:cuandoISO(c.anulado_en, c.fecha), forma_id:c.forma_id, monto:num(c.monto), signo:0,
+      por:c.anulado_por_nombre, detalle:`${c.concepto} · motivo: ${c.motivo_anulacion || '—'}`});
+  });
+  return ev.sort((a, b) => String(b.cuando).localeCompare(String(a.cuando)));
+}
+function fechaHoraEvento(iso){
+  if (!iso) return {f:'—', h:''};
+  const d = new Date(iso);
+  return {f:d.toLocaleDateString('es', {day:'numeric', month:'short', year:'numeric'}), h:d.toLocaleTimeString('es', {hour:'numeric', minute:'2-digit'})};
+}
+function renderCobHistorial(){
+  const q = $('#chBusca').value.trim().toLowerCase().replace(/^casa\s*/, ''), tipo = $('#chTipo').value;
+  const desde = $('#chDesde').value, hasta = $('#chHasta').value;
+  const grupos = {todo:['pago','pago_anulado','extra','saldo_inicial','cargo_anulado'], pagos:['pago'], cargos:['extra','saldo_inicial'],
+    cuotas:['cuota'], anulaciones:['pago_anulado','cargo_anulado'], completo:Object.keys(TIPO_EVENTO)};
+  histFiltrado = eventosCobro().filter(e => grupos[tipo].includes(e.tipo))
+    .filter(e => { const dia = String(e.cuando).slice(0, 10); return (!desde || dia >= desde) && (!hasta || dia <= hasta); })
+    .filter(e => {
+      if (!q) return true;
+      const l = capas.get(e.forma_id), d = l ? l.aq.datos : {};
+      const numero = String(d.numero || '').toLowerCase();
+      return numero === q || numero.startsWith(q) || String(d.responsable || '').toLowerCase().includes(q) || String(e.por || '').toLowerCase().includes(q);
+    });
+  const total = histFiltrado.length, paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  histPagina = Math.min(Math.max(1, histPagina), paginas);
+  const ini = (histPagina - 1) * POR_PAGINA, pagina = histFiltrado.slice(ini, ini + POR_PAGINA);
+  const cobrado = round2(histFiltrado.filter(e => e.tipo === 'pago' && !e.anulado).reduce((s, e) => s + e.monto, 0));
+  $('#chConteo').innerHTML = total
+    ? `Mostrando <b>${ini + 1}–${ini + pagina.length}</b> de <b>${total}</b> ${total === 1 ? 'registro' : 'registros'}${cobrado ? ` · pagos válidos: <b>${esc(dinero(cobrado))}</b>` : ''}`
+    : '';
+  const cont = $('#chTabla');
+  if (!total){ cont.innerHTML = '<div class="vacio-grande">No hay registros con estos filtros.</div>'; $('#chPaginas').innerHTML = ''; return; }
+  cont.innerHTML = `<div class="tabla-cont"><table class="tabla clicable historial">
+    <thead><tr><th>Fecha</th><th>Hora</th><th>Movimiento</th><th>Casa</th><th>Representante</th><th>Detalle</th><th class="num">Monto</th><th>Hecho por</th></tr></thead>
+    <tbody>${pagina.map((e, i) => {
+      const l = capas.get(e.forma_id), d = l ? l.aq.datos : {}, t = TIPO_EVENTO[e.tipo], fh = fechaHoraEvento(e.cuando);
+      return `<tr data-i="${ini + i}" tabindex="0" class="${e.anulado ? 'anulado' : ''}">
+        <td>${esc(fh.f)}</td><td class="hora">${esc(fh.h)}</td>
+        <td><span class="pill ${t.cls}">${t.icono} ${t.txt}</span></td>
+        <td><b>${esc(l ? nombreCasa(d) : 'Casa eliminada')}</b></td><td>${esc(d.responsable || '—')}</td>
+        <td class="detalle">${esc(e.detalle || '')}</td>
+        <td class="num ${e.signo < 0 ? 'abono' : ''}">${e.signo < 0 ? '− ' : e.signo > 0 ? '+ ' : ''}${esc(dinero(e.monto))}</td>
+        <td>${esc(e.por || '—')}</td></tr>`;
+    }).join('')}</tbody></table></div>`;
+  cont.querySelectorAll('tr[data-i]').forEach(tr => {
+    const abrir = () => { const e = histFiltrado[Number(tr.dataset.i)]; if (e.pagoId) mostrarRecibo(e.pagoId); else if (capas.get(e.forma_id)) abrirFicha(e.forma_id, 'cuenta'); };
+    tr.addEventListener('click', abrir);
+    tr.addEventListener('keydown', ev => { if (ev.key === 'Enter') abrir(); });
+  });
+  // Paginación: primera, anterior, números cercanos, siguiente, última
+  const nums = [];
+  for (let n = 1; n <= paginas; n++) if (n === 1 || n === paginas || Math.abs(n - histPagina) <= 2) nums.push(n);
+  let html = `<button class="btn chico" data-pag="${histPagina - 1}" ${histPagina === 1 ? 'disabled' : ''}>‹ Anterior</button>`;
+  nums.forEach((n, k) => {
+    if (k && n - nums[k - 1] > 1) html += '<span class="puntos">…</span>';
+    html += `<button class="btn chico ${n === histPagina ? 'on' : ''}" data-pag="${n}" ${n === histPagina ? 'aria-current="page"' : ''}>${n}</button>`;
+  });
+  html += `<button class="btn chico" data-pag="${histPagina + 1}" ${histPagina === paginas ? 'disabled' : ''}>Siguiente ›</button>
+    <span class="nota">Página ${histPagina} de ${paginas}</span>`;
+  $('#chPaginas').innerHTML = html;
+  $('#chPaginas').querySelectorAll('[data-pag]').forEach(b => b.addEventListener('click', () => {
+    histPagina = Number(b.dataset.pag); renderCobHistorial();
+    $('#chTabla').scrollIntoView({block:'start', behavior:'smooth'});
+  }));
+}
+const reiniciarHistorial = () => { histPagina = 1; renderCobHistorial(); };
+$('#chBusca').addEventListener('input', debounce(reiniciarHistorial, 200));
+['#chTipo', '#chDesde', '#chHasta'].forEach(s => $(s).addEventListener('change', reiniciarHistorial));
+$('#chLimpiar').addEventListener('click', () => { $('#chBusca').value = ''; $('#chTipo').value = 'todo'; $('#chDesde').value = ''; $('#chHasta').value = ''; reiniciarHistorial(); });
+$('#chCsv').addEventListener('click', () => {
+  if (!histFiltrado.length){ aviso('No hay registros para exportar.'); return; }
+  descargarCsv(['Fecha','Hora','Movimiento','Casa','Representante','Detalle','Monto','Hecho por'],
+    histFiltrado.map(e => { const l = capas.get(e.forma_id), d = l ? l.aq.datos : {}, fh = fechaHoraEvento(e.cuando);
+      return [String(e.cuando).slice(0, 10), fh.h, TIPO_EVENTO[e.tipo].txt + (e.anulado ? ' (anulado)' : ''), d.numero || '', d.responsable || '', e.detalle || '',
+        (e.signo < 0 ? -e.monto : e.monto).toFixed(2), e.por || '']; }),
+    `historial-cobros-${hoyISO()}.csv`);
+});
+
 /* Diálogos de cobros */
 ['#dlgFicha', '#dlgRecibo'].forEach(sel => {
   const dl = $(sel);
@@ -3393,6 +3638,50 @@ $('#ctGenerar').addEventListener('click', async () => {
   dl.addEventListener('click', e => { if (e.target === dl) dl.close(); });
 });
 $('#dlgFicha').addEventListener('close', () => { nucleosEdicion = null; });
+
+/* =====================================================================
+   ALINEAR FONDO: mover un mapa de fondo hasta que coincida con lo dibujado
+   ===================================================================== */
+let ajusteEdicion = null;
+const REFERENCIA_FONDO = 'Satélite (Esri)';
+function abrirAlinear(){
+  asegurarMapa();
+  ajusteEdicion = map.ajustesFondos();
+  $('#panelAlinear').hidden = false;
+  pintarAlinear();
+}
+function pintarAlinear(){
+  const f = map.fondoActual(), a = ajusteEdicion[f] || {este:0, norte:0};
+  const signo = n => (n > 0 ? '+' : '') + (Math.round(n * 100) / 100) + ' m';
+  $('#alFondo').textContent = f;
+  $('#alValor').textContent = `Este: ${signo(a.este || 0)} · Norte: ${signo(a.norte || 0)}`;
+  $('#alAviso').hidden = f !== REFERENCIA_FONDO;
+}
+function moverFondo(de, dn){
+  const f = map.fondoActual(), paso = Number($('#alPaso').value);
+  const a = ajusteEdicion[f] = ajusteEdicion[f] || {este:0, norte:0};
+  a.este = Math.round(((a.este || 0) + de * paso) * 100) / 100;
+  a.norte = Math.round(((a.norte || 0) + dn * paso) * 100) / 100;
+  map.ajustarFondos(ajusteEdicion); pintarAlinear();
+}
+$('#alinearFondo').addEventListener('click', abrirAlinear);
+document.querySelectorAll('[data-mover]').forEach(b => b.addEventListener('click', () => { const [e, n] = b.dataset.mover.split(',').map(Number); moverFondo(e, n); }));
+$('#alRestablecer').addEventListener('click', () => { delete ajusteEdicion[map.fondoActual()]; map.ajustarFondos(ajusteEdicion); pintarAlinear(); });
+$('#alCerrar').addEventListener('click', () => { map.ajustarFondos(state.settings.ajusteFondos || {}); $('#panelAlinear').hidden = true; ajusteEdicion = null; });
+$('#alGuardar').addEventListener('click', async () => {
+  const limpio = Object.fromEntries(Object.entries(ajusteEdicion).filter(([, a]) => a && (a.este || a.norte)));
+  const ok = await tarea(sb.from('configuracion').update({ajuste_fondos:limpio, editado_por:CLIENTE_ID}).eq('id', 1), 'No se pudo guardar la alineación');
+  if (!ok) return;
+  state.settings.ajusteFondos = limpio;
+  $('#panelAlinear').hidden = true; ajusteEdicion = null;
+  aviso('Alineación guardada. También se aplica en el mapa público.', 5000);
+});
+map.on('baselayerchange', () => { if (ajusteEdicion) pintarAlinear(); });
+document.addEventListener('keydown', e => {
+  if (!ajusteEdicion || /input|select|textarea/i.test(document.activeElement.tagName)) return;
+  const k = {ArrowLeft:[-1, 0], ArrowRight:[1, 0], ArrowUp:[0, 1], ArrowDown:[0, -1]}[e.key];
+  if (k){ e.preventDefault(); moverFondo(...k); }
+});
 
 /* ================= Sección: Configuración ================= */
 function cargarConfigEnFormulario(){

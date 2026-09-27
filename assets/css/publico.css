@@ -260,3 +260,32 @@ a{color:var(--agua)}
 body.en-mapa:has(.banner-hist:not([hidden])) .wa{display:none}
 .vista-mapa .banner-hist{right:auto}
 @media (min-width:701px){ .vista-mapa .banner-hist{left:calc(50% - 170px)} }
+
+/* Estado de cuenta del vecino */
+.titulo-seccion{font-size:18px;margin:18px 0 10px}
+.cuentas{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.cuenta-casa{position:relative;overflow:hidden;padding-top:0}
+.cintillo{margin:0 -16px 12px;padding:10px 16px;font-weight:700;letter-spacing:.02em;text-align:center}
+.cintillo.paz{background:linear-gradient(90deg,#2F8F5B,#3FAE72);color:#fff;font-size:18px;letter-spacing:.12em}
+.cintillo.debe{background:#FDECEA;color:#8C1D18}
+.cintillo.neutro{background:var(--papel);color:var(--suave)}
+.datos-cuenta{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0 0 10px;font-size:14px}
+.datos-cuenta dt{color:var(--suave)} .datos-cuenta dd{margin:0}
+.datos-cuenta small{display:block;color:var(--suave);font-size:12.5px}
+.bloque{border-radius:10px;padding:9px 11px;margin:8px 0;font-size:14px}
+.bloque p{margin:4px 0}
+.bloque.debe{background:#FDF3F2}
+.bloque.adelanto{background:#E3F2E9;color:#1F6B42}
+.bloque.arreglo{background:var(--agua-claro)} .bloque.arreglo.atrasado{background:#FDECEA}
+.bloque.red{background:var(--papel)}
+.bloque .chips{display:flex;flex-wrap:wrap;gap:5px;margin-top:6px}
+.chip{background:#FDECEA;color:#8C1D18;border-radius:999px;padding:2px 9px;font-size:12.5px;font-weight:700}
+.progreso{height:9px;background:rgba(255,255,255,.7);border-radius:6px;overflow:hidden;margin:6px 0}
+.progreso i{display:block;height:100%;background:var(--ok)}
+.pagos-vecino{margin:8px 0}
+.pagos-vecino summary{cursor:pointer;font-weight:700;font-size:14px}
+.pagos-vecino ul{list-style:none;margin:6px 0 0;padding:0}
+.pagos-vecino li{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--linea);font-size:13.5px}
+.pagos-vecino small{display:block;color:var(--suave)}
+.mi-casa span{display:inline-block;transform:translate(-50%,-140%);background:#F2B705;color:#15323B;font:700 12px/1 system-ui,sans-serif;padding:4px 8px;border-radius:999px;
+  box-shadow:0 2px 6px rgba(0,0,0,.35);white-space:nowrap;border:2px solid #fff}

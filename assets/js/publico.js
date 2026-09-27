@@ -493,12 +493,13 @@ function renderReportar(){
 function prepararMapaReporte(){
   if (mapaRep){ setTimeout(() => mapaRep.invalidateSize(), 0); return; }
   mapaRep = Acu.crearMapa('mapaReporte', {aviso});
+  mapaRep.ajustarFondos(config.ajuste_fondos || {});
   capas.forEach(l => {
     if (l.fila.tipo === 'tuberia') L.geoJSON(l.fila.geometria, {style:{color:Acu.COLOR_TUBERIA, weight:3, opacity:.9}, interactive:false}).addTo(mapaRep);
     if (l.fila.tipo === 'casa') L.geoJSON(l.fila.geometria, {style:{color:'#3B6EA8', weight:1, fillOpacity:.35}, interactive:false,
       pointToLayer:(f, ll) => L.circleMarker(ll, {radius:5})}).addTo(mapaRep);
   });
-  const miCasa = perfil && perfil.casa_id && capas.get(perfil.casa_id);
+  const miCasa = (perfil && perfil.casa_id && capas.get(perfil.casa_id)) || (misCuentas[0] && capas.get(misCuentas[0].id));
   const b = L.latLngBounds([]);
   if (miCasa) b.extend(miCasa.getBounds ? miCasa.getBounds() : miCasa.getLatLng());
   else capas.forEach(l => b.extend(l.getBounds ? l.getBounds() : l.getLatLng()));
@@ -567,15 +568,164 @@ function renderMisReportes(){
     </div>`).join('') : '<p class="vacio">Todavía no has enviado reportes.</p>';
 }
 
+/* =====================================================================
+   ESTADO DE CUENTA DEL VECINO (una tarjeta por cada casa vinculada)
+   ===================================================================== */
+let misCuentas = [];
+const capaMisCasas = L.layerGroup().addTo(map);
+const METODOS_PAGO = {efectivo:'Efectivo', transferencia:'Transferencia', yappy:'Yappy', cheque:'Cheque', otro:'Otro'};
+const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
+const dinero = n => (config.moneda || 'B/.') + ' ' + r2(n).toFixed(2);
+function mesNombre(per, corto){
+  if (!/^\d{4}-\d{2}$/.test(per || '')) return per || '';
+  const [y, m] = per.split('-').map(Number);
+  return capitalizar(new Date(y, m - 1, 1).toLocaleDateString('es', corto ? {month:'short', year:'numeric'} : {month:'long', year:'numeric'}));
+}
+function masMeses(per, n){ let [y, m] = per.split('-').map(Number); m += n; while (m > 12){ m -= 12; y++; } return `${y}-${String(m).padStart(2, '0')}`; }
+const mesHoy = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`; };
+const fechaCorta = f => f ? new Date(String(f).slice(0, 10) + 'T12:00:00').toLocaleDateString('es', {day:'numeric', month:'short', year:'numeric'}) : '—';
+
+/* Mismo cálculo que la administración: los pagos cubren primero lo más antiguo */
+function calcularCuenta(x){
+  const cargos = [...(x.cobros || [])], pagos = x.pagos || [];
+  const cargado = r2(cargos.reduce((s, c) => s + Number(c.monto), 0)), pagado = r2(pagos.reduce((s, p) => s + Number(p.monto), 0));
+  const saldo = r2(cargado - pagado);
+  let resto = pagado; const pendientes = [];
+  cargos.forEach(c => { const m = Number(c.monto); if (resto >= m - 0.005) resto = r2(resto - m); else { pendientes.push({...c, falta:r2(m - resto)}); resto = 0; } });
+  const hoy = mesHoy(), atraso = pendientes.filter(c => c.tipo === 'cuota' && c.periodo < hoy).length;
+  const cuota = Number(x.cuota_mensual) || 0, cuotas = cargos.filter(c => c.tipo === 'cuota').map(c => c.periodo).sort();
+  let adelanto = [];
+  if (saldo < 0 && cuota > 0){
+    const desde = cuotas.length ? masMeses(cuotas[cuotas.length - 1], 1) : hoy;
+    adelanto = Array.from({length:Math.min(24, Math.floor((-saldo + 0.005) / cuota))}, (_, i) => masMeses(desde, i));
+  }
+  let arreglo = null;
+  if (x.arreglo){
+    const a = x.arreglo, deuda = Number(a.deuda), avance = Math.min(deuda, Math.max(0, r2(deuda - Math.max(0, saldo))));
+    const cubiertas = Math.min(a.cuotas, Math.floor((avance + 0.005) / Number(a.monto_cuota)));
+    const proxima = cubiertas < a.cuotas ? masMeses(String(a.inicio).slice(0, 7), cubiertas) : null;
+    arreglo = {...a, avance, cubiertas, proxima, atrasado:!!proxima && hoy > proxima};
+  }
+  return {saldo, pendientes, atraso, adelanto, arreglo, aplica:cargos.length > 0 || pagos.length > 0};
+}
+
+/* Con quién comparte la línea de agua (según el mapa público) */
+function infoRedCasa(casaId){
+  const rd = red(), inicio = rd.casaNodos && rd.casaNodos.get(casaId);
+  if (!inicio || !inicio.size) return null;
+  const clase = t => { const l = capas.get(t); return l && l.fila.datos.clase === 'acometida' ? 'acometida' : 'principal'; };
+  const principalesDe = nodos => {
+    const out = new Set(), vistos = new Set(nodos), cola = [...nodos];
+    while (cola.length){
+      const n = cola.shift();
+      (rd.ady.get(n) || []).forEach(v => {
+        if (!v.e.virtual && clase(v.e.tubo) === 'principal'){ out.add(v.e.tubo); return; }
+        if (!vistos.has(v.otro)){ vistos.add(v.otro); cola.push(v.otro); }
+      });
+    }
+    return out;
+  };
+  const mias = principalesDe(inicio);
+  const mismaLinea = [];
+  rd.casaNodos.forEach((nodos, id) => {
+    if (id === casaId || !nodos.size) return;
+    const suyas = principalesDe(nodos);
+    if ([...suyas].some(t => mias.has(t))) mismaLinea.push(id);
+  });
+  // Aguas abajo: solo por tuberías con la dirección del agua definida, saliendo de esta casa
+  const abajoSet = new Set(), vistosA = new Set(inicio), colaA = [...inicio];
+  while (colaA.length){
+    const n = colaA.shift();
+    (rd.nodoCasas.get(n) || []).forEach(id => { if (id !== casaId) abajoSet.add(id); });
+    (rd.ady.get(n) || []).forEach(v => {
+      if (!v.puede || vistosA.has(v.otro)) return;
+      if (!v.e.virtual && !rd.tuboDir.get(v.e.tubo)) return;     // sin dirección definida: no se puede saber
+      vistosA.add(v.otro); colaA.push(v.otro);
+    });
+  }
+  const abajo = [...abajoSet];
+  const nombre = id => { const l = capas.get(id); return l ? nombreElemento(l.fila) : ''; };
+  const orden = (a, b) => nombre(a).localeCompare(nombre(b), 'es', {numeric:true});
+  return {lineas:[...mias].map(nombre).filter(Boolean), mismaLinea:mismaLinea.sort(orden).map(nombre), abajo:abajo.sort(orden).map(nombre)};
+}
+
+async function cargarMisCuentas(){
+  if (!sesion){ misCuentas = []; marcarMisCasas(); return; }
+  const {data, error} = await sb.rpc('mi_estado_cuenta');
+  if (error){ console.warn('mi_estado_cuenta', error.message); return; }
+  misCuentas = Array.isArray(data) ? data : [];
+  marcarMisCasas();
+  if (vistaActual === 'perfil') renderPerfil();
+}
+/* Identificador de "Mi casa" en el mapa */
+function marcarMisCasas(){
+  capaMisCasas.clearLayers();
+  misCuentas.forEach(x => {
+    const l = capas.get(x.id); if (!l) return;
+    const centro = l.getBounds ? l.getBounds().getCenter() : l.getLatLng();
+    if (l.fila.geometria && l.fila.geometria.type === 'Polygon')
+      L.geoJSON(l.fila.geometria, {interactive:false, style:{color:'#F2B705', weight:4, fill:false, dashArray:'6 4'}}).addTo(capaMisCasas);
+    L.marker(centro, {interactive:false, keyboard:false, zIndexOffset:900,
+      icon:L.divIcon({className:'mi-casa', html:`<span>🏠 ${misCuentas.length > 1 ? esc(nombreElemento(l.fila)) : 'Mi casa'}</span>`, iconSize:null})}).addTo(capaMisCasas);
+  });
+  const ley = $('#leyMiCasa'); if (ley) ley.hidden = !misCuentas.length;
+}
+function tarjetaCuenta(x){
+  const c = calcularCuenta(x), t = x.tarifa, red = infoRedCasa(x.id), l = capas.get(x.id);
+  const paz = c.aplica && c.saldo <= 0;
+  const unidades = t && t.modo === 'nucleo' ? `${x.nucleos} ${x.nucleos === 1 ? 'núcleo' : 'núcleos'} × ${dinero(t.monto)}`
+    : t && t.modo === 'persona' ? `${x.personas} ${x.personas === 1 ? 'persona' : 'personas'} × ${dinero(t.monto)}` : 'monto fijo por casa';
+  return `<article class="tarjeta cuenta-casa">
+    <div class="cintillo ${paz ? 'paz' : c.saldo > 0 ? 'debe' : 'neutro'}">${paz ? '✓ PAZ Y SALVO' : c.saldo > 0 ? `Saldo pendiente: ${esc(dinero(c.saldo))}` : 'Sin cobros registrados'}</div>
+    <header><h2>${esc(l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || ''))}</h2>${x.exonerada ? '<span class="pill nada">Exonerada</span>' : ''}</header>
+    <dl class="datos-cuenta">
+      <dt>Tarifa</dt><dd>${x.especial ? 'Cuota especial' : esc(t ? t.nombre : 'Sin tarifa')}${!x.especial && t ? `<small>${esc(unidades)}</small>` : ''}</dd>
+      <dt>Cuota mensual</dt><dd><b>${esc(dinero(x.cuota_mensual))}</b></dd>
+      <dt>Estado</dt><dd>${paz ? (c.saldo < 0 ? `Al día, con ${esc(dinero(-c.saldo))} a favor` : 'Al día') : c.saldo > 0 ? (c.atraso ? `${c.atraso} ${c.atraso === 1 ? 'mes' : 'meses'} de atraso` : 'Pendiente la cuota de este mes') : '—'}</dd>
+      <dt>Último pago</dt><dd>${x.pagos && x.pagos.length ? `${esc(dinero(x.pagos[0].monto))} · ${esc(fechaCorta(x.pagos[0].fecha))}` : 'Sin pagos registrados'}</dd>
+    </dl>
+    ${c.pendientes.length ? `<div class="bloque debe"><b>Por pagar</b><div class="chips">${c.pendientes.slice(0, 12).map(p => `<span class="chip">${esc(p.tipo === 'cuota' ? mesNombre(p.periodo, true) : p.concepto)} · ${esc(dinero(p.falta))}</span>`).join('')}${c.pendientes.length > 12 ? `<span class="chip">y ${c.pendientes.length - 12} más</span>` : ''}</div></div>` : ''}
+    ${c.adelanto.length ? `<div class="bloque adelanto"><b>💚 Pagado por adelantado hasta ${esc(mesNombre(c.adelanto[c.adelanto.length - 1]))}</b>
+      <p>Tienes ${c.adelanto.length} ${c.adelanto.length === 1 ? 'mes' : 'meses'} adelantados (${esc(c.adelanto.map(m => mesNombre(m, true)).join(', '))}). Cada mes la cuota se descuenta sola con el valor de tu tarifa.</p></div>` : ''}
+    ${c.arreglo ? `<div class="bloque arreglo ${c.arreglo.atrasado ? 'atrasado' : ''}"><b>🤝 Arreglo de pago ${c.arreglo.atrasado ? '· atrasado' : '· al día'}</b>
+      <p>Deuda acordada ${esc(dinero(c.arreglo.deuda))} en ${c.arreglo.cuotas} cuotas de ${esc(dinero(c.arreglo.monto_cuota))}, además de la cuota mensual.</p>
+      <div class="progreso"><i style="width:${Math.round(c.arreglo.avance / Number(c.arreglo.deuda) * 100)}%"></i></div>
+      <p class="nota">Llevas ${c.arreglo.cubiertas} de ${c.arreglo.cuotas} cuotas${c.arreglo.proxima ? ` · próxima: ${esc(mesNombre(c.arreglo.proxima))}` : ' · ¡completado!'}</p></div>` : ''}
+    ${red ? `<div class="bloque red"><b>🚰 Tu conexión de agua</b>
+      <p>${red.lineas.length ? 'Recibe agua de: ' + esc(red.lineas.join(', ')) : 'Tu casa todavía no aparece conectada a una tubería en el mapa.'}</p>
+      ${red.mismaLinea.length ? `<p>Casas conectadas a tu misma línea (${red.mismaLinea.length}): ${esc(red.mismaLinea.slice(0, 15).join(', '))}${red.mismaLinea.length > 15 ? '…' : ''}</p>` : ''}
+      ${red.abajo.length ? `<p>Casas que reciben agua a través de tu casa: ${esc(red.abajo.slice(0, 15).join(', '))}${red.abajo.length > 15 ? '…' : ''}</p>` : ''}</div>`
+      : '<div class="bloque red"><b>🚰 Tu conexión de agua</b><p>Tu casa todavía no aparece conectada a una tubería en el mapa.</p></div>'}
+    ${x.pagos && x.pagos.length ? `<details class="pagos-vecino"><summary>Últimos pagos (${Math.min(x.pagos.length, 10)})</summary><ul>${x.pagos.slice(0, 10).map(p =>
+      `<li><span>${esc(fechaCorta(p.fecha))} · Recibo N.º ${String(p.recibo || '').padStart(6, '0')}<small>${esc(METODOS_PAGO[p.metodo] || '')}</small></span><b>${esc(dinero(p.monto))}</b></li>`).join('')}</ul></details>` : ''}
+    <div class="fila"><button class="btn" data-ver-casa="${esc(x.id)}">Ver en el mapa</button></div>
+  </article>`;
+}
+function renderCuentas(){
+  const cont = $('#pfCuentas'); if (!cont) return;
+  if (!sesion){ cont.innerHTML = ''; return; }
+  $('#pfCuentasTitulo').textContent = misCuentas.length > 1 ? 'Estado de cuenta de mis casas' : 'Estado de cuenta de mi casa';
+  cont.innerHTML = misCuentas.length ? misCuentas.map(tarjetaCuenta).join('')
+    : '<p class="vacio">Todavía no tienes una casa vinculada a tu cuenta. Si eres representante de una casa, pide a la administración que la vincule.</p>';
+  cont.querySelectorAll('[data-ver-casa]').forEach(b => b.addEventListener('click', () => {
+    const l = capas.get(b.dataset.verCasa); if (!l) return;
+    irA('mapa');
+    setTimeout(() => { if (l.getBounds) map.fitBounds(l.getBounds(), {maxZoom:19, padding:[60, 60]}); else map.setView(l.getLatLng(), 19); }, 80);
+  }));
+}
+
 /* --- Mi perfil --- */
 function renderPerfil(){
+  renderCuentas();
+  $('#pfCuentasBox').hidden = !sesion;
   $('#pfSinSesion').hidden = !!sesion;
   $('#pfContenido').hidden = !sesion;
   $('#pfAviso').hidden = !(perfil && perfil.debe_cambiar_clave);
   if (!sesion) return;
   $('#pfCorreo').textContent = sesion.user.email || '';
   const casa = perfil && perfil.casa_id && capas.get(perfil.casa_id);
-  $('#pfCasa').textContent = casa ? nombreElemento(casa.fila) : (perfil && perfil.numero_casa ? 'Casa ' + perfil.numero_casa : 'sin casa vinculada');
+  $('#pfCasa').textContent = misCuentas.length ? misCuentas.map(x => { const l = capas.get(x.id); return l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || ''); }).join(', ')
+    : casa ? nombreElemento(casa.fila) : (perfil && perfil.numero_casa ? 'Casa ' + perfil.numero_casa : 'sin casa vinculada');
   if (document.activeElement !== $('#pfNombre')) $('#pfNombre').value = (perfil && perfil.nombre) || '';
   if (document.activeElement !== $('#pfCelular')) $('#pfCelular').value = (perfil && perfil.celular) || '';
 }
@@ -669,7 +819,7 @@ async function cargar(){
     Acu.traerTodo(sb, 'mapa_publico'),
     Acu.traerTodo(sb, 'incidencias_publicas').catch(e => { console.warn('Sin incidencias públicas:', e.message); return []; })
   ]);
-  if (cfg.data){ config = cfg.data; pintarConfig(); }
+  if (cfg.data){ config = cfg.data; pintarConfig(); map.ajustarFondos(config.ajuste_fondos || {}); if (mapaRep) mapaRep.ajustarFondos(config.ajuste_fondos || {}); }
   const vistos = new Set(filas.map(r => r.id));
   [...capas.keys()].forEach(id => { if (!vistos.has(id)) quitar(id); });
   filas.forEach(agregar);
@@ -677,6 +827,8 @@ async function cargar(){
   lista.forEach(i => incsTodas.set(i.id, i));
   recalcular();
   dibujarFlechas();
+  if (misCuentas.length) marcarMisCasas();
+  if (sesion && vistaActual === 'perfil') cargarMisCuentas();
   $('#actualizado').textContent = 'Actualizado a las ' + new Date().toLocaleTimeString('es', {hour:'numeric', minute:'2-digit'});
   if (vistaActual === 'mapa') ajustarMapa();
 }
@@ -695,7 +847,7 @@ function suscribir(){
       if (p.eventType === 'DELETE') incsTodas.delete(p.old.id); else incsTodas.set(p.new.id, p.new);
       recalcularPronto();
     })
-    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'configuracion'}, p => { if (p.new){ config = p.new; pintarConfig(); renderVistaActual(); } });
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'configuracion'}, p => { if (p.new){ config = p.new; pintarConfig(); map.ajustarFondos(config.ajuste_fondos || {}); renderVistaActual(); } });
   if (sesion) canal.on('postgres_changes', {event:'*', schema:'public', table:'reportes'}, () => cargarMisReportes());
   canal.subscribe(status => pintarVivo(status === 'SUBSCRIBED'));
 }
@@ -715,7 +867,7 @@ function suscribir(){
     router();
     $('#cargando').hidden = true;
     suscribir();
-    if (sesion) cargarMisReportes();
+    if (sesion){ cargarMisReportes(); cargarMisCuentas(); }
   } catch (err){
     console.error(err);
     $('#cargando div').innerHTML = 'No se pudo cargar la información.<br><small>Revisa tu conexión; reintentaremos en unos segundos.</small>';

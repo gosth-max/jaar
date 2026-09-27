@@ -32,6 +32,7 @@
     <button class="btn-cuenta" id="btnCuenta" aria-expanded="false" hidden><span class="ini" id="cuentaIni">?</span><span id="cuentaNombre"></span></button>
     <ul class="menu-cuenta" id="menuCuenta" hidden>
       <li class="quien"><b id="menuNombre"></b><span id="menuCorreo"></span></li>
+      <li><a href="#/perfil">Mi estado de cuenta</a></li>
       <li><a href="#/perfil">Mi perfil y contraseña</a></li>
       <li><a href="#/reportar">Mis reportes</a></li>
       <li id="menuAdm" hidden><a href="assets/pages/adm/jaar.html">Administración</a></li>
@@ -84,6 +85,7 @@
           <li><span class="pin-mini">!</span>Lugar exacto del problema</li>
           <li><svg viewBox="0 0 22 16"><path d="M4 4l9 4-9 4z" fill="#004E6B"/></svg>Dirección del agua (acércate para verla)</li>
           <li><svg viewBox="0 0 22 16"><path d="M2 5h18M11 5v10" stroke="#0B5C73" stroke-width="3" stroke-linecap="round"/></svg>Unión en T o en Y</li>
+          <li id="leyMiCasa" hidden><svg viewBox="0 0 22 16"><rect x="3" y="2" width="16" height="12" fill="none" stroke="#F2B705" stroke-width="3" stroke-dasharray="4 3"/></svg>Mi casa</li>
         </ul>
         <p class="nota">Sectores en color: con agua. En gris con borde punteado: sin agua. Toca una tubería para ver su estado.</p>
         <p class="nota" id="actualizado"></p>
@@ -161,8 +163,13 @@
 
   <!-- ======================= Mi perfil ======================= -->
   <section class="vista" data-vista="perfil" hidden>
-    <div class="cab-vista"><div><h1>Mi perfil</h1><p>Tus datos y tu contraseña.</p></div></div>
+    <div class="cab-vista"><div><h1>Mi perfil</h1><p>El estado de cuenta de tus casas, tus datos y tu contraseña.</p></div></div>
     <p class="aviso-temporal" id="pfAviso" hidden>🔑 Estás usando una contraseña temporal que te dio la administración. Cámbiala por una que solo tú conozcas.</p>
+    <section id="pfCuentasBox" hidden>
+      <h2 class="titulo-seccion" id="pfCuentasTitulo">Estado de cuenta de mi casa</h2>
+      <div class="cuentas" id="pfCuentas"></div>
+    </section>
+    <h2 class="titulo-seccion">Mis datos y contraseña</h2>
     <div class="rejilla" id="pfContenido">
       <article class="tarjeta">
         <header><h2>Mis datos</h2></header>

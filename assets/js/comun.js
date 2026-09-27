@@ -131,8 +131,27 @@ function crearMapa(id, opciones = {}){
 
   let elegida = null;
   try { elegida = localStorage.getItem(BASE_KEY); } catch (e){}
-  (fuentes[elegida] || fuentes['Satélite (Esri)']).addTo(map);
-  map.on('baselayerchange', e => { try { localStorage.setItem(BASE_KEY, e.name); } catch (err){} });
+  let actual = fuentes[elegida] ? elegida : 'Satélite (Esri)';
+  fuentes[actual].addTo(map);
+  map.on('baselayerchange', e => { actual = e.name; try { localStorage.setItem(BASE_KEY, e.name); } catch (err){} });
+
+  /* Alineación de fondos: cada proveedor de fotos o calles puede estar corrido unos metros.
+     Se guarda cuánto mover cada fondo (en metros, hacia el este y hacia el norte). */
+  let ajustes = {};
+  const aplicarAjustes = () => {
+    const mpp = 40075016.686 * Math.cos(map.getCenter().lat * Math.PI / 180) / Math.pow(2, map.getZoom() + 8);
+    Object.entries(fuentes).forEach(([nombre, capa]) => {
+      const c = capa.getContainer && capa.getContainer(); if (!c) return;
+      const a = ajustes[nombre] || {};
+      c.style.marginLeft = ((Number(a.este) || 0) / mpp).toFixed(2) + 'px';
+      c.style.marginTop = (-(Number(a.norte) || 0) / mpp).toFixed(2) + 'px';
+    });
+  };
+  map.on('zoomend viewreset baselayerchange', aplicarAjustes);
+  Object.values(fuentes).forEach(capa => capa.on('add', () => setTimeout(aplicarAjustes, 0)));
+  map.ajustarFondos = a => { ajustes = (a && typeof a === 'object') ? JSON.parse(JSON.stringify(a)) : {}; aplicarAjustes(); };
+  map.ajustesFondos = () => JSON.parse(JSON.stringify(ajustes));
+  map.fondoActual = () => actual;
   L.control.layers(fuentes, capasExtra, {position:'bottomleft'}).addTo(map);
 
   const Ubicacion = L.Control.extend({
