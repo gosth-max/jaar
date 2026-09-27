@@ -361,3 +361,24 @@ fieldset.alcance legend{font-size:13px;color:var(--suave);margin-bottom:4px;padd
 /* Aviso fijo cuando la base de datos no está actualizada */
 .alerta-bd{flex:none;background:#FDECEA;color:#8C1D18;border-bottom:1px solid #F1C4BF;padding:10px 16px;font-size:14px;line-height:1.35}
 .alerta-bd small{display:block;color:#A0433D;margin-top:2px}
+
+/* =================== Usuarios y reportes =================== */
+.badge.azul{background:#1D6FA3}
+.lista-tarjetas{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:14px}
+.intro-seccion{margin:-6px 0 14px;font-size:14px}
+.solicitud .datos{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;margin:0 0 10px;font-size:14px}
+.solicitud .datos dt{color:var(--suave)} .solicitud .datos dd{margin:0;overflow-wrap:anywhere}
+.verificacion{border-radius:8px;padding:8px 10px;font-size:13.5px;margin:0 0 6px}
+.verificacion.ok{background:var(--agua-claro)} .verificacion.no{background:#FBF0D8;color:#6B4D05}
+.reporte .desc{margin:0 0 6px;white-space:pre-wrap}
+.reporte .respuesta{margin-top:6px}
+.acciones-cuenta{flex-wrap:nowrap}
+.sel-chico{padding:4px 6px!important;font-size:13.5px;max-width:220px}
+.invitar{margin-top:16px}
+.invitar summary{font-weight:700;cursor:pointer}
+.form-invitar{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:0 12px;margin-top:8px}
+.form-invitar .fila{grid-column:1/-1}
+input[type=email]{background:var(--blanco);border:1px solid var(--linea);border-radius:7px;padding:7px 9px;width:100%}
+.submenu .correo b{color:var(--tinta)}
+.pin-reporte span{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;background:#1D6FA3;
+  color:#fff;border:2.5px solid #fff;box-shadow:0 2px 6px rgba(0,0,0,.4);font:700 12px system-ui}

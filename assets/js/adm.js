@@ -18,7 +18,7 @@ const VISTA_KEY = 'acueducto-vista';
 const LOCAL_V1 = 'acueducto-v1';
 const LOCAL_V1_SUBIDO = 'acueducto-v1-subido';
 
-const state = { settings:{nombre:'Mi acueducto', cuota:5, moneda:'B/.', colorPorPago:true} };
+const state = { settings:{nombre:'Mi acueducto', cuota:5, moneda:'B/.', colorPorPago:true, whatsapp:'', whatsappMensaje:'', whatsappActivo:false, correoContacto:''} };
 const capas = new Map();
 let selected = null;
 let pendingTipo = null;
@@ -137,7 +137,8 @@ async function flush(){
 const guardarConfig = debounce(() => {
   const s = state.settings;
   tarea(sb.from('configuracion').upsert({id:1, nombre:s.nombre, cuota:num(s.cuota), moneda:s.moneda,
-    color_por_pago:!!s.colorPorPago, editado_por:CLIENTE_ID}), 'No se pudo guardar la configuración');
+    color_por_pago:!!s.colorPorPago, whatsapp:s.whatsapp || null, whatsapp_mensaje:s.whatsappMensaje || null,
+    whatsapp_activo:!!s.whatsappActivo, correo_contacto:s.correoContacto || null, editado_por:CLIENTE_ID}), 'No se pudo guardar la configuración');
 }, 600);
 
 const pagoDesdeFila = p => ({id:p.id, fecha:p.fecha, monto:num(p.monto), nota:p.nota || ''});
@@ -148,7 +149,8 @@ function aqDesdeFila(r, pagos){
   return {id:r.id, tipo, color:r.color || TIPOS[tipo].color, colorManual:!!r.color_manual, datos};
 }
 function aplicarFilaConfig(r){
-  state.settings = {nombre:r.nombre || 'Mi acueducto', cuota:num(r.cuota), moneda:r.moneda ?? 'B/.', colorPorPago:!!r.color_por_pago};
+  state.settings = {nombre:r.nombre || 'Mi acueducto', cuota:num(r.cuota), moneda:r.moneda ?? 'B/.', colorPorPago:!!r.color_por_pago,
+    whatsapp:r.whatsapp || '', whatsappMensaje:r.whatsapp_mensaje || '', whatsappActivo:!!r.whatsapp_activo, correoContacto:r.correo_contacto || ''};
 }
 
 async function cargarTodo(){
@@ -222,6 +224,15 @@ function suscribir(){
       const {data} = await sb.from('tipos_incidencia').select('*').order('orden').order('nombre');
       if (data){ tiposInc = data; renderTiposInc(); }
     })
+    .on('postgres_changes', {event:'*', schema:'public', table:'solicitudes_registro'}, p => {
+      if (p.eventType === 'INSERT') aviso('Nueva solicitud de registro: ' + (p.new.nombre || ''), 6000);
+      cargarUsuariosPronto();
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'reportes'}, p => {
+      if (p.eventType === 'INSERT') aviso('Nuevo reporte de un vecino: ' + (p.new.tipo || ''), 6000);
+      cargarUsuariosPronto();
+    })
+    .on('postgres_changes', {event:'*', schema:'public', table:'perfiles'}, cargarUsuariosPronto)
     .subscribe(status => { enVivo = status === 'SUBSCRIBED'; pintarSync(); });
 }
 function aplicarFilaForma(r){
@@ -591,7 +602,8 @@ async function crearIncidencia(layer, d){
     ubicacion:d.ubicacion, punto_a:d.punto_a, punto_b:d.punto_b,
     propagar:d.propagar, sectores_enlazados:d.sectores_enlazados, sector_id:d.sector_id || null,
     alcance:d.propagar ? 'red' : (d.sector_id ? 'sector' : 'forma'),
-    color:d.color, opacidad:d.opacidad, estado:'abierta', editado_por:CLIENTE_ID
+    color:d.color, opacidad:d.opacidad, publica:d.publica !== false, detalle_publico:d.detalle_publico || null,
+    estado:'abierta', editado_por:CLIENTE_ID
   }).select().single(), 'No se pudo crear la incidencia');
   if (!fila) return false;
   incidencias.set(fila.id, fila);
@@ -703,6 +715,7 @@ function renderIncidenciasPanel(){
       <p class="meta">Creada: ${esc(Acu.fechaHora(inc.creada_en))} (${esc(Acu.hace(inc.creada_en))})</p>
       ${inc.resuelta_en ? `<p class="meta">Resuelta: ${esc(Acu.fechaHora(inc.resuelta_en))}</p>` : ''}
       ${inc.detalle ? `<p>${esc(inc.detalle)}</p>` : ''}
+      <p class="meta">${inc.publica === false ? '🔒 Solo la ven los administradores' : '🌐 Visible al público' + (inc.detalle_publico ? ': «' + esc(inc.detalle_publico) + '»' : '')}</p>
       ${inc.estado === 'abierta' ? `<p class="meta">${esc(textoAlcance(inc))}</p>` : ''}
       ${!esOrigen && origen ? `<p class="meta">Reportada en: <button class="origen" data-ir="${esc(inc.forma_id)}">${esc(titulo(origen.aq))}</button></p>` : ''}
       ${inc.estado === 'abierta' ? `<div class="acciones">
@@ -747,7 +760,7 @@ function abrirFormIncidencia(layer){
   let html = `<div class="inc-form">
     <label class="campo"><span>Tipo de incidencia</span>
       <select id="incTipo">${tiposInc.map(t => `<option>${esc(t.nombre)}</option>`).join('')}<option value="__nuevo">＋ Añadir nuevo tipo…</option></select></label>
-    <label class="campo"><span>Detalle</span><textarea id="incDetalle" rows="3" placeholder="Qué pasó, dónde exactamente, quién lo reportó…"></textarea></label>`;
+    <label class="campo"><span>Detalle interno (solo administradores)</span><textarea id="incDetalle" rows="3" placeholder="Qué pasó, dónde exactamente, quién lo reportó…"></textarea></label>`;
   if (esTubo) html += `
     <fieldset class="alcance"><legend>¿Dónde está el problema?</legend>
       ${radio('completo', 'En toda la tubería', 'Se marca la tubería completa.', true)}
@@ -772,6 +785,10 @@ function abrirFormIncidencia(layer){
         `<option value="${esc(s.aq.id)}" ${s.aq.id === (propios[0] || '') ? 'selected' : ''}>${esc(nombreS(s))}</option>`).join('')}</select></label>` : ''}
     </fieldset>`;
   html += `
+    <fieldset class="alcance"><legend>Página pública</legend>
+      ${check('incPublica', 'Mostrar a los vecinos', 'Aparece en el mapa y el calendario públicos, sin el detalle interno.', !esCasa)}
+      <label class="campo" id="incDetPubBox"><span>Mensaje para los vecinos (opcional)</span><textarea id="incDetPub" rows="2" maxlength="500" placeholder="Ej. Estamos reparando una fuga; el servicio vuelve hoy en la tarde."></textarea></label>
+    </fieldset>
     <p class="vista-previa" id="incVista"></p>
     <div class="dos">
       <label class="campo"><span>Color</span><input type="color" id="incColor" value="${ROJO}" style="width:100%;height:34px;padding:0;border:1px solid var(--linea);border-radius:7px"></label>
@@ -800,7 +817,8 @@ function abrirFormIncidencia(layer){
       propagar: !!($('#incProp') && $('#incProp').checked),
       sectores_enlazados: !!($('#incEnl') && $('#incEnl').checked),
       sector_id: esSector ? aq.id : (otro ? $('#incSector').value : null),
-      color: $('#incColor').value, opacidad: Number($('#incOp').value) / 100
+      color: $('#incColor').value, opacidad: Number($('#incOp').value) / 100,
+      publica: $('#incPublica').checked, detalle_publico: $('#incDetPub').value.trim() || null
     };
   };
   const faltanPuntos = d => esTubo && ((d.ubicacion !== 'completo' && !d.punto_a) || (d.ubicacion === 'tramo_ab' && !d.punto_b));
@@ -815,6 +833,7 @@ function abrirFormIncidencia(layer){
       $('#estadoB').textContent = d.punto_b ? 'Marcado ✓' : 'Sin marcar';
     }
     const sBox = $('#incSectorBox'); if (sBox) sBox.hidden = !($('#incOtro') && $('#incOtro').checked);
+    $('#incDetPubBox').hidden = !$('#incPublica').checked;
     capaTemp.clearLayers();
     if (faltanPuntos(d)){
       $('#incVista').textContent = d.ubicacion === 'tramo_ab' ? 'Marca en el mapa los puntos A y B.' : 'Marca en el mapa el lugar del problema.';
@@ -1243,11 +1262,15 @@ const RENDER = {
   'incidencias/abiertas': renderIncAbiertas,
   'incidencias/resueltas': renderIncResueltas,
   'incidencias/calendario': renderCalendario,
+  'incidencias/reportes': renderReportes,
+  'usuarios/solicitudes': renderSolicitudes,
+  'usuarios/vecinos': renderVecinos,
+  'usuarios/administradores': renderAdministradores,
   'sectores': renderSectoresVista,
   'casas': renderCasasVista
 };
 const GRUPO_DE = {'inicio':'inicio', 'resumen':'inicio', 'mapa':'mapa', 'incidencias/abiertas':'incidencias',
-  'incidencias/resueltas':'incidencias', 'incidencias/calendario':'incidencias', 'sectores':'gestion', 'casas':'gestion', 'configuracion':'config'};
+  'incidencias/resueltas':'incidencias', 'incidencias/calendario':'incidencias', 'incidencias/reportes':'incidencias', 'usuarios/solicitudes':'usuarios', 'usuarios/vecinos':'usuarios', 'usuarios/administradores':'usuarios', 'sectores':'gestion', 'casas':'gestion', 'configuracion':'config'};
 
 function router(){
   const ruta = location.hash.replace(/^#\/?/, '') || 'inicio';
@@ -1409,6 +1432,9 @@ function descargar(contenido, nombre, tipo){
 function actualizarBadges(){
   const n = [...incidencias.values()].filter(i => i.estado === 'abierta').length;
   document.querySelectorAll('[data-badge-inc]').forEach(b => { b.textContent = n; b.hidden = !n; });
+  const nSol = solicitudes.filter(x => x.estado === 'pendiente').length, nRep = reportesLista.filter(x => x.estado === 'nuevo').length;
+  document.querySelectorAll('[data-badge-sol]').forEach(b => { b.textContent = nSol; b.hidden = !nSol; });
+  document.querySelectorAll('[data-badge-rep]').forEach(b => { b.textContent = nRep; b.hidden = !nRep; });
   $('#nombreAcu').textContent = state.settings.nombre || 'Mi acueducto';
   document.title = 'Administración: ' + (state.settings.nombre || 'acueducto');
 }
@@ -1820,23 +1846,295 @@ $('#calHoy').addEventListener('click', () => { const d = new Date(); calMes = ne
 $('#dlgCerrar').addEventListener('click', () => $('#dlgDia').close());
 $('#dlgDia').addEventListener('click', e => { if (e.target === $('#dlgDia')) $('#dlgDia').close(); });
 
+/* =====================================================================
+   USUARIOS, SOLICITUDES Y REPORTES
+   ===================================================================== */
+let miPerfil = null;
+let solicitudes = [], perfilesLista = [], reportesLista = [];
+const esDev = () => !!miPerfil && miPerfil.rol === 'desarrollador';
+const URL_ACCESO = () => new URL('../auth/auth.html', location.href).href.split('#')[0].split('?')[0];
+const NOMBRE_ROL = {desarrollador:'Desarrollador', administrador:'Administrador', vecino:'Vecino'};
+const NOMBRE_ESTADO_REP = {nuevo:'Nuevo', en_revision:'En revisión', atendido:'Atendido', descartado:'Descartado'};
+const CLASE_ESTADO_REP = {nuevo:'bad', en_revision:'warn', atendido:'ok', descartado:'nada'};
+const telLink = t => t ? `<a href="tel:${esc(String(t).replace(/[^\d+]/g, ''))}">${esc(t)}</a>` : '—';
+
+/* Llama a la Edge Function "usuarios" (crear y eliminar cuentas) */
+async function llamarFuncion(cuerpo){
+  enVuelo++; pintarSync();
+  try {
+    const {data, error} = await sb.functions.invoke('usuarios', {body:{...cuerpo, volver_a:URL_ACCESO() + '?modo=invitacion'}});
+    if (error){
+      let msg = error.message || String(error);
+      const resp = error.context;
+      if (resp && resp.status === 404) msg = 'NO_INSTALADA';
+      else if (resp && typeof resp.json === 'function'){ try { const j = await resp.json(); if (j && j.error) msg = j.error; } catch (e){} }
+      if (msg === 'NO_INSTALADA' || /failed to send a request|functionsfetcherror|functionsrelayerror/i.test(msg + ' ' + (error.name || '')))
+        msg = 'La función «usuarios» no está instalada en Supabase. Sigue los pasos de instalación de la Edge Function.';
+      throw new Error(msg);
+    }
+    return data;
+  } catch (e){ aviso(e.message, 9000); return null; }
+  finally { enVuelo--; pintarSync(); }
+}
+
+async function cargarUsuarios(){
+  // Las solicitudes ya revisadas se borran a los 6 meses (como indica la política de privacidad)
+  if (!cargarUsuarios.limpio){
+    cargarUsuarios.limpio = true;
+    const limite = new Date(Date.now() - 183 * 864e5).toISOString();
+    sb.from('solicitudes_registro').delete().neq('estado', 'pendiente').lt('revisada_en', limite).then(() => {}, () => {});
+  }
+  const [s, p, r] = await Promise.all([
+    sb.from('solicitudes_registro').select('*').order('created_at', {ascending:false}).limit(300),
+    sb.from('perfiles').select('*').order('created_at', {ascending:true}),
+    sb.from('reportes').select('*, perfiles(nombre, celular, numero_casa, email)').order('created_at', {ascending:false}).limit(500)
+  ]);
+  if (!s.error) solicitudes = s.data || [];
+  if (!p.error) perfilesLista = p.data || [];
+  if (!r.error) reportesLista = r.data || [];
+  actualizarBadges();
+  if (/^usuarios\/|^incidencias\/reportes|^inicio$/.test(vistaActual || '')) renderVistaActual();
+}
+const cargarUsuariosPronto = debounce(cargarUsuarios, 400);
+
+/* --- Solicitudes de registro --- */
+function opcionesCasas(seleccion){
+  const casas = datosGenerales().casas.sort((a, b) => String(a.aq.datos.numero).localeCompare(String(b.aq.datos.numero), 'es', {numeric:true}));
+  return '<option value="">Sin vincular a una casa</option>' + casas.map(l =>
+    `<option value="${esc(l.aq.id)}" ${l.aq.id === seleccion ? 'selected' : ''}>${esc(nombreCasa(l.aq.datos))}${l.aq.datos.responsable ? ' — ' + esc(l.aq.datos.responsable) : ''}</option>`).join('');
+}
+function casaPorNumero(numero){
+  const n = String(numero || '').trim().toLowerCase();
+  return n ? datosGenerales().casas.filter(l => String(l.aq.datos.numero || '').trim().toLowerCase() === n) : [];
+}
+function renderSolicitudes(){
+  const ver = $('#solFiltro').value;
+  const lista = solicitudes.filter(s => ver === 'pendientes' ? s.estado === 'pendiente' : s.estado !== 'pendiente');
+  const pend = solicitudes.filter(s => s.estado === 'pendiente').length;
+  $('#solConteo').textContent = pend ? `${pend} ${pend === 1 ? 'solicitud pendiente' : 'solicitudes pendientes'}` : 'Sin solicitudes pendientes';
+  const cont = $('#solLista');
+  if (!lista.length){
+    cont.innerHTML = `<div class="vacio-grande">${ver === 'pendientes' ? '✓ No hay solicitudes esperando revisión.' : 'Todavía no hay solicitudes revisadas.'}</div>`;
+    return;
+  }
+  cont.innerHTML = lista.map(s => {
+    const coinciden = casaPorNumero(s.numero_casa);
+    const verif = coinciden.length
+      ? coinciden.map(l => `En el mapa, la ${esc(nombreCasa(l.aq.datos))} tiene como responsable a <b>${esc(l.aq.datos.responsable || 'nadie registrado')}</b>${l.aq.datos.telefono ? ' (tel. ' + esc(l.aq.datos.telefono) + ')' : ''}.`).join('<br>')
+      : (s.numero_casa ? 'No hay ninguna casa con ese número en el mapa.' : 'No indicó número de casa.');
+    const pendiente = s.estado === 'pendiente';
+    return `<article class="tarjeta solicitud">
+      <header><h2>${esc(s.nombre)}</h2><span class="pill ${pendiente ? 'warn' : s.estado === 'aprobada' ? 'ok' : 'nada'}">${pendiente ? 'Pendiente' : s.estado === 'aprobada' ? 'Aprobada' : 'Rechazada'}</span></header>
+      <dl class="datos">
+        <dt>Correo</dt><dd>${esc(s.email)}</dd>
+        <dt>Celular</dt><dd>${telLink(s.celular)}</dd>
+        <dt>Casa</dt><dd>${esc(s.numero_casa || '—')}</dd>
+        <dt>Enviada</dt><dd>${esc(Acu.fechaHora(s.created_at))} (${esc(Acu.hace(s.created_at))})</dd>
+      </dl>
+      <p class="verificacion ${coinciden.length ? 'ok' : 'no'}">${verif}</p>
+      ${pendiente ? `
+        <label class="campo"><span>Vincular a la casa</span><select data-casa-sol="${esc(s.id)}">${opcionesCasas(coinciden[0] && coinciden[0].aq.id)}</select></label>
+        <div class="fila"><button class="btn primario" data-aprobar="${esc(s.id)}">Aprobar y enviar acceso</button><button class="btn peligro" data-rechazar="${esc(s.id)}">Rechazar</button></div>`
+      : `<p class="nota">${s.estado === 'aprobada' ? 'Aprobada' : 'Rechazada'} ${s.revisada_en ? 'el ' + esc(Acu.fechaHora(s.revisada_en)) : ''}${s.motivo ? ' · Motivo: ' + esc(s.motivo) : ''}</p>`}
+    </article>`;
+  }).join('');
+  cont.querySelectorAll('[data-aprobar]').forEach(b => b.addEventListener('click', async () => {
+    const s = solicitudes.find(x => x.id === b.dataset.aprobar); if (!s) return;
+    if (!confirm(`¿Aprobar a ${s.nombre}? Se le enviará un correo a ${s.email} para que cree su contraseña.`)) return;
+    b.disabled = true;
+    const r = await llamarFuncion({accion:'aprobar_solicitud', id:s.id, casa_id:cont.querySelector(`[data-casa-sol="${s.id}"]`).value});
+    if (r && r.ok){ aviso(r.mensaje, 8000); cargarUsuarios(); } else b.disabled = false;
+  }));
+  cont.querySelectorAll('[data-rechazar]').forEach(b => b.addEventListener('click', async () => {
+    const s = solicitudes.find(x => x.id === b.dataset.rechazar); if (!s) return;
+    const motivo = prompt(`Motivo del rechazo de ${s.nombre} (opcional, solo lo ven los administradores):`, '');
+    if (motivo === null) return;
+    const ok = await tarea(sb.from('solicitudes_registro').update({estado:'rechazada', motivo:motivo.trim() || null,
+      revisada_en:new Date().toISOString(), revisada_por:miPerfil.id}).eq('id', s.id), 'No se pudo rechazar la solicitud');
+    if (ok){ aviso('Solicitud rechazada. Esa persona podrá intentarlo de nuevo en 24 horas.', 6000); cargarUsuarios(); }
+  }));
+}
+$('#solFiltro').addEventListener('change', renderSolicitudes);
+
+/* --- Tabla de cuentas (vecinos o administradores) --- */
+async function cambiarPerfil(id, cambios, msg){
+  const ok = await tarea(sb.from('perfiles').update(cambios).eq('id', id), 'No se pudo actualizar la cuenta');
+  if (ok){ if (msg) aviso(msg); cargarUsuarios(); }
+}
+function accionesCuenta(p, puedeGestionar){
+  if (!puedeGestionar || p.id === miPerfil.id) return p.id === miPerfil.id ? '<span class="nota">Tu cuenta</span>' : '';
+  return `<div class="fila acciones-cuenta">
+    ${p.estado === 'activo'
+      ? `<button class="btn chico" data-suspender="${esc(p.id)}">Suspender</button>`
+      : `<button class="btn chico" data-reactivar="${esc(p.id)}">Reactivar</button>`}
+    <button class="btn chico" data-reenviar="${esc(p.id)}" title="Envía un correo para crear o cambiar la contraseña">Reenviar acceso</button>
+    <button class="btn chico peligro" data-eliminar-cuenta="${esc(p.id)}">Eliminar</button></div>`;
+}
+function enlazarCuentas(cont){
+  const buscar = id => perfilesLista.find(p => p.id === id);
+  cont.querySelectorAll('[data-suspender]').forEach(b => b.addEventListener('click', () => {
+    const p = buscar(b.dataset.suspender);
+    if (p && confirm(`¿Suspender la cuenta de ${p.nombre || p.email}? No podrá entrar hasta que la reactives.`)) cambiarPerfil(p.id, {estado:'suspendido'}, 'Cuenta suspendida.');
+  }));
+  cont.querySelectorAll('[data-reactivar]').forEach(b => b.addEventListener('click', () => cambiarPerfil(b.dataset.reactivar, {estado:'activo'}, 'Cuenta reactivada.')));
+  cont.querySelectorAll('[data-reenviar]').forEach(b => b.addEventListener('click', async () => {
+    const p = buscar(b.dataset.reenviar); if (!p) return;
+    const {error} = await sb.auth.resetPasswordForEmail(p.email, {redirectTo:URL_ACCESO() + '?modo=nueva'});
+    aviso(error ? 'No se pudo enviar el correo. ' + explicarError(error) : `Se envió a ${p.email} un enlace para crear su contraseña.`, 7000);
+  }));
+  cont.querySelectorAll('[data-eliminar-cuenta]').forEach(b => b.addEventListener('click', async () => {
+    const p = buscar(b.dataset.eliminarCuenta); if (!p) return;
+    if (!confirm(`¿Eliminar definitivamente la cuenta de ${p.nombre || p.email}? Sus reportes se conservan sin su nombre.`)) return;
+    const r = await llamarFuncion({accion:'eliminar', id:p.id});
+    if (r && r.ok){ aviso(r.mensaje); cargarUsuarios(); }
+  }));
+  cont.querySelectorAll('[data-casa-perfil]').forEach(s => s.addEventListener('change', () => {
+    const l = capas.get(s.value);
+    cambiarPerfil(s.dataset.casaPerfil, {casa_id:s.value || null, ...(l ? {numero_casa:l.aq.datos.numero || null} : {})}, 'Casa vinculada.');
+  }));
+  cont.querySelectorAll('[data-rol-perfil]').forEach(s => s.addEventListener('change', () => {
+    const p = buscar(s.dataset.rolPerfil);
+    if (!confirm(`¿Cambiar el rol de ${p.nombre || p.email} a ${NOMBRE_ROL[s.value]}?`)){ s.value = p.rol; return; }
+    cambiarPerfil(p.id, {rol:s.value}, 'Rol actualizado.');
+  }));
+}
+function tablaCuentas(lista, opciones){
+  if (!lista.length) return `<div class="vacio-grande">${opciones.vacio}</div>`;
+  return `<div class="tabla-cont"><table class="tabla">
+    <thead><tr><th>Nombre</th><th>Correo</th><th>Celular</th><th>Casa</th>${opciones.conRol ? '<th>Rol</th>' : ''}<th>Estado</th><th></th></tr></thead>
+    <tbody>${lista.map(p => {
+      const casa = p.casa_id && capas.get(p.casa_id);
+      const puede = opciones.puedeGestionar(p);
+      return `<tr>
+        <td><b>${esc(p.nombre || '—')}</b></td>
+        <td>${esc(p.email)}</td>
+        <td>${telLink(p.celular)}</td>
+        <td>${puede && opciones.editarCasa ? `<select data-casa-perfil="${esc(p.id)}" class="sel-chico">${opcionesCasas(p.casa_id)}</select>`
+             : esc(casa ? nombreCasa(casa.aq.datos) : (p.numero_casa ? 'Casa ' + p.numero_casa : '—'))}</td>
+        ${opciones.conRol ? `<td>${puede && p.id !== miPerfil.id ? `<select data-rol-perfil="${esc(p.id)}" class="sel-chico">
+            <option value="administrador" ${p.rol === 'administrador' ? 'selected' : ''}>Administrador</option>
+            <option value="desarrollador" ${p.rol === 'desarrollador' ? 'selected' : ''}>Desarrollador</option></select>`
+            : `<span class="pill ${p.rol === 'desarrollador' ? 'ok' : 'nada'}">${esc(NOMBRE_ROL[p.rol])}</span>`}</td>` : ''}
+        <td><span class="pill ${p.estado === 'activo' ? 'ok' : 'bad'}">${p.estado === 'activo' ? 'Activa' : 'Suspendida'}</span></td>
+        <td>${accionesCuenta(p, puede)}</td>
+      </tr>`;
+    }).join('')}</tbody></table></div>`;
+}
+function renderVecinos(){
+  const q = $('#vecBusca').value.trim().toLowerCase();
+  const todos = perfilesLista.filter(p => p.rol === 'vecino');
+  const lista = todos.filter(p => !q || [p.nombre, p.email, p.celular, p.numero_casa].join(' ').toLowerCase().includes(q));
+  $('#vecConteo').textContent = `${lista.length} de ${todos.length} vecinos`;
+  const cont = $('#vecTabla');
+  cont.innerHTML = tablaCuentas(lista, {vacio: todos.length ? 'Ningún vecino coincide con la búsqueda.' : 'Todavía no hay vecinos con cuenta. Aparecerán aquí al aprobar sus solicitudes.',
+    puedeGestionar: () => true, editarCasa: true});
+  enlazarCuentas(cont);
+}
+$('#vecBusca').addEventListener('input', debounce(renderVecinos, 200));
+function renderAdministradores(){
+  const lista = perfilesLista.filter(p => p.rol !== 'vecino');
+  $('#admAviso').hidden = esDev();
+  $('#admInvitar').hidden = !esDev();
+  const cont = $('#admTabla');
+  cont.innerHTML = tablaCuentas(lista, {vacio:'No hay administradores.', conRol:true, puedeGestionar: () => esDev(), editarCasa:false});
+  enlazarCuentas(cont);
+}
+
+/* --- Formularios para invitar directamente --- */
+function formInvitar(formSel, rolFijo){
+  const f = $(formSel);
+  f.addEventListener('submit', async e => {
+    e.preventDefault();
+    const d = Object.fromEntries(new FormData(f).entries());
+    const rol = rolFijo || d.rol;
+    const btn = f.querySelector('button[type=submit]'); btn.disabled = true;
+    const r = await llamarFuncion({accion:'invitar', rol, email:d.email, nombre:d.nombre, celular:d.celular, numero_casa:d.numero_casa, casa_id:d.casa_id || ''});
+    btn.disabled = false;
+    if (r && r.ok){ aviso(r.mensaje, 8000); f.reset(); cargarUsuarios(); }
+  });
+}
+formInvitar('#formInvitarAdm', null);
+formInvitar('#formInvitarVec', 'vecino');
+
+/* --- Reportes de los vecinos --- */
+const capaReporte = L.layerGroup().addTo(map);
+function renderReportes(){
+  const est = $('#repFiltro').value, q = $('#repBusca').value.trim().toLowerCase();
+  const lista = reportesLista.filter(r => (!est || r.estado === est) &&
+    (!q || [r.tipo, r.descripcion, r.numero_casa, r.perfiles && r.perfiles.nombre].join(' ').toLowerCase().includes(q)));
+  const nuevos = reportesLista.filter(r => r.estado === 'nuevo').length;
+  $('#repConteo').textContent = nuevos ? `${nuevos} ${nuevos === 1 ? 'reporte nuevo' : 'reportes nuevos'}` : 'Sin reportes nuevos';
+  const cont = $('#repLista');
+  if (!lista.length){ cont.innerHTML = `<div class="vacio-grande">${reportesLista.length ? 'Ningún reporte coincide con el filtro.' : 'Todavía no hay reportes de vecinos.'}</div>`; return; }
+  cont.innerHTML = lista.map(r => {
+    const quien = r.perfiles || {};
+    return `<article class="tarjeta reporte">
+      <header><h2>${esc(r.tipo)}</h2><span class="pill ${CLASE_ESTADO_REP[r.estado]}">${esc(NOMBRE_ESTADO_REP[r.estado])}</span></header>
+      <p class="desc">${esc(r.descripcion)}</p>
+      <p class="nota">Por <b>${esc(quien.nombre || 'cuenta eliminada')}</b>${r.numero_casa ? ' · Casa ' + esc(r.numero_casa) : ''}${quien.celular ? ' · ' + telLink(quien.celular) : ''} · ${esc(Acu.fechaHora(r.created_at))} (${esc(Acu.hace(r.created_at))})</p>
+      <div class="fila">${r.punto ? `<button class="btn chico" data-ver-rep="${esc(r.id)}">📍 Ver en el mapa</button>` : '<span class="nota">Sin ubicación marcada</span>'}</div>
+      <div class="dos respuesta">
+        <label class="campo"><span>Estado</span><select data-estado-rep="${esc(r.id)}">${Object.keys(NOMBRE_ESTADO_REP).map(k => `<option value="${k}" ${k === r.estado ? 'selected' : ''}>${NOMBRE_ESTADO_REP[k]}</option>`).join('')}</select></label>
+        <label class="campo"><span>Respuesta para el vecino</span><textarea rows="2" data-resp-rep="${esc(r.id)}" maxlength="1000" placeholder="Ej. Gracias, el equipo va en camino.">${esc(r.respuesta || '')}</textarea></label>
+      </div>
+      <div class="fila"><button class="btn chico primario" data-guardar-rep="${esc(r.id)}">Guardar</button></div>
+    </article>`;
+  }).join('');
+  cont.querySelectorAll('[data-guardar-rep]').forEach(b => b.addEventListener('click', async () => {
+    const id = b.dataset.guardarRep;
+    const ok = await tarea(sb.from('reportes').update({
+      estado:cont.querySelector(`[data-estado-rep="${id}"]`).value,
+      respuesta:cont.querySelector(`[data-resp-rep="${id}"]`).value.trim() || null,
+      actualizado_en:new Date().toISOString()}).eq('id', id), 'No se pudo guardar el reporte');
+    if (ok){ aviso('Reporte actualizado. El vecino verá el estado y la respuesta.'); cargarUsuarios(); }
+  }));
+  cont.querySelectorAll('[data-ver-rep]').forEach(b => b.addEventListener('click', () => {
+    const r = reportesLista.find(x => x.id === b.dataset.verRep); if (!r || !r.punto) return;
+    asegurarMapa();
+    capaReporte.clearLayers();
+    L.marker([r.punto.lat, r.punto.lng], {icon:L.divIcon({className:'pin-reporte', html:'<span>R</span>', iconSize:[28,28], iconAnchor:[14,14]}), pmIgnore:true, snapIgnore:true})
+      .bindTooltip(`Reporte: ${esc(r.tipo)}`, {permanent:true, direction:'top', offset:[0,-14]}).addTo(capaReporte);
+    map.setView([r.punto.lat, r.punto.lng], Math.max(map.getZoom(), 18));
+    setTimeout(() => capaReporte.clearLayers(), 120000);
+  }));
+}
+$('#repFiltro').addEventListener('change', renderReportes);
+$('#repBusca').addEventListener('input', debounce(renderReportes, 200));
+
 /* ================= Sección: Configuración ================= */
 function cargarConfigEnFormulario(){
   $('#cfgNombre').value = state.settings.nombre;
   $('#cfgCuota').value = state.settings.cuota;
   $('#cfgMoneda').value = state.settings.moneda;
   $('#cfgColorPago').checked = !!state.settings.colorPorPago;
+  $('#cfgWhatsapp').value = state.settings.whatsapp;
+  $('#cfgWhatsappMsg').value = state.settings.whatsappMensaje;
+  $('#cfgWhatsappActivo').checked = state.settings.whatsappActivo;
+  $('#cfgCorreo').value = state.settings.correoContacto;
+  probarWhatsapp();
+}
+function probarWhatsapp(){
+  const dig = String(state.settings.whatsapp || '').replace(/\D/g, '');
+  $('#cfgWhatsappPrueba').innerHTML = dig.length >= 8
+    ? `Prueba el enlace: <a href="https://wa.me/${dig}?text=${encodeURIComponent(state.settings.whatsappMensaje || '')}" target="_blank" rel="noopener">abrir WhatsApp ↗</a>${dig.length < 10 ? ' · ⚠ Parece que falta el código de país (ej. 507).' : ''}`
+    : 'Escribe el número con el código de país, por ejemplo +507 6000-0000.';
 }
 function alCambiarConfig(){
   state.settings.nombre = $('#cfgNombre').value;
   state.settings.cuota = num($('#cfgCuota').value);
   state.settings.moneda = $('#cfgMoneda').value;
   state.settings.colorPorPago = $('#cfgColorPago').checked;
+  state.settings.whatsapp = $('#cfgWhatsapp').value.trim();
+  state.settings.whatsappMensaje = $('#cfgWhatsappMsg').value;
+  state.settings.whatsappActivo = $('#cfgWhatsappActivo').checked;
+  state.settings.correoContacto = $('#cfgCorreo').value.trim();
+  probarWhatsapp();
   capa.eachLayer(l => { if (l.aq){ aplicarEstilo(l); actualizarTooltip(l); } });
   if (selected){ actualizarTituloPanel(); refrescarCuenta(); }
   renderResumen(); guardarConfig();
 }
-['#cfgNombre','#cfgCuota','#cfgMoneda'].forEach(s => $(s).addEventListener('input', alCambiarConfig));
+['#cfgNombre','#cfgCuota','#cfgMoneda','#cfgWhatsapp','#cfgWhatsappMsg','#cfgCorreo'].forEach(s => $(s).addEventListener('input', alCambiarConfig));
+$('#cfgWhatsappActivo').addEventListener('change', alCambiarConfig);
 $('#cfgColorPago').addEventListener('change', () => { alCambiarConfig(); if (selected) renderPanel(); });
 
 /* ================= Copias de seguridad ================= */
@@ -1890,6 +2188,7 @@ async function subirCopia(data){
       punto_a:i.punto_a || null, punto_b:i.punto_b || null,
       propagar:typeof i.propagar === 'boolean' ? i.propagar : i.alcance === 'red',
       sectores_enlazados:!!i.sectores_enlazados,
+      publica:i.publica !== false, detalle_publico:i.detalle_publico || null,
       sector_id:i.sector_id && ids.has(i.sector_id) ? i.sector_id : null,
       color:i.color || ROJO, opacidad:num(i.opacidad) || 0.75, estado:i.estado === 'resuelta' ? 'resuelta' : 'abierta',
       creada_en:i.creada_en || new Date().toISOString(), resuelta_en:i.resuelta_en || null, editado_por:CLIENTE_ID}));
@@ -1978,7 +2277,12 @@ async function verificarBaseDatos(){
     ['incidencias', 'id,ubicacion,punto_a,punto_b,propagar,sectores_enlazados'],
     ['incidencias_publicas', 'id'],
     ['tipos_incidencia', 'id'],
-    ['mapa_publico', 'id']
+    ['mapa_publico', 'id'],
+    ['perfiles', 'id,rol,estado'],
+    ['solicitudes_registro', 'id'],
+    ['reportes', 'id'],
+    ['configuracion', 'id,whatsapp,whatsapp_activo,correo_contacto'],
+    ['incidencias', 'id,publica,detalle_publico']
   ];
   const faltan = [];
   for (const [tabla, cols] of pruebas){
@@ -1993,6 +2297,24 @@ async function iniciarApp(session){
   if (appIniciada) return;
   appIniciada = true;
   document.querySelectorAll('[data-correo]').forEach(e => { e.textContent = session.user.email || ''; });
+  mensaje('<h2>Verificando acceso…</h2>');
+  const {data:perfil, error:errPerfil} = await sb.from('perfiles').select('*').eq('id', session.user.id).maybeSingle();
+  if (errPerfil && explicarError(errPerfil) === MSG_BD_VIEJA){
+    appIniciada = false;
+    mensaje(`<h2>Falta actualizar la base de datos</h2><p>${esc(MSG_BD_VIEJA)}</p><button class="btn primario" onclick="location.reload()">Ya lo ejecuté, recargar</button>`);
+    return;
+  }
+  if (!perfil || perfil.estado !== 'activo' || !['administrador','desarrollador'].includes(perfil.rol)){
+    appIniciada = false;
+    mensaje(`<h2>Sin acceso a la administración</h2>
+      <p>${!perfil ? 'Tu cuenta no tiene permisos de administración. Pide al desarrollador que te dé acceso.'
+          : perfil.estado !== 'activo' ? 'Tu cuenta está suspendida.' : 'Tu cuenta es de vecino: desde la página pública puedes ver el mapa y enviar reportes.'}</p>
+      <div class="fila"><a class="btn primario" href="../../../index.html">Ir a la página pública</a><button class="btn" id="salirSinAcceso">Cerrar sesión</button></div>`);
+    $('#salirSinAcceso').addEventListener('click', async () => { await sb.auth.signOut(); irAlAcceso(); });
+    return;
+  }
+  miPerfil = perfil;
+  document.querySelectorAll('[data-rol]').forEach(e => { e.textContent = (perfil.nombre ? perfil.nombre + ' · ' : '') + NOMBRE_ROL[perfil.rol]; });
   mensaje('<h2>Cargando el mapa…</h2><p class="nota">Descargando casas, tuberías, llaves, sectores y pagos.</p>');
   try {
     await cargarTodo();
@@ -2000,6 +2322,7 @@ async function iniciarApp(session){
     $('#acceso').hidden = true;
     router();
     verificarBaseDatos();
+    cargarUsuarios();
     pintarSync();
     revisarDatosLocales();
   } catch (err){

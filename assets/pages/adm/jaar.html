@@ -46,11 +46,13 @@
         </ul>
       </li>
       <li class="grupo" data-grupo="incidencias">
-        <button class="nav-btn" aria-expanded="false">Incidencias <span class="badge" data-badge-inc hidden></span> <i class="flecha"></i></button>
+        <button class="nav-btn" aria-expanded="false">Incidencias <span class="badge" data-badge-inc hidden></span><span class="badge azul" data-badge-rep hidden></span> <i class="flecha"></i></button>
         <ul class="submenu">
           <li><a href="#/incidencias/abiertas" data-ruta="incidencias/abiertas"><span>Incidencias abiertas<small>Lo que está marcado en rojo ahora</small></span><span class="badge" data-badge-inc hidden></span></a></li>
           <li><a href="#/incidencias/resueltas" data-ruta="incidencias/resueltas"><span>Incidencias resueltas<small>Historial con fechas y duración</small></span></a></li>
           <li><a href="#/incidencias/calendario" data-ruta="incidencias/calendario"><span>Calendario<small>Qué pasó cada día, con horas</small></span></a></li>
+          <li class="sep" role="separator"></li>
+          <li><a href="#/incidencias/reportes" data-ruta="incidencias/reportes"><span>Reportes de vecinos<small>Lo que envían desde la página pública</small></span><span class="badge azul" data-badge-rep hidden></span></a></li>
         </ul>
       </li>
       <li class="grupo" data-grupo="gestion">
@@ -60,11 +62,20 @@
           <li><a href="#/casas" data-ruta="casas"><span>Casas y cobros<small>Buscar, filtrar y exportar la lista</small></span></a></li>
         </ul>
       </li>
+      <li class="grupo" data-grupo="usuarios">
+        <button class="nav-btn" aria-expanded="false">Usuarios <span class="badge azul" data-badge-sol hidden></span> <i class="flecha"></i></button>
+        <ul class="submenu">
+          <li><a href="#/usuarios/solicitudes" data-ruta="usuarios/solicitudes"><span>Solicitudes de registro<small>Aprobar o rechazar vecinos</small></span><span class="badge azul" data-badge-sol hidden></span></a></li>
+          <li><a href="#/usuarios/vecinos" data-ruta="usuarios/vecinos"><span>Vecinos<small>Cuentas de representantes de casas</small></span></a></li>
+          <li><a href="#/usuarios/administradores" data-ruta="usuarios/administradores"><span>Administradores<small>Quién gestiona el acueducto</small></span></a></li>
+        </ul>
+      </li>
       <li class="grupo" data-grupo="config">
         <button class="nav-btn" aria-expanded="false">Configuración <i class="flecha"></i></button>
         <ul class="submenu">
           <li><a href="#/configuracion/general"><span>General<small>Nombre, cuota y moneda</small></span></a></li>
           <li><a href="#/configuracion/tipos"><span>Tipos de incidencia</span></a></li>
+          <li><a href="#/configuracion/contacto"><span>Contacto y WhatsApp</span></a></li>
           <li><a href="#/configuracion/copia"><span>Copia de seguridad</span></a></li>
         </ul>
       </li>
@@ -76,7 +87,7 @@
     <div class="grupo">
       <button class="nav-btn avatar" aria-expanded="false" aria-label="Mi cuenta" title="Mi cuenta">👤</button>
       <ul class="submenu derecha">
-        <li class="correo" data-correo></li>
+        <li class="correo"><b data-rol></b><br><span data-correo></span></li>
         <li><a href="../../../index.html" target="_blank" rel="noopener"><span>Ver mapa público ↗</span></a></li>
         <li class="sep" role="separator"></li>
         <li><button data-salir>Cerrar sesión</button></li>
@@ -147,6 +158,59 @@
     </article>
   </section>
 
+  <section class="vista" data-vista="incidencias/reportes" hidden>
+    <div class="cab-vista"><div><h1>Reportes de vecinos</h1><p id="repConteo"></p></div></div>
+    <div class="filtros">
+      <input type="text" id="repBusca" placeholder="Buscar por tipo, descripción, casa o vecino" aria-label="Buscar reporte">
+      <select id="repFiltro" aria-label="Filtrar por estado">
+        <option value="">Todos</option><option value="nuevo">Nuevos</option><option value="en_revision">En revisión</option>
+        <option value="atendido">Atendidos</option><option value="descartado">Descartados</option>
+      </select>
+    </div>
+    <div id="repLista" class="lista-tarjetas"></div>
+  </section>
+
+  <section class="vista" data-vista="usuarios/solicitudes" hidden>
+    <div class="cab-vista"><div><h1>Solicitudes de registro</h1><p id="solConteo"></p></div>
+      <select id="solFiltro" aria-label="Qué solicitudes ver" style="width:auto"><option value="pendientes">Pendientes</option><option value="revisadas">Ya revisadas</option></select></div>
+    <p class="nota intro-seccion">Verifica que quien pide la cuenta sea el representante de la casa. Al aprobar, recibe un correo para crear su contraseña; al rechazar, puede volver a intentarlo en 24 horas.</p>
+    <div id="solLista" class="lista-tarjetas"></div>
+  </section>
+
+  <section class="vista" data-vista="usuarios/vecinos" hidden>
+    <div class="cab-vista"><div><h1>Vecinos</h1><p id="vecConteo"></p></div></div>
+    <div class="filtros"><input type="text" id="vecBusca" placeholder="Buscar por nombre, correo, celular o casa" aria-label="Buscar vecino"></div>
+    <div id="vecTabla"></div>
+    <details class="tarjeta invitar">
+      <summary>Agregar un vecino directamente (sin solicitud)</summary>
+      <form id="formInvitarVec" class="form-invitar">
+        <label class="campo"><span>Nombre del representante</span><input type="text" name="nombre" required minlength="3" maxlength="120"></label>
+        <label class="campo"><span>Correo</span><input type="email" name="email" required maxlength="160"></label>
+        <label class="campo"><span>Celular</span><input type="tel" name="celular" maxlength="20"></label>
+        <label class="campo"><span>Número de casa</span><input type="text" name="numero_casa" maxlength="20"></label>
+        <div class="fila"><button class="btn primario" type="submit">Enviar invitación</button></div>
+      </form>
+    </details>
+  </section>
+
+  <section class="vista" data-vista="usuarios/administradores" hidden>
+    <div class="cab-vista"><div><h1>Administradores</h1><p>Personas que pueden gestionar el acueducto.</p></div></div>
+    <p class="nota intro-seccion" id="admAviso">Solo el desarrollador puede agregar, cambiar o eliminar administradores.</p>
+    <div id="admTabla"></div>
+    <article class="tarjeta invitar" id="admInvitar" hidden>
+      <header><h2>Invitar a un administrador</h2></header>
+      <form id="formInvitarAdm" class="form-invitar">
+        <label class="campo"><span>Nombre de usuario</span><input type="text" name="nombre" required minlength="3" maxlength="120"></label>
+        <label class="campo"><span>Correo</span><input type="email" name="email" required maxlength="160"></label>
+        <label class="campo"><span>Celular</span><input type="tel" name="celular" maxlength="20"></label>
+        <label class="campo"><span>Número de casa</span><input type="text" name="numero_casa" maxlength="20"></label>
+        <label class="campo"><span>Rol</span><select name="rol"><option value="administrador">Administrador</option><option value="desarrollador">Desarrollador</option></select></label>
+        <div class="fila"><button class="btn primario" type="submit">Enviar invitación</button></div>
+      </form>
+      <p class="nota">Recibirá un correo para crear su contraseña.</p>
+    </article>
+  </section>
+
   <section class="vista" data-vista="sectores" hidden>
     <div class="cab-vista"><div><h1>Sectores y flujo de agua</h1><p id="secConteo"></p></div>
       <div class="fila"><button class="btn" id="secTodosOff">Quitar agua a todos</button><button class="btn primario" id="secTodosOn">Dar agua a todos</button></div></div>
@@ -192,6 +256,15 @@
           <input type="text" id="nuevoTipoInc" placeholder="Nuevo tipo, ej. Fuga en llave" aria-label="Nuevo tipo de incidencia">
           <button class="btn" id="agregarTipoInc">Añadir</button>
         </div>
+      </article>
+
+      <article class="tarjeta" id="cfg-contacto">
+        <header><h2>Contacto y WhatsApp</h2></header>
+        <label class="campo"><span>Número de WhatsApp (con código de país)</span><input type="tel" id="cfgWhatsapp" placeholder="Ej. +507 6000-0000" maxlength="25"></label>
+        <label class="campo"><span>Mensaje con el que se abre el chat</span><input type="text" id="cfgWhatsappMsg" maxlength="200"></label>
+        <label class="check"><input type="checkbox" id="cfgWhatsappActivo"><span>Mostrar el botón de WhatsApp en la página pública</span></label>
+        <p class="nota" id="cfgWhatsappPrueba"></p>
+        <label class="campo"><span>Correo de contacto (aparece en la política de privacidad)</span><input type="email" id="cfgCorreo" maxlength="160"></label>
       </article>
 
       <article class="tarjeta" id="cfg-copia">

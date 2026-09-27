@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
-<title>Acceso de administración</title>
+<title>Iniciar sesión</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💧</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -39,6 +39,7 @@
   .btn:disabled{opacity:.65;cursor:default}
   .enlace{background:none;border:0;padding:0;color:var(--agua);cursor:pointer;text-decoration:underline;font-size:14px}
   .pie{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-top:16px;font-size:14px}
+  .registro{margin:14px 0 0;padding-top:12px;border-top:1px solid var(--linea);font-size:14px;color:var(--suave)}
   .error{color:var(--bad);font-size:14px;min-height:1.3em;margin:8px 0 0}
   .exito{color:var(--ok);font-size:14px;margin:8px 0 0}
   [hidden]{display:none!important}
@@ -49,7 +50,7 @@
 <main class="tarjeta">
   <div class="marca">
     <div class="gota" aria-hidden="true"></div>
-    <div><h1 id="nombreAcu">Acueducto</h1><p>Acceso de administración</p></div>
+    <div><h1 id="nombreAcu">Acueducto</h1><p>Vecinos y administración</p></div>
   </div>
 
   <!-- Inicio de sesión -->
@@ -61,7 +62,9 @@
     <button class="btn" id="lgBoton">Entrar</button>
     <div class="pie">
       <button type="button" class="enlace" data-ir="olvido">¿Olvidaste tu contraseña?</button>
-      <a href="../../../index.html">Ver mapa público</a>
+      <a href="../../../index.html">Volver al inicio</a>
+    </div>
+    <p class="registro">¿Eres representante de una casa y aún no tienes cuenta? <a href="../../../index.html#/registro">Solicitar acceso</a>
     </div>
   </form>
 
@@ -78,8 +81,8 @@
 
   <!-- Crear contraseña nueva (al llegar desde el enlace del correo) -->
   <form id="v-nueva" hidden>
-    <h2>Contraseña nueva</h2>
-    <p class="intro">Escribe tu nueva contraseña. Debe tener al menos 8 caracteres.</p>
+    <h2 id="nvTitulo">Contraseña nueva</h2>
+    <p class="intro" id="nvIntro">Escribe tu nueva contraseña. Debe tener al menos 8 caracteres.</p>
     <label class="campo"><span>Contraseña nueva</span><input type="password" id="nvClave" autocomplete="new-password" minlength="8" required></label>
     <label class="campo"><span>Repite la contraseña</span><input type="password" id="nvClave2" autocomplete="new-password" minlength="8" required></label>
     <p class="error" id="nvError" role="alert"></p>
@@ -96,15 +99,19 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="../../js/config.js"></script>
+<script src="../../js/sitio.js" data-privacidad="../../../privacidad.html"></script>
 <script>
 (function(){
 'use strict';
 const DESTINO = '../adm/jaar.html';
+const PUBLICO = '../../../index.html';
 const $ = s => document.querySelector(s);
 
 // Se revisa antes de crear el cliente, porque Supabase limpia la dirección al procesar el enlace
 const hash = location.hash || '';
-const esRecuperacion = /type=recovery/.test(hash) || new URLSearchParams(location.search).get('modo') === 'nueva';
+const modo = new URLSearchParams(location.search).get('modo');
+const esInvitacion = /type=invite/.test(hash) || modo === 'invitacion';
+const esRecuperacion = esInvitacion || /type=recovery/.test(hash) || modo === 'nueva';
 const errorEnlace = /error_code=|error=/.test(hash) ? decodeURIComponent((hash.match(/error_description=([^&]+)/) || [])[1] || '').replace(/\+/g, ' ') : '';
 
 function vista(nombre){
@@ -136,6 +143,11 @@ sb.from('configuracion').select('nombre').eq('id', 1).maybeSingle().then(({data}
   if (data && data.nombre){ $('#nombreAcu').textContent = data.nombre; document.title = 'Acceso: ' + data.nombre; }
 });
 
+if (esInvitacion){
+  $('#nvTitulo').textContent = 'Bienvenido: crea tu contraseña';
+  $('#nvIntro').textContent = 'Tu cuenta fue aprobada. Elige una contraseña de al menos 8 caracteres para entrar de ahora en adelante.';
+  $('#nvBoton').textContent = 'Crear contraseña y entrar';
+}
 sb.auth.onAuthStateChange(evento => { if (evento === 'PASSWORD_RECOVERY') vista('nueva'); });
 
 /* --- Entrar --- */
@@ -151,8 +163,20 @@ $('#v-login').addEventListener('submit', async e => {
       : 'No se pudo entrar: ' + error.message;
     return;
   }
-  location.replace(DESTINO);
+  irSegunRol();
 });
+
+/* Administradores a la administración; vecinos a "Enviar un reporte" */
+async function irSegunRol(){
+  const {data:{user}} = await sb.auth.getUser();
+  const {data:p} = user ? await sb.from('perfiles').select('rol,estado').eq('id', user.id).maybeSingle() : {data:null};
+  if (p && p.estado === 'activo' && (p.rol === 'administrador' || p.rol === 'desarrollador')){ location.replace(DESTINO); return; }
+  if (p && p.estado === 'activo'){ location.replace(PUBLICO + '#/reportar'); return; }
+  await sb.auth.signOut();
+  mensaje('Tu cuenta no está activa', p
+    ? 'Tu cuenta está suspendida. Comunícate con la administración del acueducto.'
+    : 'Esta cuenta todavía no tiene acceso. Si enviaste una solicitud, espera a que sea aprobada: te llegará un correo.', true);
+}
 
 /* --- Pedir enlace de recuperación --- */
 $('#v-olvido').addEventListener('submit', async e => {
@@ -183,8 +207,8 @@ $('#v-nueva').addEventListener('submit', async e => {
   ocupado(boton, true, 'Guardando…');
   const {error} = await sb.auth.updateUser({password:c1});
   if (error){ ocupado(boton, false, 'Guardar y entrar'); $('#nvError').textContent = 'No se pudo guardar: ' + error.message; return; }
-  mensaje('Contraseña actualizada', 'Entrando a la administración…');
-  setTimeout(() => location.replace(DESTINO), 900);
+  mensaje(esInvitacion ? '¡Listo, tu cuenta está activa!' : 'Contraseña actualizada', 'Entrando…');
+  setTimeout(irSegunRol, 900);
 });
 
 /* --- Inicio --- */
@@ -200,7 +224,7 @@ $('#v-nueva').addEventListener('submit', async e => {
     else mensaje('El enlace no es válido', 'Puede que haya expirado o ya se haya usado. Pide un enlace nuevo desde «¿Olvidaste tu contraseña?».', true);
     return;
   }
-  if (session){ location.replace(DESTINO); return; }
+  if (session){ irSegunRol(); return; }
   vista('login');
 })();
 })();

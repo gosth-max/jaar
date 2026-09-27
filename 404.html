@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Página no encontrada</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💧</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+  /* Todo va dentro de esta página porque GitHub la muestra desde cualquier dirección */
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  :root{padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+  body{font-family:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:#15323B;background:#F2F6F7;display:grid;place-items:center;padding:24px;text-align:center}
+  .caja{max-width:520px}
+  svg{width:min(260px,70vw);height:auto;display:block;margin:0 auto 10px}
+  .codigo{font-size:15px;font-weight:700;color:#1D6FA3;letter-spacing:.08em;margin:0}
+  h1{font-size:28px;line-height:1.2;margin:6px 0 10px}
+  p{color:#5B7078;margin:0 0 22px;font-size:16px;line-height:1.5}
+  .botones{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+  a{display:inline-flex;align-items:center;padding:11px 18px;border-radius:10px;font-weight:700;text-decoration:none;border:1px solid #D5E0E3;background:#fff;color:#15323B}
+  a.primario{background:#1D6FA3;border-color:#1D6FA3;color:#fff}
+  a:focus-visible{outline:3px solid #1D6FA3;outline-offset:2px}
+  .gota{animation:caer 2.4s ease-in infinite;transform-origin:130px 40px}
+  @keyframes caer{0%{transform:translateY(0);opacity:0}15%{opacity:1}80%{transform:translateY(92px);opacity:1}100%{transform:translateY(96px);opacity:0}}
+  @media (prefers-reduced-motion:reduce){.gota{animation:none}}
+</style>
+</head>
+<body>
+<main class="caja">
+  <svg viewBox="0 0 260 190" role="img" aria-label="Un tubo del que no sale agua">
+    <rect x="18" y="22" width="112" height="26" rx="6" fill="#00C4FF"/>
+    <rect x="112" y="16" width="22" height="38" rx="5" fill="#0096C7"/>
+    <path class="gota" d="M130 40c-5 7-8 11-8 15a8 8 0 0 0 16 0c0-4-3-8-8-15Z" fill="#7EC3EA"/>
+    <ellipse cx="130" cy="160" rx="58" ry="10" fill="#D5E0E3"/>
+    <text x="130" y="128" text-anchor="middle" font-family="system-ui,sans-serif" font-size="46" font-weight="700" fill="#15323B">404</text>
+  </svg>
+  <p class="codigo">ERROR 404</p>
+  <h1>Por aquí no corre el agua</h1>
+  <p>La página que buscas no existe o cambió de lugar. Revisa la dirección o vuelve al inicio.</p>
+  <div class="botones">
+    <a class="primario" id="inicio" href="/">Ir al inicio</a>
+    <a id="mapa" href="/#/mapa">Ver el mapa en vivo</a>
+  </div>
+</main>
+<script>
+  // En GitHub Pages el sitio puede estar dentro de una carpeta (usuario.github.io/repositorio/)
+  (function(){
+    var raiz = '/';
+    var partes = location.pathname.split('/').filter(Boolean);
+    if (/\.github\.io$/i.test(location.hostname) && partes.length) raiz = '/' + partes[0] + '/';
+    document.getElementById('inicio').href = raiz;
+    document.getElementById('mapa').href = raiz + '#/mapa';
+  })();
+</script>
+</body>
+</html>

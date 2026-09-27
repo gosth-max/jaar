@@ -3,474 +3,206 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Mapa del acueducto</title>
-<meta name="description" content="Mapa de la red de agua y estado del servicio por sector en tiempo real.">
+<title>Acueducto: estado del servicio</title>
+<meta name="description" content="Estado del servicio de agua en tiempo real, mapa de la red, historial de incidencias y reportes de los vecinos.">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>💧</text></svg>">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <link rel="stylesheet" href="assets/css/mapa.css">
-<style>
-  :root{--papel:#F2F6F7;--blanco:#fff;--tinta:#15323B;--suave:#5B7078;--linea:#D5E0E3;--agua:#1D6FA3;--agua-claro:#E1EEF6;--gris:#8C989C}
-  *{box-sizing:border-box}
-  html,body{height:100%;margin:0}
-  body{font-family:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);font-size:15px;line-height:1.4;background:#cfd8da}
-  button,input{font:inherit;color:inherit}
-  a{color:var(--agua)}
-  :focus-visible{outline:3px solid var(--agua);outline-offset:2px}
-  #map{position:fixed;inset:0}
-
-  /* ---------- Panel informativo ---------- */
-  .info{position:absolute;z-index:1000;top:calc(12px + env(safe-area-inset-top,0px));right:12px;width:330px;max-height:calc(100% - 24px - env(safe-area-inset-top,0px) - env(safe-area-inset-bottom,0px));
-    background:var(--blanco);border-radius:14px;box-shadow:0 10px 30px rgba(21,50,59,.22);display:flex;flex-direction:column;overflow:hidden}
-  .cab{display:flex;gap:11px;align-items:center;padding:14px 16px 12px;border-bottom:1px solid var(--linea)}
-  .gota{width:32px;height:32px;border-radius:50% 50% 50% 4px;transform:rotate(-45deg);background:var(--agua);flex:none}
-  .cab h1{font-size:18px;margin:0;line-height:1.15}
-  .cab p{margin:1px 0 0;color:var(--suave);font-size:13px}
-  .cab .txt{flex:1;min-width:0}
-  #plegar{display:none;background:none;border:0;font-size:20px;padding:4px 6px;color:var(--suave);cursor:pointer}
-  .cuerpo{overflow-y:auto;padding:4px 16px 16px}
-  h2{font-size:13.5px;margin:16px 0 8px;color:var(--suave)}
-
-  .vivo{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;font-weight:700;color:var(--suave);margin-top:10px}
-  .vivo i{width:8px;height:8px;border-radius:50%;background:var(--gris)}
-  .vivo.on{color:#2F8F5B} .vivo.on i{background:#2F8F5B;animation:acu-latido-verde 1.6s infinite}
-  @keyframes acu-latido-verde{0%,100%{box-shadow:0 0 0 0 rgba(47,143,91,.5)}50%{box-shadow:0 0 0 5px rgba(47,143,91,0)}}
-
-  .resumen-agua{background:var(--agua-claro);border-radius:10px;padding:10px 12px;font-size:14px}
-  .resumen-agua b{font-size:20px;display:block;line-height:1.1}
-
-  .sectores{list-style:none;margin:8px 0 0;padding:0;border:1px solid var(--linea);border-radius:10px;overflow:hidden}
-  .sectores li+li{border-top:1px solid var(--linea)}
-  .sectores button{width:100%;background:none;border:0;text-align:left;padding:9px 11px;display:flex;gap:10px;align-items:center;cursor:pointer}
-  .sectores button:hover{background:var(--agua-claro)}
-  .sectores .muestra{width:14px;height:14px;border-radius:4px;flex:none}
-  .sectores .nom{flex:1;min-width:0}
-  .sectores small{display:block;color:var(--suave);font-size:12.5px}
-  .pill{border-radius:999px;padding:2px 9px;font-size:12.5px;font-weight:700;white-space:nowrap}
-  .pill.con{background:var(--agua-claro);color:var(--agua)}
-  .pill.sin{background:#EAEFF0;color:#5F6D72}
-  .vacio{padding:11px;color:var(--suave);font-size:13.5px}
-
-  .buscar{display:flex;gap:6px}
-  .buscar input{flex:1;min-width:0;border:1px solid var(--linea);border-radius:8px;padding:8px 10px;background:var(--blanco)}
-  .buscar button{border:0;background:var(--agua);color:#fff;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer}
-  .nota{font-size:12.5px;color:var(--suave);margin:6px 0 0}
-
-  .capas{display:grid;grid-template-columns:1fr 1fr;gap:6px}
-  .capas label{display:flex;align-items:center;gap:8px;border:1px solid var(--linea);border-radius:8px;padding:7px 9px;cursor:pointer;font-size:14px}
-  .capas svg{width:22px;height:16px;flex:none}
-  .capas input{accent-color:var(--agua)}
-
-  .leyenda{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:6px;font-size:13px;color:var(--suave)}
-  .leyenda li{display:flex;align-items:center;gap:8px}
-  .leyenda svg{width:22px;height:16px;flex:none}
-  .pin-mini{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#E53935;color:#fff;font-size:11px;font-weight:700;border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4);flex:none;margin:0 2px}
-  .ok-red{background:#E3F2E9;color:#2F8F5B;border-radius:10px;padding:10px 12px;font-weight:700;font-size:14px}
-  .mal-red{background:#FDECEA;color:#B3261E;border-radius:10px;padding:10px 12px;font-weight:700;font-size:14px}
-  .mal-red b{font-size:20px;display:block;line-height:1.1}
-  #listaIncs{margin-top:8px}
-  #listaIncs .muestra{background:#E53935}
-  .pie{margin-top:18px;padding-top:10px;border-top:1px solid var(--linea);font-size:12.5px;color:var(--suave);display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
-
-  #aviso{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translate(-50%,20px);opacity:0;background:var(--tinta);color:#fff;
-    padding:10px 16px;border-radius:8px;z-index:5000;transition:.2s;pointer-events:none;max-width:90vw;font-size:14px}
-  #aviso.ver{opacity:1;transform:translate(-50%,0)}
-
-  #cargando{position:fixed;inset:0;z-index:3000;display:grid;place-items:center;background:rgba(21,50,59,.35)}
-  #cargando[hidden]{display:none}
-  #cargando div{background:#fff;border-radius:12px;padding:16px 22px;font-weight:700;box-shadow:0 10px 30px rgba(0,0,0,.2);max-width:90vw;text-align:center}
-
-  @media (max-width:700px){
-    .info{top:auto;right:0;left:0;bottom:0;width:100%;max-height:62%;border-radius:16px 16px 0 0;padding-bottom:env(safe-area-inset-bottom,0px)}
-    #plegar{display:block}
-    .info.plegado .cuerpo{display:none}
-    .leaflet-bottom.leaflet-left{bottom:auto;top:calc(120px + env(safe-area-inset-top,0px))}
-    .leaflet-bottom.leaflet-right{display:none}
-  }
-  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
-</style>
+<link rel="stylesheet" href="assets/css/publico.css">
 </head>
 <body>
 
-<div id="map" aria-label="Mapa de la red de agua"></div>
-
-<section class="info" id="info">
-  <div class="cab">
+<header class="barra">
+  <a class="marca" href="#/inicio">
     <div class="gota" aria-hidden="true"></div>
-    <div class="txt"><h1 id="nombreAcu">Acueducto</h1><p>Mapa de la red de agua</p></div>
-    <button id="plegar" aria-expanded="true" aria-controls="cuerpo" aria-label="Mostrar u ocultar información">▾</button>
-  </div>
-  <div class="cuerpo" id="cuerpo">
-    <span class="vivo" id="vivo"><i></i><span>Conectando…</span></span>
-
-    <h2>Incidencias activas</h2>
-    <div id="estadoRed"></div>
-    <ul class="sectores" id="listaIncs" hidden></ul>
-
-    <h2>Agua por sector</h2>
-    <div class="resumen-agua" id="resumenAgua"><b>—</b>Cargando estado del servicio…</div>
-    <ul class="sectores" id="listaSectores"></ul>
-
-    <h2>Buscar mi casa</h2>
-    <form class="buscar" id="formBuscar">
-      <input type="text" id="buscaCasa" placeholder="Número de casa" aria-label="Número de casa" inputmode="text">
-      <button>Buscar</button>
-    </form>
-
-    <h2>Mostrar en el mapa</h2>
-    <div class="capas">
-      <label><input type="checkbox" data-capa="sector" checked>
-        <svg viewBox="0 0 22 16"><rect x="1.5" y="1.5" width="19" height="13" rx="2" fill="#1E88E5" fill-opacity=".35" stroke="#1E88E5" stroke-width="2" stroke-dasharray="4 3"/></svg>Sectores</label>
-      <label><input type="checkbox" data-capa="tuberia" checked>
-        <svg viewBox="0 0 22 16"><path d="M1 12h7c2 0 3-1 3-3V7c0-2 1-3 3-3h7" fill="none" stroke="#00C4FF" stroke-width="3.5" stroke-linecap="round"/></svg>Tuberías</label>
-      <label><input type="checkbox" data-capa="llave" checked>
-        <svg viewBox="0 0 22 16"><circle cx="11" cy="8" r="6" fill="#8A4FBF" stroke="#fff" stroke-width="2"/></svg>Llaves</label>
-      <label><input type="checkbox" data-capa="casa" checked>
-        <svg viewBox="0 0 22 16"><rect x="5" y="2" width="12" height="12" fill="#3B6EA8" fill-opacity=".5" stroke="#3B6EA8" stroke-width="1.5"/></svg>Casas</label>
-    </div>
-    <ul class="leyenda">
-      <li><svg viewBox="0 0 22 16"><path d="M1 8h20" stroke="#E53935" stroke-width="5" stroke-linecap="round"/></svg>Tubería, casa o zona afectada por una incidencia</li>
-      <li><span class="pin-mini">!</span>Lugar exacto del problema</li>
-      <li><svg viewBox="0 0 22 16"><path d="M4 4l9 4-9 4z" fill="#004E6B"/></svg>Dirección del agua (acércate para verla)</li>
+    <div><strong id="nombreAcu">Acueducto</strong><small>Estado del servicio de agua</small></div>
+  </a>
+  <button id="menuBtn" aria-expanded="false" aria-controls="nav" aria-label="Menú">☰<span> Menú</span></button>
+  <nav id="nav" aria-label="Secciones">
+    <a href="#/inicio" data-ruta="inicio">Inicio</a>
+    <a href="#/mapa" data-ruta="mapa">Mapa en vivo</a>
+    <a href="#/calendario" data-ruta="calendario">Calendario</a>
+    <a href="#/reportar" data-ruta="reportar">Enviar reporte</a>
+  </nav>
+  <div class="cuenta-der" id="cuentaDer">
+    <a class="btn" id="btnEntrar" href="assets/pages/auth/auth.html">Iniciar sesión</a>
+    <button class="btn-cuenta" id="btnCuenta" aria-expanded="false" hidden><span class="ini" id="cuentaIni">?</span><span id="cuentaNombre"></span></button>
+    <ul class="menu-cuenta" id="menuCuenta" hidden>
+      <li class="quien"><b id="menuNombre"></b><span id="menuCorreo"></span></li>
+      <li><a href="#/reportar">Mis reportes</a></li>
+      <li id="menuAdm" hidden><a href="assets/pages/adm/jaar.html">Administración</a></li>
+      <li><button id="btnSalir">Cerrar sesión</button></li>
     </ul>
-    <p class="nota">Los sectores en color tienen agua ahora; los grises con borde punteado están sin agua. Toca una tubería para ver su nombre y su estado.</p>
-
-    <div class="pie"><span id="actualizado"></span><a href="assets/pages/auth/auth.html">Administración</a></div>
   </div>
-</section>
+</header>
 
-<div id="cargando"><div>Cargando el mapa…</div></div>
+<main id="vistas">
+
+  <!-- ======================= Inicio ======================= -->
+  <section class="vista" data-vista="inicio" hidden>
+    <div id="dash"></div>
+  </section>
+
+  <!-- ======================= Mapa en vivo ======================= -->
+  <section class="vista vista-mapa" data-vista="mapa" hidden>
+    <div id="map" aria-label="Mapa de la red de agua"></div>
+    <section class="info" id="info">
+      <div class="cab">
+        <div class="txt"><h2>Mapa en vivo</h2><p><span class="vivo" id="vivo"><i></i><span>Conectando…</span></span></p></div>
+        <button id="plegar" aria-expanded="true" aria-controls="infoCuerpo" aria-label="Mostrar u ocultar información">▾</button>
+      </div>
+      <div class="cuerpo" id="infoCuerpo">
+        <h3>Incidencias activas</h3>
+        <div id="estadoRed"></div>
+        <ul class="lista" id="listaIncs" hidden></ul>
+        <h3>Agua por sector</h3>
+        <div class="resumen-agua" id="resumenAgua"><b>—</b>Cargando…</div>
+        <ul class="lista" id="listaSectores"></ul>
+        <h3>Buscar mi casa</h3>
+        <form class="buscar" id="formBuscar">
+          <input type="text" id="buscaCasa" placeholder="Número de casa" aria-label="Número de casa">
+          <button>Buscar</button>
+        </form>
+        <h3>Mostrar en el mapa</h3>
+        <div class="capas">
+          <label><input type="checkbox" data-capa="sector" checked>
+            <svg viewBox="0 0 22 16"><rect x="1.5" y="1.5" width="19" height="13" rx="2" fill="#1E88E5" fill-opacity=".35" stroke="#1E88E5" stroke-width="2" stroke-dasharray="4 3"/></svg>Sectores</label>
+          <label><input type="checkbox" data-capa="tuberia" checked>
+            <svg viewBox="0 0 22 16"><path d="M1 12h7c2 0 3-1 3-3V7c0-2 1-3 3-3h7" fill="none" stroke="#00C4FF" stroke-width="3.5" stroke-linecap="round"/></svg>Tuberías</label>
+          <label><input type="checkbox" data-capa="llave" checked>
+            <svg viewBox="0 0 22 16"><circle cx="11" cy="8" r="6" fill="#8A4FBF" stroke="#fff" stroke-width="2"/></svg>Llaves</label>
+          <label><input type="checkbox" data-capa="casa" checked>
+            <svg viewBox="0 0 22 16"><rect x="5" y="2" width="12" height="12" fill="#3B6EA8" fill-opacity=".5" stroke="#3B6EA8" stroke-width="1.5"/></svg>Casas</label>
+        </div>
+        <ul class="leyenda">
+          <li><svg viewBox="0 0 22 16"><path d="M1 8h20" stroke="#E53935" stroke-width="5" stroke-linecap="round"/></svg>Afectado por una incidencia</li>
+          <li><span class="pin-mini">!</span>Lugar exacto del problema</li>
+          <li><svg viewBox="0 0 22 16"><path d="M4 4l9 4-9 4z" fill="#004E6B"/></svg>Dirección del agua (acércate para verla)</li>
+        </ul>
+        <p class="nota">Sectores en color: con agua. En gris con borde punteado: sin agua. Toca una tubería para ver su estado.</p>
+        <p class="nota" id="actualizado"></p>
+      </div>
+    </section>
+  </section>
+
+  <!-- ======================= Calendario ======================= -->
+  <section class="vista" data-vista="calendario" hidden>
+    <div class="cab-vista"><div><h1>Historial de incidencias</h1><p>Toca un día para ver qué pasó, a qué hora ocurrió y cuándo se resolvió.</p></div>
+      <div class="fila"><button class="btn" id="calPrev" aria-label="Mes anterior">‹ Anterior</button><button class="btn" id="calHoy">Hoy</button><button class="btn" id="calNext" aria-label="Mes siguiente">Siguiente ›</button></div></div>
+    <article class="tarjeta">
+      <header><h2 id="calTitulo"></h2><span class="nota" id="calResumen"></span></header>
+      <div class="calendario" id="calGrid"></div>
+      <div class="leyenda-cal"><span><i class="dot abierta"></i>Con incidencias sin resolver</span><span><i class="dot resuelta"></i>Todas resueltas</span><span><i class="dot hoy"></i>Hoy</span></div>
+    </article>
+  </section>
+
+  <!-- ======================= Enviar reporte ======================= -->
+  <section class="vista" data-vista="reportar" hidden>
+    <div class="cab-vista"><div><h1>Enviar un reporte</h1><p>Avísale a la administración de fugas, falta de agua u otros problemas.</p></div></div>
+
+    <!-- Sin sesión -->
+    <article class="tarjeta bienvenida" id="repSinSesion" hidden>
+      <div class="ic" aria-hidden="true">💧</div>
+      <h2>Los reportes los envían los representantes de cada casa</h2>
+      <p>Para evitar reportes falsos, solo los representantes verificados de cada casa pueden enviar reportes. Si ya tienes cuenta, inicia sesión; si no, solicítala.</p>
+      <div class="fila" style="justify-content:center">
+        <a class="btn primario grande" href="assets/pages/auth/auth.html">Iniciar sesión</a>
+        <button class="btn grande" id="abrirRegistro">Solicitar una cuenta</button>
+      </div>
+      <ol class="pasos">
+        <li><b class="n">1</b><span>Envías tu solicitud con tu nombre, celular, correo y número de casa.</span></li>
+        <li><b class="n">2</b><span>La administración verifica que seas el representante de la casa.</span></li>
+        <li><b class="n">3</b><span>Te llega un correo para crear tu contraseña y ya puedes enviar reportes.</span></li>
+      </ol>
+    </article>
+
+    <!-- Cuenta sin acceso -->
+    <article class="tarjeta bienvenida" id="repSinAcceso" hidden>
+      <div class="ic" aria-hidden="true">🔒</div>
+      <h2>Tu cuenta no puede enviar reportes</h2>
+      <p id="repSinAccesoTxt">Tu cuenta no está activa.</p>
+    </article>
+
+    <!-- Con sesión de vecino -->
+    <div class="reportar" id="repConSesion" hidden>
+      <article class="tarjeta">
+        <header><h2>Nuevo reporte</h2></header>
+        <form id="formReporte" novalidate>
+          <label class="campo"><span>¿Qué está pasando?</span>
+            <select name="tipo" required>
+              <option value="">Elige una opción</option>
+              <option>Fuga de agua</option><option>Sin agua</option><option>Baja presión</option>
+              <option>Agua sucia o con olor</option><option>Tubería rota</option><option>Llave dañada</option><option>Otro</option>
+            </select></label>
+          <label class="campo"><span>Descríbelo <span class="contador" id="repContador">0 / 1000</span></span>
+            <textarea name="descripcion" maxlength="1000" required placeholder="Ej. Hay una fuga en la calle frente a la casa 12 desde esta mañana."></textarea></label>
+          <div class="campo"><span>¿Dónde? (opcional) Toca el mapa para marcar el lugar.</span>
+            <div id="mapaReporte" aria-label="Mapa para marcar el lugar del reporte"></div>
+            <div class="fila" style="margin-top:6px"><span class="nota" id="repUbicacion">Sin ubicación marcada.</span><button type="button" class="btn" id="repQuitarPunto" hidden>Quitar</button></div>
+          </div>
+          <label class="trampa" aria-hidden="true">No llenar este campo<input type="text" name="sitio_web" tabindex="-1" autocomplete="off"></label>
+          <div class="fila"><button class="btn primario grande" type="submit" id="repEnviar">Enviar reporte</button></div>
+          <div class="mensaje-form" id="repMensaje" hidden></div>
+        </form>
+      </article>
+      <article class="tarjeta">
+        <header><h2>Mis reportes</h2></header>
+        <div id="misReportes"></div>
+      </article>
+    </div>
+  </section>
+
+  <footer class="pie" id="pie">
+    <div class="dentro">
+      <span id="pieNombre">Acueducto</span>
+      <nav aria-label="Información legal">
+        <a href="privacidad.html">Política de privacidad</a>
+        <a href="privacidad.html#cookies">Aviso de cookies</a>
+        <a href="assets/pages/auth/auth.html">Acceso</a>
+      </nav>
+    </div>
+  </footer>
+</main>
+
+<!-- Detalle de un día del calendario -->
+<dialog id="dlgDia" class="modal" aria-labelledby="dlgTitulo">
+  <header><h2 id="dlgTitulo"></h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
+  <div class="modal-cuerpo" id="dlgCuerpo"></div>
+</dialog>
+
+<!-- Solicitud de cuenta -->
+<dialog id="dlgRegistro" class="modal" aria-labelledby="regTitulo">
+  <header><h2 id="regTitulo">Solicitar una cuenta</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
+  <div class="modal-cuerpo">
+    <p class="nota" style="margin-top:0">Solo para el <b>representante legal de cada casa</b>. La administración revisará tus datos antes de activar la cuenta.</p>
+    <form id="formRegistro" novalidate>
+      <label class="campo"><span>Nombre del representante legal de la casa</span><input type="text" name="nombre" required minlength="3" maxlength="120" autocomplete="name"></label>
+      <label class="campo"><span>Número de casa</span><input type="text" name="numero_casa" required maxlength="20" placeholder="Ej. 12"></label>
+      <label class="campo"><span>Celular</span><input type="tel" name="celular" required maxlength="20" autocomplete="tel" placeholder="Ej. 6000-0000"></label>
+      <label class="campo"><span>Correo electrónico</span><input type="email" name="email" required maxlength="160" autocomplete="email"></label>
+      <label class="trampa" aria-hidden="true">No llenar este campo<input type="text" name="sitio_web" tabindex="-1" autocomplete="off"></label>
+      <label class="check"><input type="checkbox" name="acepto" required><span>Acepto que mis datos se usen para verificar mi casa y gestionar mi cuenta, según la <a href="privacidad.html" target="_blank" rel="noopener">política de privacidad</a>.</span></label>
+      <div class="fila"><button class="btn primario grande" type="submit" id="regEnviar">Enviar solicitud</button></div>
+      <div class="mensaje-form" id="regMensaje" hidden></div>
+    </form>
+  </div>
+</dialog>
+
+<a class="wa" id="whatsapp" href="#" target="_blank" rel="noopener" hidden aria-label="Escríbenos por WhatsApp">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a8.5 8.5 0 0 1-12.6 7.4L3 21l1.6-5.2A8.5 8.5 0 1 1 21 12Z"/><path d="M8.5 10.5h7M8.5 13.5h4.5"/></svg>
+  <span>Escríbenos por WhatsApp</span>
+</a>
+<div id="cargando"><div>Cargando…</div></div>
 <div id="aviso" role="status"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="assets/js/config.js"></script>
 <script src="assets/js/comun.js"></script>
-<script>
-(function(){
-'use strict';
-const $ = s => document.querySelector(s);
-const esc = Acu.esc, TIPOS = Acu.TIPOS, ROJO = Acu.ROJO;
-function aviso(txt){ const a = $('#aviso'); a.textContent = txt; a.classList.add('ver'); clearTimeout(aviso.t); aviso.t = setTimeout(() => a.classList.remove('ver'), 3500); }
-function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
-
-const map = Acu.crearMapa('map', {aviso});
-map.createPane('incidencias').style.zIndex = 450;
-const grupos = {
-  sector:  L.layerGroup().addTo(map),
-  tuberia: L.layerGroup().addTo(map),
-  llave:   L.layerGroup().addTo(map),
-  casa:    L.layerGroup().addTo(map)
-};
-const capaInc = L.layerGroup().addTo(map);
-const capaFlechas = L.layerGroup();
-const capas = new Map();          // id -> capa (con .fila)
-const incs = new Map();           // incidencias abiertas (tabla pública)
-let afectados = new Map(), tocados = new Map(), resultados = new Map();
-let versionGeo = 0, redCache = null, sb = null, primeraCarga = true, canal = null;
-
-/* ---------- Red de tuberías (misma lógica que la administración) ---------- */
-const elementos = () => [...capas.values()].map(l => ({id:l.fila.id, tipo:l.fila.tipo, datos:l.fila.datos || {}, layer:l}));
-function red(){
-  if (!redCache || redCache.v !== versionGeo) redCache = {v:versionGeo, red:Acu.construirRed(elementos())};
-  return redCache.red;
-}
-const nombreSector = id => { const l = capas.get(id); return l ? (l.fila.datos.nombre || 'Sector sin nombre') : ''; };
-function nombreElemento(r){
-  const d = r.datos || {};
-  if (r.tipo === 'casa') return d.numero ? 'Casa ' + d.numero : 'Casa';
-  if (r.tipo === 'tuberia') return (d.clase === 'acometida' ? 'Acometida' : 'Tubería') + (d.nombre ? ' ' + d.nombre : '');
-  if (r.tipo === 'llave') return d.nombre ? 'Llave ' + d.nombre : 'Llave';
-  if (r.tipo === 'sector') return d.nombre || 'Sector';
-  return 'Elemento';
-}
-function incsDe(id){
-  const vistas = new Set(), out = [];
-  [...(afectados.get(id) || []), ...(tocados.get(id) || [])].forEach(i => { if (!vistas.has(i.id)){ vistas.add(i.id); out.push(i); } });
-  return out;
-}
-const textoIncs = id => [...new Set(incsDe(id).map(i => i.tipo))].join(', ');
-const marcar = (layer, cls, si) => { const el = layer.getElement && layer.getElement(); if (el) el.classList.toggle(cls, !!si); };
-
-/* ---------- Estilo de cada elemento ---------- */
-function estilo(layer){
-  const r = layer.fila, d = r.datos || {};
-  const esPunto = layer instanceof L.CircleMarker, esPol = layer instanceof L.Polygon;
-  const lista = afectados.get(r.id);
-  if (lista && lista.length){
-    const inc = lista[0], col = inc.color || ROJO, op = Math.min(1, Math.max(.05, Number(inc.opacidad) || .75));
-    Acu.quitarClasesSector(layer);
-    if (esPunto) layer.setStyle({radius:r.tipo === 'llave' ? 8 : 6, color:'#fff', weight:2, fillColor:col, fillOpacity:op});
-    else if (esPol) layer.setStyle({color:col, weight:2.5, opacity:1, fillColor:col, fillOpacity:op, dashArray:null});
-    else layer.setStyle({color:col, weight:d.clase === 'acometida' ? 3.5 : 5.5, opacity:op, lineCap:'round', dashArray:null});
-    marcar(layer, 'con-incidencia', true);
-    if (r.tipo === 'sector'){ Acu.ponerEtiquetaSector(layer, d, textoIncs(r.id)); if (layer._map) layer.bringToBack(); }
-    return;
-  }
-  marcar(layer, 'con-incidencia', false);
-  const col = r.tipo === 'tuberia' ? Acu.COLOR_TUBERIA : (r.color || (TIPOS[r.tipo] || TIPOS.sin).color);
-  if (r.tipo === 'sector' && esPol){
-    Acu.estiloSector(layer, col, d, false);
-    Acu.ponerEtiquetaSector(layer, d, textoIncs(r.id));
-    return;
-  }
-  if (esPunto){
-    const cerrada = r.tipo === 'llave' && d.estado === 'cerrada';
-    layer.setStyle({radius:r.tipo === 'llave' ? 8 : 6, color:cerrada ? col : '#fff', weight:cerrada ? 3 : 2, fillColor:col, fillOpacity:cerrada ? 0.15 : 0.95});
-  } else if (esPol){
-    layer.setStyle({color:col, weight:1.5, opacity:1, fillColor:col, fillOpacity:0.5, dashArray:null});
-  } else {
-    layer.setStyle({color:col, weight:r.tipo === 'tuberia' ? (d.clase === 'acometida' ? 3 : 5) : 3, opacity:.95, lineCap:'round', dashArray:null});
-  }
-}
-
-/* ---------- Ventanita al tocar un elemento ---------- */
-function explicacion(inc, id){
-  const res = resultados.get(inc.id);
-  const o = capas.get(inc.forma_id);
-  if (inc.forma_id === id){
-    if (inc.ubicacion === 'punto') return 'En un punto de esta tubería (marcado con !)';
-    if (inc.ubicacion === 'tramo_ab') return 'Entre los puntos A y B marcados';
-    return 'Reportada aquí';
-  }
-  if (res && res.tubos.has(id) && !res.formas.has(id)) return 'Afecta una parte de esta tubería';
-  return 'Por una incidencia en ' + (o ? nombreElemento(o.fila) : 'la red');
-}
-function contenidoPopup(layer){
-  const r = layer.fila, d = r.datos || {}, lista = incsDe(r.id);
-  const meta = [];
-  if (r.tipo === 'tuberia'){
-    meta.push([d.clase === 'acometida' ? 'Conexión a una casa' : 'Línea principal', d.diametro ? d.diametro + '"' : '', d.material].filter(Boolean).map(esc).join(' · '));
-    const secs = (d.sectores || []).map(nombreSector).filter(Boolean);
-    if (secs.length) meta.push('Abastece: ' + esc(secs.join(', ')));
-  }
-  if (r.tipo === 'llave') meta.push(d.estado === 'cerrada' ? 'Llave cerrada' : 'Llave abierta');
-  if (r.tipo === 'sector') meta.push(esc((d.activo ? 'Con agua ' : 'Sin agua ') + Acu.desde(d.activoDesde)));
-  const estado = lista.length
-    ? `<div class="estado mal">${lista.map(i => `⚠ ${esc(i.tipo)}<small>${esc(explicacion(i, r.id))} · desde ${esc(Acu.fechaHora(i.creada_en))}</small>`).join('')}</div>`
-    : `<div class="estado ok">✓ ${r.tipo === 'tuberia' ? 'Funcionando con normalidad' : 'Sin incidencias'}</div>`;
-  return `<h3>${esc(nombreElemento(r))}</h3>${meta.filter(Boolean).length ? `<p class="meta">${meta.filter(Boolean).join('<br>')}</p>` : ''}${estado}`;
-}
-
-/* ---------- Agregar y quitar elementos ---------- */
-function quitar(id){
-  const l = capas.get(id);
-  if (!l) return;
-  Object.values(grupos).forEach(g => g.removeLayer(l));
-  capas.delete(id);
-  versionGeo++;
-}
-function agregar(r){
-  quitar(r.id);
-  const grupo = grupos[r.tipo];
-  if (!grupo) return;
-  const layer = Acu.capaDesdeGeom(r.geometria);
-  if (!layer) return;
-  layer.fila = r;
-  layer.addTo(grupo);
-  capas.set(r.id, layer);
-  layer.bindPopup(() => contenidoPopup(layer), {className:'popup-acu', maxWidth:290});
-  if (r.tipo !== 'sector') Acu.ponerTooltip(layer, esc(nombreElemento(r)));
-  estilo(layer);
-  versionGeo++;
-}
-function ordenarSectores(){ grupos.sector.eachLayer(l => { if (l._map) l.bringToBack(); }); }
-
-/* ---------- Incidencias ---------- */
-function recalcular(){
-  const rd = red();
-  resultados = new Map();
-  const antes = new Set([...afectados.keys(), ...tocados.keys()]);
-  const nA = new Map(), nT = new Map();
-  const poner = (m, id, inc) => { if (!m.has(id)) m.set(id, []); m.get(id).push(inc); };
-  capaInc.clearLayers();
-  [...incs.values()].sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en))).forEach(inc => {
-    const o = capas.get(inc.forma_id);
-    const res = Acu.afectacion(rd, inc, o ? {id:o.fila.id, tipo:o.fila.tipo} : null);
-    resultados.set(inc.id, res);
-    res.formas.forEach(id => poner(nA, id, inc));
-    res.tubos.forEach(id => { if (!res.formas.has(id)) poner(nT, id, inc); });
-    if (o && !res.formas.has(inc.forma_id) && !res.tubos.has(inc.forma_id)) poner(nT, inc.forma_id, inc);
-    const col = inc.color || ROJO;
-    res.piezas.forEach(p => {
-      L.polyline(p.latlngs, {pane:'incidencias', color:col, weight:7, opacity:.95, lineCap:'round', className:'con-incidencia'})
-        .on('click', ev => { const t = capas.get(p.tubo); if (t) L.popup({className:'popup-acu', maxWidth:290}).setLatLng(ev.latlng).setContent(contenidoPopup(t)).openOn(map); })
-        .addTo(capaInc);
-    });
-    res.puntos.forEach((ll, i) => {
-      const txt = res.puntos.length > 1 ? (i ? 'B' : 'A') : '!';
-      L.marker(ll, {icon:Acu.iconoIncidencia(txt), zIndexOffset:1000, keyboard:false})
-        .bindPopup(`<h3>⚠ ${esc(inc.tipo)}</h3><p class="meta">${res.puntos.length > 1 ? `Punto ${txt} del tramo afectado` : 'Lugar del problema'}${o ? ' en ' + esc(nombreElemento(o.fila)) : ''}</p>
-          <div class="estado mal">Desde ${esc(Acu.fechaHora(inc.creada_en))}<small>${esc(Acu.hace(inc.creada_en))}</small></div>`, {className:'popup-acu', maxWidth:290})
-        .addTo(capaInc);
-    });
-  });
-  afectados = nA; tocados = nT;
-  new Set([...antes, ...afectados.keys(), ...tocados.keys()]).forEach(id => { const l = capas.get(id); if (l) estilo(l); });
-  ordenarSectores();
-  renderIncs();
-  renderSectores();
-}
-const recalcularPronto = debounce(recalcular, 200);
-
-function renderIncs(){
-  const lista = [...incs.values()].filter(i => capas.has(i.forma_id)).sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en)));
-  const est = $('#estadoRed'), ul = $('#listaIncs');
-  if (!lista.length){
-    est.innerHTML = '<div class="ok-red">✓ No hay incidencias en la red en este momento.</div>';
-    ul.hidden = true; ul.innerHTML = '';
-    return;
-  }
-  const casas = new Set();
-  resultados.forEach(r => r.casas.forEach(c => casas.add(c)));
-  est.innerHTML = `<div class="mal-red"><b>${lista.length}</b>${lista.length === 1 ? 'incidencia activa' : 'incidencias activas'}${casas.size ? ` · ${casas.size} ${casas.size === 1 ? 'casa afectada' : 'casas afectadas'}` : ''}</div>`;
-  ul.hidden = false;
-  ul.innerHTML = lista.map((i, n) => {
-    const o = capas.get(i.forma_id);
-    return `<li><button data-inc="${n}"><i class="muestra"></i>
-      <span class="nom">${esc(i.tipo)}<small>${esc(o ? nombreElemento(o.fila) : '')} · ${esc(Acu.desde(i.creada_en))}</small></span>
-      <span class="pill sin">Ver</span></button></li>`;
-  }).join('');
-  ul.querySelectorAll('[data-inc]').forEach(b => b.addEventListener('click', () => {
-    const inc = lista[Number(b.dataset.inc)], res = resultados.get(inc.id), bnd = L.latLngBounds([]);
-    if (res){
-      [...res.formas, ...res.tubos, inc.forma_id].forEach(id => { const l = capas.get(id); if (l) bnd.extend(l.getBounds ? l.getBounds() : l.getLatLng()); });
-      res.puntos.forEach(p => bnd.extend(p));
-    }
-    if (bnd.isValid()) map.fitBounds(bnd, {maxZoom:18, padding:[40,40]});
-    const o = capas.get(inc.forma_id);
-    if (o) setTimeout(() => (res && res.puntos.length ? L.popup({className:'popup-acu'}).setLatLng(res.puntos[0]).setContent(contenidoPopup(o)).openOn(map) : o.openPopup()), 350);
-    plegarEnMovil();
-  }));
-}
-
-/* ---------- Lista de sectores ---------- */
-function renderSectores(){
-  const sectores = [...capas.values()].filter(l => l.fila.tipo === 'sector');
-  sectores.sort((a, b) => String(a.fila.datos.nombre || '').localeCompare(String(b.fila.datos.nombre || ''), 'es', {numeric:true}));
-  const conAgua = sectores.filter(l => l.fila.datos.activo).length;
-  const res = $('#resumenAgua'), ul = $('#listaSectores');
-  if (!sectores.length){ res.innerHTML = '<b>—</b>Todavía no hay sectores publicados.'; ul.innerHTML = ''; ul.hidden = true; return; }
-  ul.hidden = false;
-  res.innerHTML = `<b>${conAgua} de ${sectores.length}</b>${sectores.length === 1 ? 'sector' : 'sectores'} con agua en este momento`;
-  ul.innerHTML = sectores.map((l, i) => {
-    const d = l.fila.datos || {}, activo = !!d.activo, inc = textoIncs(l.fila.id);
-    const muestra = inc ? ROJO : activo ? (l.fila.color || TIPOS.sector.color) : Acu.SIN_FLUJO.relleno;
-    return `<li><button data-i="${i}"><i class="muestra" style="background:${esc(muestra)}"></i>
-      <span class="nom">${esc(d.nombre || 'Sector sin nombre')}<small>${esc(inc ? '⚠ ' + inc : Acu.desde(d.activoDesde))}</small></span>
-      <span class="pill ${activo ? 'con' : 'sin'}">${activo ? 'Con agua' : 'Sin agua'}</span></button></li>`;
-  }).join('');
-  ul.querySelectorAll('[data-i]').forEach(b => b.addEventListener('click', () => {
-    const l = sectores[Number(b.dataset.i)];
-    if (!map.hasLayer(grupos.sector)) mostrarGrupo('sector', true);
-    map.fitBounds(l.getBounds(), {maxZoom:18, padding:[40,40]});
-    plegarEnMovil();
-  }));
-}
-
-/* ---------- Flechas de dirección ---------- */
-function dibujarFlechas(){
-  Acu.dibujarFlechas(map, elementos(), capaFlechas);
-  const ver = map.getZoom() >= 16 && map.hasLayer(grupos.tuberia);
-  if (ver && !map.hasLayer(capaFlechas)) capaFlechas.addTo(map);
-  if (!ver && map.hasLayer(capaFlechas)) map.removeLayer(capaFlechas);
-}
-const flechasPronto = debounce(dibujarFlechas, 300);
-map.on('zoomend', dibujarFlechas);
-
-function marcarActualizado(){ $('#actualizado').textContent = 'Actualizado a las ' + new Date().toLocaleTimeString('es', {hour:'numeric', minute:'2-digit'}); }
-function ponerNombre(nombre){ if (!nombre) return; $('#nombreAcu').textContent = nombre; document.title = 'Mapa del acueducto ' + nombre; }
-
-/* ---------- Carga y tiempo real ---------- */
-async function cargar(){
-  const [cfg, filas, lista] = await Promise.all([
-    sb.from('configuracion').select('nombre').eq('id', 1).maybeSingle(),
-    Acu.traerTodo(sb, 'mapa_publico'),
-    Acu.traerTodo(sb, 'incidencias_publicas').catch(e => { console.warn('Sin incidencias públicas:', e.message); return []; })
-  ]);
-  if (cfg.data) ponerNombre(cfg.data.nombre);
-  const vistos = new Set(filas.map(r => r.id));
-  [...capas.keys()].forEach(id => { if (!vistos.has(id)) quitar(id); });
-  filas.forEach(agregar);
-  incs.clear();
-  lista.forEach(i => incs.set(i.id, i));
-  recalcular();
-  dibujarFlechas();
-  marcarActualizado();
-  if (primeraCarga){
-    primeraCarga = false;
-    const b = L.latLngBounds([]);
-    capas.forEach(l => b.extend(l.getBounds ? l.getBounds() : l.getLatLng()));
-    if (b.isValid()) map.fitBounds(b, {maxZoom:18, padding:[30,30]});
-  }
-}
-function pintarVivo(on){
-  const v = $('#vivo');
-  v.classList.toggle('on', on);
-  v.querySelector('span').textContent = on ? 'En vivo' : 'Sin conexión en vivo, se actualiza cada 2 minutos';
-}
-function suscribir(){
-  canal = sb.channel('mapa-publico')
-    .on('postgres_changes', {event:'*', schema:'public', table:'mapa_publico'}, p => {
-      if (p.eventType === 'DELETE') quitar(p.old.id); else agregar(p.new);
-      recalcularPronto(); flechasPronto(); marcarActualizado();
-    })
-    .on('postgres_changes', {event:'*', schema:'public', table:'incidencias_publicas'}, p => {
-      if (p.eventType === 'DELETE') incs.delete(p.old.id); else incs.set(p.new.id, p.new);
-      recalcularPronto(); marcarActualizado();
-    })
-    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'configuracion'}, p => { if (p.new) ponerNombre(p.new.nombre); })
-    .subscribe(status => pintarVivo(status === 'SUBSCRIBED'));
-}
-
-/* ---------- Controles ---------- */
-function mostrarGrupo(tipo, visible){
-  const g = grupos[tipo];
-  if (visible){ g.addTo(map); g.eachLayer(estilo); ordenarSectores(); } else map.removeLayer(g);
-  const c = document.querySelector(`[data-capa="${tipo}"]`); if (c) c.checked = visible;
-  if (tipo === 'tuberia') dibujarFlechas();
-}
-document.querySelectorAll('[data-capa]').forEach(c => c.addEventListener('change', () => mostrarGrupo(c.dataset.capa, c.checked)));
-
-$('#formBuscar').addEventListener('submit', e => {
-  e.preventDefault();
-  const q = $('#buscaCasa').value.trim().toLowerCase().replace(/^casa\s*/, '');
-  if (!q) return;
-  const l = [...capas.values()].find(x => x.fila.tipo === 'casa' && String(x.fila.datos.numero || '').trim().toLowerCase() === q);
-  if (!l){ aviso('No encontramos la casa ' + $('#buscaCasa').value.trim() + '.'); return; }
-  if (!map.hasLayer(grupos.casa)) mostrarGrupo('casa', true);
-  if (l.getBounds) map.fitBounds(l.getBounds(), {maxZoom:19, padding:[60,60]}); else map.setView(l.getLatLng(), 19);
-  setTimeout(() => l.openPopup(), 400);
-  plegarEnMovil();
-});
-$('#plegar').addEventListener('click', () => {
-  const plegado = $('#info').classList.toggle('plegado');
-  $('#plegar').textContent = plegado ? '▴' : '▾';
-  $('#plegar').setAttribute('aria-expanded', String(!plegado));
-});
-function plegarEnMovil(){ if (window.innerWidth <= 700 && !$('#info').classList.contains('plegado')) $('#plegar').click(); }
-
-/* ---------- Inicio ---------- */
-(async () => {
-  try { sb = Acu.cliente(); }
-  catch (e){ $('#cargando div').textContent = e.message; return; }
-  try {
-    await cargar();
-    $('#cargando').hidden = true;
-    suscribir();
-  } catch (err){
-    console.error(err);
-    $('#cargando div').innerHTML = 'No se pudo cargar el mapa.<br><small>Revisa tu conexión e inténtalo de nuevo.</small>';
-    setTimeout(() => location.reload(), 20000);
-    return;
-  }
-  setInterval(() => cargar().catch(() => {}), 120000);
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) cargar().catch(() => {}); });
-})();
-})();
-
-</script>
+<script src="assets/js/publico.js"></script>
+<script src="assets/js/sitio.js" data-privacidad="privacidad.html"></script>
 </body>
 </html>
