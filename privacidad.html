@@ -74,7 +74,7 @@
   };
   try {
     const c = window.ACU_CONFIG;
-    const sb = window.supabase.createClient(c.SUPABASE_URL, c.SUPABASE_KEY);
+    const sb = window.supabase.createClient(c.SUPABASE_URL, c.SUPABASE_KEY, {auth:{persistSession:false, autoRefreshToken:false}});
     const {data} = await sb.from('configuracion').select('nombre,correo_contacto,whatsapp,whatsapp_activo,politica_privacidad,politica_actualizada_en').eq('id', 1).maybeSingle();
     const d = data || {};
     if (d.nombre){ document.querySelectorAll('[data-nombre]').forEach(e => { e.textContent = d.nombre; }); document.title = 'Política de privacidad: ' + d.nombre; }

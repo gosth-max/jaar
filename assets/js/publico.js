@@ -474,7 +474,7 @@ $('#btnCuenta').addEventListener('click', e => {
   $('#btnCuenta').setAttribute('aria-expanded', String(ab));
 });
 document.addEventListener('click', e => { if (!e.target.closest('#cuentaDer')) $('#menuCuenta').hidden = true; });
-$('#btnSalir').addEventListener('click', async () => { await sb.auth.signOut(); location.replace('assets/pages/auth/auth.html'); });
+$('#btnSalir').addEventListener('click', () => AcuSesion.cerrar(sb, 'assets/pages/auth/auth.html'));
 
 /* --- Enviar un reporte --- */
 let mapaRep = null, marcaRep = null, puntoRep = null, abiertoRepEn = Date.now(), misReportes = [];
@@ -575,7 +575,7 @@ let misCuentas = [];
 const capaMisCasas = L.layerGroup().addTo(map);
 const METODOS_PAGO = {efectivo:'Efectivo', transferencia:'Transferencia', yappy:'Yappy', cheque:'Cheque', otro:'Otro'};
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
-const dinero = n => (config.moneda || 'B/.') + ' ' + r2(n).toFixed(2);
+const dinero = n => (String(config.moneda || '').split(/[0-9]/)[0].trim().slice(0, 5) || 'B/.') + ' ' + r2(n).toFixed(2);
 function mesNombre(per, corto){
   if (!/^\d{4}-\d{2}$/.test(per || '')) return per || '';
   const [y, m] = per.split('-').map(Number);
@@ -900,6 +900,7 @@ function suscribir(){
     const {data} = await sb.from('perfiles').select('*').eq('id', sesion.user.id).maybeSingle();
     perfil = data || null;
     if (!perfil || perfil.estado !== 'activo'){ location.replace('assets/pages/auth/auth.html'); return; }
+    AcuSesion.vigilarInactividad(sb, {destino:'assets/pages/auth/auth.html'});
     pintarCuenta();
     await cargar();
     router();

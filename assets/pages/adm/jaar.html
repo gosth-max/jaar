@@ -373,11 +373,14 @@
       <article class="tarjeta" id="cfg-general">
         <header><h2>General</h2></header>
         <label class="campo"><span>Nombre del acueducto</span><input type="text" id="cfgNombre"></label>
-        <div class="dos">
-          <label class="campo" hidden><span>Cuota mensual</span><input type="number" id="cfgCuota" min="0" step="0.01"></label>
-          <p class="nota">Las cuotas ahora se configuran en <a href="#/cobros/tarifas">Cobros → Tarifas</a>.</p>
-          <label class="campo"><span>Moneda</span><input type="text" id="cfgMoneda" maxlength="5"></label>
-        </div>
+        <input type="hidden" id="cfgCuota">
+        <label class="campo"><span>Símbolo de la moneda</span>
+          <select id="cfgMoneda">
+            <option value="B/.">B/. (balboa)</option>
+            <option value="$">$ (dólar)</option>
+            <option value="US$">US$ (dólar estadounidense)</option>
+          </select></label>
+        <p class="aviso-cuota">💡 La <b>cuota mensual</b> no se cambia aquí: se configura en <a href="#/cobros/tarifas">Cobros → Tarifas</a>.</p>
         <label class="check"><input type="checkbox" id="cfgColorPago"><span>Colorear las casas según su estado de pago (verde al día, amarillo con deuda, rojo morosa: 3 meses o más). Solo se ve en la administración, nunca en el mapa público.</span></label>
         <p class="nota">El nombre del acueducto también aparece en el mapa público.</p>
       </article>
@@ -506,6 +509,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@geoman-io/leaflet-geoman-free@2.17.0/dist/leaflet-geoman.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="../../js/config.js"></script>
+<script src="../../js/sesion.js"></script>
 <script src="../../js/comun.js"></script>
 <script src="../../js/politica.js"></script>
 <script src="../../js/adm.js"></script>

@@ -119,6 +119,7 @@
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="../../js/config.js"></script>
+<script src="../../js/sesion.js"></script>
 <script src="../../js/sitio.js" data-privacidad="../../../privacidad.html"></script>
 <script>
 (function(){
@@ -157,7 +158,7 @@ if (!window.supabase || !cfg.SUPABASE_URL){
   mensaje('No se pudo conectar', 'Revisa tu conexión a internet y la configuración en assets/js/config.js.');
   return;
 }
-const sb = window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_KEY);
+const sb = window.AcuSesion.crearCliente();   // sesión solo en esta pestaña
 
 // Nombre del acueducto (lectura pública)
 sb.from('configuracion').select('nombre').eq('id', 1).maybeSingle().then(({data}) => {
@@ -193,7 +194,8 @@ async function irSegunRol(){
   const {data:p} = user ? await sb.from('perfiles').select('rol,estado,debe_cambiar_clave').eq('id', user.id).maybeSingle() : {data:null};
   if (p && p.estado === 'activo' && (p.rol === 'administrador' || p.rol === 'desarrollador')){ location.replace(DESTINO); return; }
   if (p && p.estado === 'activo'){ location.replace(PUBLICO + (p.debe_cambiar_clave ? '#/perfil' : '#/inicio')); return; }
-  await sb.auth.signOut();
+  await sb.auth.signOut({scope:'local'});
+  window.AcuSesion.limpiar();
   mensaje('Tu cuenta no está activa', p
     ? 'Tu cuenta está suspendida. Comunícate con la administración del acueducto.'
     : 'Esta cuenta todavía no tiene acceso. Si enviaste una solicitud, espera a que sea aprobada: te llegará un correo.', true);
@@ -247,6 +249,8 @@ $('#v-nueva').addEventListener('submit', async e => {
   }
   if (session){ irSegunRol(); return; }
   vista(modo === 'registro' ? 'registro' : 'login');
+  const motivo = new URLSearchParams(location.search).get('motivo');
+  if (motivo === 'inactividad') $('#lgError').textContent = 'Tu sesión se cerró por inactividad. Vuelve a entrar para continuar.';
 })();
 
 /* ---------- Solicitud de cuenta: antispam y tiempo de espera ---------- */

@@ -36,7 +36,9 @@ const $ = s => document.querySelector(s);
 const esc = Acu.esc, num = Acu.num;
 const uid = () => 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2,8);
 const CLIENTE_ID = uid();
-const dinero = n => `${state.settings.moneda || ''} ${num(n).toFixed(2)}`.trim();
+/* Símbolo de moneda sin números (antes se podía escribir un número por error, por ejemplo "B/.2") */
+const limpiarMoneda = v => String(v ?? '').split(/[0-9]/)[0].trim().slice(0, 5) || 'B/.';   // lo que va antes del primer número
+const dinero = n => `${limpiarMoneda(state.settings.moneda)} ${num(n).toFixed(2)}`;
 const hoyISO = () => { const d = new Date(); d.setMinutes(d.getMinutes() - d.getTimezoneOffset()); return d.toISOString().slice(0,10); };
 function debounce(fn, ms){ let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
 function aviso(txt, ms){ const a = $('#aviso'); a.textContent = txt; a.classList.add('ver'); clearTimeout(aviso.t); aviso.t = setTimeout(() => a.classList.remove('ver'), ms || 3500); }
@@ -152,6 +154,14 @@ function aqDesdeFila(r){
   return {id:r.id, tipo, color:r.color || TIPOS[tipo].color, colorManual:!!r.color_manual, datos};
 }
 function aplicarFilaConfig(r){
+  const monedaGuardada = r.moneda ?? 'B/.';
+  if (limpiarMoneda(monedaGuardada) !== monedaGuardada){
+    // Se corrige en la base de datos para que también se vea bien en la página de los vecinos
+    r = {...r, moneda:limpiarMoneda(monedaGuardada)};
+    sb.from('configuracion').update({moneda:r.moneda, editado_por:CLIENTE_ID}).eq('id', 1).then(({error}) => {
+      if (!error) aviso(`Se corrigió el símbolo de moneda: tenía un número ("${monedaGuardada}"). Ahora es "${r.moneda}".`, 7000);
+    });
+  }
   state.settings = {nombre:r.nombre || 'Mi acueducto', cuota:num(r.cuota), moneda:r.moneda ?? 'B/.', colorPorPago:!!r.color_por_pago, tarifaDefecto:r.tarifa_defecto || 'estandar',
     ajusteFondos:r.ajuste_fondos || {}, mesesCorte:r.meses_para_corte ?? 2, diasAvisoCorte:r.dias_aviso_corte ?? 8, montoReconexion:num(r.monto_reconexion),
     politica:r.politica_privacidad || '', politicaFecha:r.politica_actualizada_en || null,
@@ -2641,7 +2651,7 @@ function renderReportes(){
       <p class="desc">${esc(r.descripcion)}</p>
       <p class="nota">Por <b>${esc(quien.nombre || 'cuenta eliminada')}</b>${r.numero_casa ? ' · Casa ' + esc(r.numero_casa) : ''}${quien.celular ? ' · ' + telLink(quien.celular) : ''} · ${esc(Acu.fechaHora(r.created_at))} (${esc(Acu.hace(r.created_at))})</p>
       ${r.actualizado_por_nombre ? `<p class="nota">Última actualización: <b>${esc(r.actualizado_por_nombre)}</b>${r.actualizado_en ? ' · ' + esc(Acu.fechaHora(r.actualizado_en)) : ''}</p>` : ''}
-      <div class="fila">${r.punto ? `<button class="btn chico" data-ver-rep=""${esc(r.id)}">📍 Ver en el mapa</button>` : '<span class="nota">Sin ubicación marcada</span>'}</div>
+      <div class="fila">${r.punto ? `<button class="btn chico" data-ver-rep="${esc(r.id)}">📍 Ver en el mapa</button>` : '<span class="nota">Sin ubicación marcada</span>'}</div>
       <div class="dos respuesta">
         <label class="campo"><span>Estado</span><select data-estado-rep="${esc(r.id)}">${Object.keys(NOMBRE_ESTADO_REP).map(k => `<option value="${k}" ${k === r.estado ? 'selected' : ''}>${NOMBRE_ESTADO_REP[k]}</option>`).join('')}</select></label>
         <label class="campo"><span>Respuesta para el vecino</span><textarea rows="2" data-resp-rep="${esc(r.id)}" maxlength="1000" placeholder="Ej. Gracias, el equipo va en camino.">${esc(r.respuesta || '')}</textarea></label>
@@ -3932,7 +3942,9 @@ $('#polGuardar').addEventListener('click', async () => {
 function cargarConfigEnFormulario(){
   $('#cfgNombre').value = state.settings.nombre;
   $('#cfgCuota').value = state.settings.cuota;
-  $('#cfgMoneda').value = state.settings.moneda;
+  const selMon = $('#cfgMoneda'), mon = limpiarMoneda(state.settings.moneda);
+  if (![...selMon.options].some(o => o.value === mon)) selMon.add(new Option(mon, mon));
+  selMon.value = mon;
   $('#cfgColorPago').checked = !!state.settings.colorPorPago;
   $('#cfgWhatsapp').value = state.settings.whatsapp;
   $('#cfgWhatsappMsg').value = state.settings.whatsappMensaje;
@@ -3949,7 +3961,7 @@ function probarWhatsapp(){
 function alCambiarConfig(){
   state.settings.nombre = $('#cfgNombre').value;
   state.settings.cuota = num($('#cfgCuota').value);
-  state.settings.moneda = $('#cfgMoneda').value;
+  state.settings.moneda = limpiarMoneda($('#cfgMoneda').value);
   state.settings.colorPorPago = $('#cfgColorPago').checked;
   state.settings.whatsapp = $('#cfgWhatsapp').value.trim();
   state.settings.whatsappMensaje = $('#cfgWhatsappMsg').value;
@@ -3960,7 +3972,8 @@ function alCambiarConfig(){
   if (selected){ actualizarTituloPanel(); refrescarCuenta(); }
   renderResumen(); guardarConfig();
 }
-['#cfgNombre','#cfgCuota','#cfgMoneda','#cfgWhatsapp','#cfgWhatsappMsg','#cfgCorreo'].forEach(s => $(s).addEventListener('input', alCambiarConfig));
+['#cfgNombre','#cfgWhatsapp','#cfgWhatsappMsg','#cfgCorreo'].forEach(s => $(s).addEventListener('input', alCambiarConfig));
+$('#cfgMoneda').addEventListener('change', alCambiarConfig);
 $('#cfgWhatsappActivo').addEventListener('change', alCambiarConfig);
 $('#cfgColorPago').addEventListener('change', () => { alCambiarConfig(); if (selected) renderPanel(); });
 
@@ -4101,8 +4114,7 @@ function irAlAcceso(){ location.replace(PAGINA_ACCESO); }
 
 document.querySelectorAll('[data-salir]').forEach(b => b.addEventListener('click', async () => {
   await flush();
-  await sb.auth.signOut();
-  irAlAcceso();
+  await AcuSesion.cerrar(sb, PAGINA_ACCESO);
 }));
 
 /* Comprueba que la base de datos tenga todo lo que usa esta versión */
@@ -4155,10 +4167,12 @@ async function iniciarApp(session){
       <p>${!perfil ? 'Tu cuenta no tiene permisos de administración. Pide al desarrollador que te dé acceso.'
           : perfil.estado !== 'activo' ? 'Tu cuenta está suspendida.' : 'Tu cuenta es de vecino: desde la página pública puedes ver el mapa y enviar reportes.'}</p>
       <div class="fila"><a class="btn primario" href="../../../index.html">Ir a la página pública</a><button class="btn" id="salirSinAcceso">Cerrar sesión</button></div>`);
-    $('#salirSinAcceso').addEventListener('click', async () => { await sb.auth.signOut(); irAlAcceso(); });
+    $('#salirSinAcceso').addEventListener('click', () => AcuSesion.cerrar(sb, PAGINA_ACCESO));
     return;
   }
   miPerfil = perfil;
+  // Cierre automático si nadie usa la administración durante un rato (antes se guardan los cambios pendientes)
+  AcuSesion.vigilarInactividad({auth:{signOut:async o => { try { await flush(); } catch (e){} return sb.auth.signOut(o); }}}, {destino:PAGINA_ACCESO});
   if (perfil.debe_cambiar_clave) setTimeout(() => { abrirMiPerfil(); aviso('Estás usando una contraseña temporal: cámbiala por una tuya.', 7000); }, 800);
   document.querySelectorAll('[data-rol]').forEach(e => { e.textContent = (perfil.nombre ? perfil.nombre + ' · ' : '') + NOMBRE_ROL[perfil.rol]; });   // se completa con el cargo al cargar
   mensaje('<h2>Cargando el mapa…</h2><p class="nota">Descargando casas, tuberías, llaves, sectores y pagos.</p>');

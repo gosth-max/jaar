@@ -23,6 +23,8 @@ function cliente(){
   const c = window.ACU_CONFIG || {};
   if (!window.supabase) throw new Error('No se pudo cargar la librería de Supabase. Revisa tu conexión a internet y recarga la página.');
   if (!c.SUPABASE_URL || !c.SUPABASE_KEY) throw new Error('Falta la configuración de Supabase en assets/js/config.js.');
+  // Sesión solo en esta pestaña, con limpieza de sesiones viejas (ver sesion.js)
+  if (window.AcuSesion) return window.AcuSesion.crearCliente();
   return window.supabase.createClient(c.SUPABASE_URL, c.SUPABASE_KEY);
 }
 

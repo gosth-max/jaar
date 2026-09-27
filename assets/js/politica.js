@@ -58,7 +58,7 @@ La conexión al sitio está cifrada. Cada persona solo puede ver lo que le corre
 
 ## Aviso de cookies
 Este sitio **no usa cookies de publicidad, de análisis ni de seguimiento**. Solo guarda en tu navegador lo imprescindible para funcionar:
-- **Sesión de tu cuenta:** para mantenerte conectado hasta que cierres sesión.
+- **Sesión de tu cuenta:** se guarda solo mientras la pestaña está abierta. Se borra al cerrar la pestaña o el navegador, al cerrar sesión y, por seguridad, después de 30 minutos sin actividad.
 - **Aviso de cookies visto:** para no volver a mostrarte el aviso.
 - **Preferencias del mapa:** el tipo de mapa y la zona que estabas viendo.
 - **Tiempo de espera:** cuándo puedes enviar otra solicitud o reporte.

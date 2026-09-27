@@ -621,3 +621,7 @@ code{background:var(--papel);border-radius:4px;padding:1px 5px;font-size:12.5px}
 
 /* Cifras con ancho fijo: columnas de montos alineadas */
 .tabla,.kpi b,.fc-kpis b,.fc-saldo b,.monto,.num,.rc-monto b,.cuenta dd{font-variant-numeric:tabular-nums}
+
+.aviso-cuota{background:var(--agua-claro);border-radius:10px;padding:9px 12px;font-size:14px;margin:8px 0}
+/* Montos y nombres de casa en una sola línea */
+.tabla td.num,#ccTabla td:first-child,#cpTabla td:nth-child(3){white-space:nowrap}

@@ -20,7 +20,7 @@
   caja.className = 'aviso-cookies';
   caja.setAttribute('role', 'region');
   caja.setAttribute('aria-label', 'Aviso de cookies');
-  caja.innerHTML = '<p>Este sitio no usa cookies de publicidad ni de seguimiento. Solo guarda en tu navegador lo necesario para funcionar, como tu sesión si inicias una. ' +
+  caja.innerHTML = '<p>Este sitio no usa cookies de publicidad ni de seguimiento. Solo guarda en tu navegador lo necesario para funcionar; tu sesión se borra al cerrar la pestaña o después de 30 minutos sin actividad. ' +
     '<a href="' + enlace + '#cookies">Más información</a>.</p><button type="button">Entendido</button>';
   caja.querySelector('button').addEventListener('click', function(){
     try { localStorage.setItem(CLAVE, new Date().toISOString()); } catch (e){}
