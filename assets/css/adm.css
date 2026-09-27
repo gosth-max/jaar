@@ -451,3 +451,7 @@ input[type=password]{background:var(--blanco);border:1px solid var(--linea);bord
 #admTabla td{white-space:nowrap}
 #admTabla .sel-cargo{min-width:150px}
 #admTabla .sel-trato{min-width:112px}
+
+/* Control administrativo de incidencias */
+.control{background:#F4F7F8;border-left:3px solid #5F7F89;border-radius:6px;padding:6px 9px;margin:6px 0;font-size:13px;line-height:1.55;color:var(--tinta)}
+.banner-hist .control{font-size:12.5px}

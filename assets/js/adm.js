@@ -643,6 +643,36 @@ async function actualizarIncidencia(id, cambios, msg){
   recalcularIncidencias();
   if (msg) aviso(msg);
 }
+/* Control administrativo: al resolver se indica quién atendió la incidencia */
+function pedirResolucion(id){
+  const inc = incidencias.get(id); if (!inc) return;
+  const o = capas.get(inc.forma_id);
+  $('#resTitulo').textContent = inc.tipo + (o ? ' · ' + titulo(o.aq) : '');
+  const lista = adminsLista.filter(a => a.estado === 'activo');
+  if (!lista.some(a => a.id === miPerfil.id)) lista.unshift(miPerfil);
+  $('#resQuien').innerHTML = lista.map(a => `<option value="${esc(a.id)}" ${a.id === miPerfil.id ? 'selected' : ''}>${esc((a.nombre || 'Sin nombre') + (nombreCargo(a) ? ' — ' + nombreCargo(a) : ''))}${a.id === miPerfil.id ? ' (yo)' : ''}</option>`).join('');
+  $('#resNota').value = '';
+  $('#resConfirmar').onclick = async () => {
+    $('#resConfirmar').disabled = true;
+    await actualizarIncidencia(id, {estado:'resuelta', resuelta_en:new Date().toISOString(),
+      atendida_por:$('#resQuien').value || null, nota_cierre:$('#resNota').value.trim() || null}, 'Incidencia resuelta y registrada.');
+    $('#resConfirmar').disabled = false;
+    $('#dlgResolver').close();
+  };
+  $('#dlgResolver').showModal();
+}
+/* Quién registró, resolvió y atendió (datos internos) */
+function textoControl(inc){
+  const filas = [];
+  if (inc.creado_por_nombre) filas.push(`📝 Registró: <b>${esc(inc.creado_por_nombre)}</b>`);
+  if (inc.estado === 'resuelta'){
+    if (inc.atendida_por_nombre) filas.push(`🔧 Atendió: <b>${esc(inc.atendida_por_nombre)}</b>`);
+    if (inc.resuelta_por_nombre && inc.resuelta_por_nombre !== inc.atendida_por_nombre) filas.push(`✅ Marcó como resuelta: <b>${esc(inc.resuelta_por_nombre)}</b>`);
+    if (inc.nota_cierre) filas.push(`🗒 Nota de cierre: ${esc(inc.nota_cierre)}`);
+  }
+  return filas.length ? `<p class="control">${filas.join('<br>')}</p>` : '';
+}
+
 async function borrarIncidencias(ids){
   if (!esDev()){ aviso('Solo el desarrollador puede borrar el historial.'); return; }
   if (!ids.length) return;
@@ -746,6 +776,7 @@ function renderIncidenciasPanel(){
       <p class="meta">Creada: ${esc(Acu.fechaHora(inc.creada_en))} (${esc(Acu.hace(inc.creada_en))})</p>
       ${inc.resuelta_en ? `<p class="meta">Resuelta: ${esc(Acu.fechaHora(inc.resuelta_en))}</p>` : ''}
       ${inc.detalle ? `<p>${esc(inc.detalle)}</p>` : ''}
+      ${textoControl(inc)}
       <p class="meta">${inc.publica === false ? '🔒 Solo la ven los administradores' : '🌐 Visible al público' + (inc.detalle_publico ? ': «' + esc(inc.detalle_publico) + '»' : '')}</p>
       ${inc.estado === 'abierta' ? `<p class="meta">${esc(textoAlcance(inc))}</p>` : ''}
       ${!esOrigen && origen ? `<p class="meta">Reportada en: <button class="origen" data-ir="${esc(inc.forma_id)}">${esc(titulo(origen.aq))}</button></p>` : ''}
@@ -759,10 +790,7 @@ function renderIncidenciasPanel(){
     <div class="fila" style="margin-top:8px"><button class="btn alerta" id="incNueva">⚠ Reportar incidencia</button></div>`;
   if (historial.length) html += `<details style="margin-top:10px"><summary>Historial (${historial.length})</summary>${historial.map(tarjeta).join('')}</details>`;
   box.innerHTML = html;
-  box.querySelectorAll('[data-resolver]').forEach(b => b.addEventListener('click', () => {
-    if (confirm('¿Marcar esta incidencia como resuelta?'))
-      actualizarIncidencia(b.dataset.resolver, {estado:'resuelta', resuelta_en:new Date().toISOString()}, 'Incidencia resuelta.');
-  }));
+  box.querySelectorAll('[data-resolver]').forEach(b => b.addEventListener('click', () => pedirResolucion(b.dataset.resolver)));
   box.querySelectorAll('[data-borrar-inc]').forEach(b => b.addEventListener('click', () => {
     if (confirm('¿Eliminar esta incidencia del historial? No se puede deshacer.')) borrarIncidencia(b.dataset.borrarInc);
   }));
@@ -1746,6 +1774,7 @@ function verHistorico(inc){
     <p>Ocurrió: <b>${esc(Acu.fechaHora(inc.creada_en))}</b>${inc.resuelta_en ? ` · Resuelta: <b>${esc(Acu.fechaHora(inc.resuelta_en))}</b> · duró ${esc(duracion(inc.creada_en, inc.resuelta_en))}` : ''}</p>
     <p>Sin agua o afectado: ${esc(Acu.textoAfectacion(r))}</p>
     ${inc.detalle ? `<p class="bh-det">${esc(inc.detalle)}</p>` : ''}
+    ${textoControl(inc)}
     <p class="bh-nota">Se dibuja sobre la red actual de tuberías.</p>
     <button class="btn primario chico" id="salirHist">Volver al mapa en vivo</button>`;
   banner.hidden = false;
@@ -1778,13 +1807,10 @@ function enlazar(cont){
   cont.querySelectorAll('[data-flujo-id]').forEach(c => c.addEventListener('change', () => {
     const l = capas.get(c.dataset.flujoId); if (l) ponerFlujo(l, c.checked);
   }));
-  cont.querySelectorAll('[data-resolver-id]').forEach(b => b.addEventListener('click', () => {
-    if (confirm('¿Marcar esta incidencia como resuelta?'))
-      actualizarIncidencia(b.dataset.resolverId, {estado:'resuelta', resuelta_en:new Date().toISOString()}, 'Incidencia resuelta.');
-  }));
+  cont.querySelectorAll('[data-resolver-id]').forEach(b => b.addEventListener('click', () => pedirResolucion(b.dataset.resolverId)));
   cont.querySelectorAll('[data-reabrir-id]').forEach(b => b.addEventListener('click', () => {
     if (confirm('¿Reabrir esta incidencia? Volverá a marcarse en rojo en el mapa.'))
-      actualizarIncidencia(b.dataset.reabrirId, {estado:'abierta', resuelta_en:null}, 'Incidencia reabierta.');
+      actualizarIncidencia(b.dataset.reabrirId, {estado:'abierta', resuelta_en:null, atendida_por:null, nota_cierre:null}, 'Incidencia reabierta.');
   }));
   cont.querySelectorAll('[data-borrar-inc-id]').forEach(b => b.addEventListener('click', () => {
     const dlg = $('#dlgDia'); if (dlg.open) dlg.close();
@@ -1857,6 +1883,7 @@ function tarjetaIncidencia(inc){
       <span class="meta">${esc(abierta ? Acu.hace(inc.creada_en) : 'Resuelta en ' + duracion(inc.creada_en, inc.resuelta_en || inc.creada_en))}</span></div>
     <p class="meta"><b class="lugar">${esc(o ? titulo(o.aq) : 'Elemento eliminado')}</b> · Creada: ${esc(Acu.fechaHora(inc.creada_en))}${inc.resuelta_en ? ' · Resuelta: ' + esc(Acu.fechaHora(inc.resuelta_en)) : ''}</p>
     ${inc.detalle ? `<p>${esc(inc.detalle)}</p>` : ''}
+    ${textoControl(inc)}
     ${abierta ? `<p class="meta">Marca en rojo: ${esc(textoAlcance(inc))}</p>` : ''}
     <div class="acciones">
       ${o ? `<button class="btn chico" data-ver-inc="${esc(inc.id)}">Ver en el mapa</button>` : ''}
@@ -2087,7 +2114,10 @@ function renderIncResueltas(){
   const todas = [...incidencias.values()].filter(i => i.estado === 'resuelta')
     .sort((a, b) => String(b.resuelta_en || b.creada_en).localeCompare(String(a.resuelta_en || a.creada_en)));
   llenarFiltroTipos($('#irTipo'), todas);
-  const lista = filtrarInc(todas, $('#irBusca').value, $('#irTipo').value);
+  const selQuien = $('#irQuien'), antes = selQuien.value;
+  const nombres = [...new Set(todas.map(i => i.atendida_por_nombre).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
+  selQuien.innerHTML = '<option value="">Atendida por: todos</option>' + nombres.map(n => `<option ${n === antes ? 'selected' : ''}>${esc(n)}</option>`).join('');
+  const lista = filtrarInc(todas, $('#irBusca').value, $('#irTipo').value).filter(i => !selQuien.value || i.atendida_por_nombre === selQuien.value);
   $('#irConteo').textContent = todas.length ? `${lista.length} de ${todas.length}` : '';
   const cont = $('#irLista');
   cont.innerHTML = lista.length ? lista.slice(0, 200).map(tarjetaIncidencia).join('')
@@ -2099,6 +2129,10 @@ $('#iaBusca').addEventListener('input', debounce(renderIncAbiertas, 200));
 $('#iaTipo').addEventListener('change', renderIncAbiertas);
 $('#irBusca').addEventListener('input', debounce(renderIncResueltas, 200));
 $('#irTipo').addEventListener('change', renderIncResueltas);
+$('#irQuien').addEventListener('change', renderIncResueltas);
+['#dlgResolver'].forEach(sel => { const dl = $(sel);
+  dl.querySelectorAll('[data-cerrar]').forEach(x => x.addEventListener('click', () => dl.close()));
+  dl.addEventListener('click', e => { if (e.target === dl) dl.close(); }); });
 
 /* ================= Sección: Sectores y flujo de agua ================= */
 function renderSectoresVista(){
@@ -2244,6 +2278,7 @@ function abrirDia(k){
         <div class="ev-cab"><b>${abierta ? '⚠' : '✓'} ${esc(i.tipo)}</b><span class="pill ${abierta ? 'bad' : 'ok'}">${abierta ? 'Abierta' : 'Resuelta'}</span></div>
         <p class="meta">${esc(o ? titulo(o.aq) : 'Elemento eliminado')}</p>
         ${i.detalle ? `<p>${esc(i.detalle)}</p>` : ''}
+        ${textoControl(i)}
         <p class="ev-tiempos">Ocurrió: <b>${esc(Acu.fechaHora(i.creada_en))}</b><br>
           ${i.resuelta_en ? `Resuelta: <b>${esc(Acu.fechaHora(i.resuelta_en))}</b> · duró ${esc(duracion(i.creada_en, i.resuelta_en))}`
                           : `Sigue abierta, ${esc(Acu.hace(i.creada_en).replace('hace ', 'desde hace '))}`}</p>
@@ -2708,7 +2743,8 @@ function renderReportes(){
       <header><h2>${esc(r.tipo)}</h2><span class="pill ${CLASE_ESTADO_REP[r.estado]}">${esc(NOMBRE_ESTADO_REP[r.estado])}</span></header>
       <p class="desc">${esc(r.descripcion)}</p>
       <p class="nota">Por <b>${esc(quien.nombre || 'cuenta eliminada')}</b>${r.numero_casa ? ' · Casa ' + esc(r.numero_casa) : ''}${quien.celular ? ' · ' + telLink(quien.celular) : ''} · ${esc(Acu.fechaHora(r.created_at))} (${esc(Acu.hace(r.created_at))})</p>
-      <div class="fila">${r.punto ? `<button class="btn chico" data-ver-rep="${esc(r.id)}">📍 Ver en el mapa</button>` : '<span class="nota">Sin ubicación marcada</span>'}</div>
+      ${r.actualizado_por_nombre ? `<p class="nota">Última actualización: <b>${esc(r.actualizado_por_nombre)}</b>${r.actualizado_en ? ' · ' + esc(Acu.fechaHora(r.actualizado_en)) : ''}</p>` : ''}
+      <div class="fila">${r.punto ? `<button class="btn chico" data-ver-rep=""${esc(r.id)}">📍 Ver en el mapa</button>` : '<span class="nota">Sin ubicación marcada</span>'}</div>
       <div class="dos respuesta">
         <label class="campo"><span>Estado</span><select data-estado-rep="${esc(r.id)}">${Object.keys(NOMBRE_ESTADO_REP).map(k => `<option value="${k}" ${k === r.estado ? 'selected' : ''}>${NOMBRE_ESTADO_REP[k]}</option>`).join('')}</select></label>
         <label class="campo"><span>Respuesta para el vecino</span><textarea rows="2" data-resp-rep="${esc(r.id)}" maxlength="1000" placeholder="Ej. Gracias, el equipo va en camino.">${esc(r.respuesta || '')}</textarea></label>
@@ -2927,6 +2963,7 @@ async function verificarBaseDatos(){
     ['configuracion', 'id,whatsapp,whatsapp_activo,correo_contacto'],
     ['incidencias', 'id,publica,detalle_publico'],
     ['perfiles', 'id,cargo,genero'],
+    ['incidencias', 'id,atendida_por,atendida_por_nombre,nota_cierre'],
     ['cargos', 'id']
   ];
   const faltan = [];

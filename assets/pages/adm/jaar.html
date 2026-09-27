@@ -151,6 +151,7 @@
     <div class="filtros">
       <input type="text" id="irBusca" placeholder="Buscar por detalle, tipo o lugar" aria-label="Buscar incidencia resuelta">
       <select id="irTipo" aria-label="Filtrar por tipo"></select>
+      <select id="irQuien" aria-label="Filtrar por quién atendió"></select>
       <span class="conteo" id="irConteo"></span>
     </div>
     <div id="irLista"></div>
@@ -310,6 +311,17 @@
     </div>
   </section>
 </main>
+
+<dialog id="dlgResolver" class="modal" aria-labelledby="resCab">
+  <header><h2 id="resCab">Marcar como resuelta</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
+  <div class="modal-cuerpo">
+    <p class="nota" style="margin-top:0" id="resTitulo"></p>
+    <label class="campo"><span>¿Quién atendió la incidencia?</span><select id="resQuien"></select></label>
+    <label class="campo"><span>Nota de cierre (opcional)</span><textarea id="resNota" rows="3" maxlength="1000" placeholder="Ej. Se cambió el codo dañado y se revisó la presión."></textarea></label>
+    <p class="nota">Queda registrado para el control administrativo, junto con la fecha, la hora y quién la marcó como resuelta. No se muestra en la página pública.</p>
+    <div class="fila"><button class="btn primario" id="resConfirmar">Marcar resuelta</button><button class="btn" data-cerrar>Cancelar</button></div>
+  </div>
+</dialog>
 
 <dialog id="dlgCredenciales" class="modal" aria-labelledby="credTitulo">
   <header><h2 id="credTitulo">Datos de acceso</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
