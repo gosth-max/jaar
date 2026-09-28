@@ -125,7 +125,15 @@ async function flush(){
   if (!filas.length){ pintarSync(); return; }
   flushEnCurso = (async () => {
     enVuelo++; pintarSync();
-    const {error} = await sb.from('formas').upsert(filas);
+    let error = null;
+    if (esDev()) ({error} = await sb.from('formas').upsert(filas));
+    else {
+      // Solo actualizar (no pueden crear formas); la base de datos revisa qué datos pueden cambiar
+      for (const f of filas){
+        const r = await sb.from('formas').update({datos:f.datos, editado_por:f.editado_por}).eq('id', f.id);
+        if (r.error){ error = r.error; break; }
+      }
+    }
     enVuelo--;
     if (error){
       console.error(error);
@@ -434,6 +442,7 @@ function refrescarForma(layer){
   renderResumenPronto();
 }
 async function eliminarForma(layer){
+  if (!soloDev('eliminar formas')) return;
   const id = layer.aq.id;
   quitarCapaLocal(layer);
   quitarIncidenciasDe(id);
@@ -1099,6 +1108,7 @@ function casaEn(ll, excluir){
     (esPunto(l) ? l.getLatLng().distanceTo(ll) < 5 : dentroDe(ll, l))) || null;
 }
 function iniciarTrazado(tipo, origen, puntoInicial){
+  if (!soloDev('trazar tuberías')) return;
   asegurarMapa();
   terminarEdicion();
   map.pm.disableDraw();
@@ -1142,6 +1152,7 @@ function completarTrazado(layer, tr){
 
 /* ================= Dibujo ================= */
 function iniciarDibujo(t){
+  if (!soloDev('dibujar formas nuevas')) return;
   asegurarMapa();
   salirHistorico();
   if (pendingTipo === t){ map.pm.disableDraw(); pendingTipo = null; marcarBotones(); return; }
@@ -1238,6 +1249,20 @@ function enfocar(layer){
 }
 
 /* =====================================================================
+   PERMISOS: solo el desarrollador crea, borra o edita las formas del mapa
+   ===================================================================== */
+function aplicarPermisosFormas(){
+  const dev = esDev();
+  document.querySelectorAll('[data-solo-dev]').forEach(e => { e.hidden = !dev; });
+  if (!dev){ try { map.pm.removeControls(); map.pm.disableDraw(); } catch (e){} }
+}
+function soloDev(accion){
+  if (esDev()) return true;
+  aviso('Solo el desarrollador puede ' + (accion || 'crear o editar las formas del mapa') + '.', 5000);
+  return false;
+}
+
+/* =====================================================================
    PANEL DE DETALLES
    Barra de acciones rápidas, recuadro de estado, pestañas y "Más opciones".
    ===================================================================== */
@@ -1261,11 +1286,12 @@ function renderPanel(){
 
   /* --- Acciones rápidas --- */
   const editandoEsta = editando === layer;
+  const dev = esDev();
   let acciones = accion('pCentrar', '◎', 'Centrar');
-  acciones += accion('pEditar', editandoEsta ? '✓' : '✥',
+  if (dev) acciones += accion('pEditar', editandoEsta ? '✓' : '✥',
     editandoEsta ? 'Listo' : (esPunto(layer) ? 'Mover' : 'Mover puntos'), editandoEsta ? 'class="p-acc on"' : '');
-  if (aq.tipo === 'tuberia') acciones += accion('pRamal', '⑂', 'Sacar ramal');
-  if (aq.tipo === 'casa') acciones += accion('pCasaCasa', '➜', 'Llevar agua a otra casa');
+  if (dev && aq.tipo === 'tuberia') acciones += accion('pRamal', '⑂', 'Sacar ramal');
+  if (dev && aq.tipo === 'casa') acciones += accion('pCasaCasa', '➜', 'Llevar agua a otra casa');
 
   /* --- Estado resumido --- */
   let estado = '';
@@ -1282,7 +1308,7 @@ function renderPanel(){
       <p>${r.tubos.size ? '🔗 Recibe agua: ' + esc(textoRed(r)) : '⚠ No está conectada a ninguna tubería.'}</p>
       <p>💵 Cuenta: <span class="pill ${est.cls}">${esc(est.txt)}</span></p>
       <div class="fila">${r.tubos.size ? '<button class="btn chico" id="verRed">Resaltar lo conectado</button>' : ''}
-        <button class="btn chico ${r.tubos.size ? '' : 'primario'}" id="conectarCasa">${r.tubos.size ? 'Otra acometida' : 'Conectar a una tubería'}</button></div></div>`;
+        ${dev ? `<button class="btn chico ${r.tubos.size ? '' : 'primario'}" id="conectarCasa">${r.tubos.size ? 'Otra acometida' : 'Conectar a una tubería'}</button>` : ''}</div></div>`;
   } else if (aq.tipo === 'sector'){
     estado = `<div class="p-estado">
       <label class="interruptor grande"><input type="checkbox" id="secFlujo" ${d.activo ? 'checked' : ''}><span class="riel"></span><span>${d.activo ? 'Con agua ahora' : 'Sin agua ahora'}</span></label>
@@ -1397,8 +1423,16 @@ function renderPanel(){
     </details>`;
 
   const cuerpo = $('#pCuerpo');
-  cuerpo.innerHTML = `<div class="p-barra">${acciones}</div>${estado}${barraTabs}${cuerpoTabs}${mas}`;
+  cuerpo.innerHTML = `<div class="p-barra">${acciones}</div>${estado}${barraTabs}${cuerpoTabs}${dev ? mas : ''}`;
   enlazarPanel(layer, cuerpo);
+  if (!dev && aq.tipo !== 'casa'){
+    // Los administradores solo cambian lo operativo: agua del sector y llaves abiertas o cerradas
+    cuerpo.querySelectorAll('[data-panel="datos"], [data-panel="agua"]').forEach(p => {
+      p.querySelectorAll('input, select, textarea, button').forEach(el => { el.disabled = true; });
+      p.insertAdjacentHTML('afterbegin', '<p class="aviso-solo-dev">🔒 Solo el desarrollador puede editar este elemento del mapa.</p>');
+    });
+    if (aq.tipo === 'conector') cuerpo.querySelectorAll('.p-estado button').forEach(el => { el.hidden = true; });
+  }
 }
 
 function botonesTipo(layer){
@@ -1471,7 +1505,7 @@ function enlazarPanel(layer, cuerpo){
     else iniciarTrazado('salida', layer, pr.todos[i]);                   // desde el brazo: el trazo ya empieza ahí
   }));
   cuerpo.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => { const l = capas.get(b.dataset.ir); if (l){ enfocar(l); seleccionar(l); } }));
-  $('#pEliminar').addEventListener('click', () => {
+  if ($('#pEliminar')) $('#pEliminar').addEventListener('click', () => {
     if (!confirm('¿Eliminar esta forma? Se borra para todos, también del mapa público. Su historial de incidencias se conserva.')) return;
     eliminarForma(layer);
     aviso('Forma eliminada.');
@@ -1492,6 +1526,7 @@ function enlazarPanel(layer, cuerpo){
    ===================================================================== */
 let editando = null;
 function alternarEdicion(layer){
+  if (!soloDev('mover los puntos de las formas')) return;
   if (editando === layer){ terminarEdicion(); return; }
   terminarEdicion();
   asegurarMapa();
@@ -1549,6 +1584,7 @@ function cambio(){
 }
 
 async function cambiarTipo(nuevo){
+  if (!soloDev('cambiar la función de las formas')) return;
   const layer = selected, aq = layer.aq;
   if (nuevo === aq.tipo) return;
   if (nuevo === 'sector' && !esPoligono(layer)){ aviso('Un sector debe ser un área cerrada.'); return; }
@@ -1613,7 +1649,8 @@ function router(){
   else if (ruta.startsWith('configuracion/')){ base = 'configuracion'; extra = ruta.split('/')[1]; }
   if (!(base in GRUPO_DE)) base = 'inicio';
   mostrarVista(base);
-  if (base === 'mapa' && extra && PISTAS[extra] && extra !== 'acometida'){
+  if (base === 'mapa' && extra && PISTAS[extra] && extra !== 'acometida' && !esDev()){ history.replaceState(null, '', '#/mapa'); soloDev('dibujar formas nuevas'); }
+  else if (base === 'mapa' && extra && PISTAS[extra] && extra !== 'acometida'){
     history.replaceState(null, '', '#/mapa');
     if (pendingTipo !== extra) iniciarDibujo(extra);
   }
@@ -2492,8 +2529,8 @@ function tablaCuentas(lista, opciones){
       const casa = p.casa_id && capas.get(p.casa_id);
       const puede = opciones.puedeGestionar(p);
       return `<tr>
-        <td><b>${esc(p.nombre || '—')}</b></td>
-        <td>${esc(p.email)}</td>
+        <td><b>${esc(p.nombre || '—')}</b>${p.rol !== 'vecino' ? `<span class="rol-vecino">${esc(nombreCargo(p) || NOMBRE_ROL[p.rol])}</span>` : ''}</td>
+        <td>${p.email ? esc(p.email) : '<span class="nota">(oculto)</span>'}</td>
         <td>${telLink(p.celular)}</td>
         <td>${opciones.editarCasa ? chipsCasas(p.id, puede) : esc(casa ? nombreCasa(casa.aq.datos) : (p.numero_casa ? 'Casa ' + p.numero_casa : '—'))}</td>
         ${opciones.editarCasa ? `<td>${etiquetaClase(clasificarVecino(p.id))}</td>` : ''}
@@ -2508,13 +2545,17 @@ function tablaCuentas(lista, opciones){
 }
 function renderVecinos(){
   const q = $('#vecBusca').value.trim().toLowerCase();
-  const todos = perfilesLista.filter(p => p.rol === 'vecino');
-  const lista = todos.filter(p => !q || [p.nombre, p.email, p.celular, p.numero_casa].join(' ').toLowerCase().includes(q));
-  $('#vecConteo').textContent = `${lista.length} de ${todos.length} vecinos`;
+  const porId = new Map();
+  perfilesLista.forEach(p => porId.set(p.id, p));
+  adminsLista.forEach(a => { if (!porId.has(a.id)) porId.set(a.id, a); else Object.assign(porId.get(a.id), {cargo:a.cargo, genero:a.genero}); });
+  const todos = [...porId.values()].sort((a, b) => String(a.nombre || a.email || '').localeCompare(String(b.nombre || b.email || ''), 'es'));
+  const lista = todos.filter(p => !q || [p.nombre, p.email, p.celular, p.numero_casa, nombreCargo(p)].join(' ').toLowerCase().includes(q));
+  const nAdm = todos.filter(p => p.rol !== 'vecino').length;
+  $('#vecConteo').textContent = `${lista.length} de ${todos.length} vecinos${nAdm ? ` · ${nAdm} ${nAdm === 1 ? 'es administrador' : 'son administradores'}` : ''}`;
   campoClaveVecino();
   const cont = $('#vecTabla');
   cont.innerHTML = tablaCuentas(lista, {vacio: todos.length ? 'Ningún vecino coincide con la búsqueda.' : 'Todavía no hay vecinos con cuenta. Aparecerán aquí al aprobar sus solicitudes.',
-    puedeGestionar: () => true, editarCasa: true});
+    puedeGestionar: p => p.rol === 'vecino' || esDev(), editarCasa: true});
   enlazarCuentas(cont);
 }
 $('#vecBusca').addEventListener('input', debounce(renderVecinos, 200));
@@ -3586,16 +3627,20 @@ function renderCobResumen(){
 }
 const kpiCob = (v, t, s, cls = '') => `<div class="kpi ${cls}"><span class="kpi-t">${t}</span><b>${v}</b><small>${esc(s)}</small></div>`;
 $('#crMes').addEventListener('change', renderCobResumen);
-/* Buscador rápido para registrar un pago */
-function llenarBuscadorCasas(){
-  $('#casasDatalist').innerHTML = datosGenerales().casas.map(l => `<option value="${esc(nombreCasa(l.aq.datos) + (l.aq.datos.responsable ? ' — ' + l.aq.datos.responsable : ''))}"></option>`).join('');
+/* Registrar un pago: elegir la casa en una ventana */
+function pintarElegirCasa(){
+  const q = $('#ecBusca').value.trim().toLowerCase().replace(/^casa\s*/, '');
+  const lista = filasCobro().filter(x => !q || String(x.d.numero || '').toLowerCase().startsWith(q) || String(x.d.responsable || '').toLowerCase().includes(q))
+    .sort((a, b) => String(a.d.numero).localeCompare(String(b.d.numero), 'es', {numeric:true}));
+  $('#ecLista').innerHTML = lista.length ? lista.slice(0, 60).map(x => { const e = textoEstado(x.c);
+    return `<li><button data-elegir="${esc(x.l.aq.id)}"><span class="nom"><b>${esc(nombreCasa(x.d))}</b><small>${esc(x.d.responsable || 'Sin representante')}</small></span><span class="pill ${e.cls}">${esc(e.txt)}</span></button></li>`; }).join('')
+    : '<li class="vacio" style="padding:12px">Ninguna casa coincide.</li>';
+  $('#ecLista').querySelectorAll('[data-elegir]').forEach(b => b.addEventListener('click', () => { $('#dlgElegirCasa').close(); abrirFicha(b.dataset.elegir, 'pago'); }));
 }
-$('#crBuscar').addEventListener('focus', llenarBuscadorCasas);
-$('#crBuscar').addEventListener('change', () => {
-  const v = $('#crBuscar').value;
-  const l = datosGenerales().casas.find(x => v === nombreCasa(x.aq.datos) + (x.aq.datos.responsable ? ' — ' + x.aq.datos.responsable : ''));
-  if (l){ abrirFicha(l.aq.id, 'pago'); $('#crBuscar').value = ''; }
-});
+$('#crRegistrar').addEventListener('click', () => { $('#ecBusca').value = ''; pintarElegirCasa(); $('#dlgElegirCasa').showModal(); setTimeout(() => $('#ecBusca').focus(), 0); });
+$('#ecBusca').addEventListener('input', pintarElegirCasa);
+$('#ecBusca').addEventListener('keydown', e => { if (e.key === 'Enter'){ const b = $('#ecLista [data-elegir]'); if (b){ e.preventDefault(); b.click(); } } });
+{ const dl = $('#dlgElegirCasa'); dl.querySelectorAll('[data-cerrar]').forEach(x => x.addEventListener('click', () => dl.close())); dl.addEventListener('click', e => { if (e.target === dl) dl.close(); }); }
 
 /* --- Casas y cuentas --- */
 let cobCasasFiltradas = [];
@@ -4171,6 +4216,7 @@ async function iniciarApp(session){
     return;
   }
   miPerfil = perfil;
+  aplicarPermisosFormas();
   // Cierre automático si nadie usa la administración durante un rato (antes se guardan los cambios pendientes)
   AcuSesion.vigilarInactividad({auth:{signOut:async o => { try { await flush(); } catch (e){} return sb.auth.signOut(o); }}}, {destino:PAGINA_ACCESO});
   if (perfil.debe_cambiar_clave) setTimeout(() => { abrirMiPerfil(); aviso('Estás usando una contraseña temporal: cámbiala por una tuya.', 7000); }, 800);

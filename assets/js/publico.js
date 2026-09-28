@@ -321,7 +321,7 @@ function irA(v, desdeRouter){
   vistaActual = v;
   if (cambio){
     document.querySelectorAll('[data-vista]').forEach(s => { s.hidden = s.dataset.vista !== v; });
-    document.querySelectorAll('#nav a').forEach(a => { if (a.dataset.ruta === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
+    document.querySelectorAll('#nav a, #barraInferior a').forEach(a => { if (a.dataset.ruta === v) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
     $('#pie').hidden = v === 'mapa';
     document.body.classList.toggle('en-mapa', v === 'mapa');
     $('#vistas').scrollTop = 0;
@@ -557,6 +557,7 @@ async function cargarMisReportes(){
   if (!sesion) return;
   const {data} = await sb.from('reportes').select('*').eq('user_id', sesion.user.id).order('created_at', {ascending:false}).limit(50);
   misReportes = data || [];
+  pintarNotificaciones();
   if (vistaActual === 'reportar') renderMisReportes();
 }
 function renderMisReportes(){
@@ -677,7 +678,7 @@ function tarjetaCuenta(x){
   const paz = c.aplica && c.saldo <= 0 && !corte;
   const unidades = t && t.modo === 'nucleo' ? `${x.nucleos} ${x.nucleos === 1 ? 'núcleo' : 'núcleos'} × ${dinero(t.monto)}`
     : t && t.modo === 'persona' ? `${x.personas} ${x.personas === 1 ? 'persona' : 'personas'} × ${dinero(t.monto)}` : 'monto fijo por casa';
-  return `<article class="tarjeta cuenta-casa">
+  return `<article class="tarjeta cuenta-casa" data-casa="${esc(x.id)}">
     <div class="cintillo ${corte && corte.estado === 'cortado' ? 'cortado' : paz ? 'paz' : c.saldo > 0 ? 'debe' : 'neutro'}">${corte && corte.estado === 'cortado' ? '🚱 SERVICIO SUSPENDIDO' : paz ? '✓ PAZ Y SALVO' : c.saldo > 0 ? `Saldo pendiente: ${esc(dinero(c.saldo))}` : 'Sin cobros registrados'}</div>
     <header><h2>${esc(l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || ''))}</h2><span class="fila">${etiquetaClase(clase)}${x.exonerada ? '<span class="pill nada">Exonerada</span>' : ''}</span></header>
     ${corte ? `<div class="bloque corte ${corte.estado}"><b>${corte.estado === 'cortado' ? '🚱 Servicio de agua suspendido' : '⚠️ Aviso de corte de agua'}</b>
@@ -710,11 +711,9 @@ function tarjetaCuenta(x){
 function renderCuentas(){
   const cont = $('#pfCuentas'); if (!cont) return;
   if (!sesion){ cont.innerHTML = ''; return; }
-  renderNotificaciones();
-  const g = clasificacionGeneral();
-  $('#pfClase').innerHTML = g ? `${etiquetaClase(g)}<span>${esc(CLASIFICACION[g].desc)}</span>` : '';
-  $('#pfClase').hidden = !g;
-  $('#pfCuentasTitulo').textContent = misCuentas.length > 1 ? 'Estado de cuenta de mis casas' : 'Estado de cuenta de mi casa';
+  pintarNotificaciones();
+  pintarHero();
+  $('#pfCuentasTitulo').textContent = misCuentas.length > 1 ? 'Mis casas' : 'Mi casa';
   cont.innerHTML = misCuentas.length ? misCuentas.map(tarjetaCuenta).join('')
     : '<p class="vacio">Todavía no tienes una casa vinculada a tu cuenta. Si eres representante de una casa, pide a la administración que la vincule.</p>';
   cont.querySelectorAll('[data-ver-casa]').forEach(b => b.addEventListener('click', () => {
@@ -752,43 +751,141 @@ function clasificacionGeneral(){
 }
 const etiquetaClase = k => k ? `<span class="clase clase-${k}"><i>${CLASIFICACION[k].icono}</i>${CLASIFICACION[k].txt}</span>` : '';
 
-/* Notificaciones: avisos de corte, cortes y reincorporaciones de las casas del vecino */
+/* Notificaciones: cortes, arreglos, pagos pendientes, adelantos por terminar y reportes respondidos */
+const TIPOS_AVISO = {
+  corte:{txt:'Corte de agua', icono:'🚱', cls:'grave'}, aviso:{txt:'Aviso de corte', icono:'⚠️', cls:'grave'},
+  arreglo:{txt:'Arreglo de pago', icono:'🤝', cls:'medio'}, deuda:{txt:'Pago pendiente', icono:'💳', cls:'medio'},
+  adelanto:{txt:'Pago adelantado', icono:'💚', cls:'info'}, reporte:{txt:'Tu reporte', icono:'📝', cls:'info'},
+  ok:{txt:'Servicio', icono:'✅', cls:'ok'}
+};
 function notificaciones(){
-  const lista = [];
+  const lista = [], hoy = mesHoy(), hace = dias => Date.now() - dias * 864e5;
   misCuentas.forEach(x => {
-    const l = capas.get(x.id), casa = l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || '');
+    const l = capas.get(x.id), casa = l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || ''), c = calcularCuenta(x);
+    const corte = corteActivoDe(x);
     (x.cortes || []).forEach(k => {
       if (k.estado === 'notificado') lista.push({activa:true, tipo:'aviso', cuando:k.notificado_en, casa,
-        titulo:`Aviso de corte de agua · ${casa}`,
-        texto:`Tu casa tiene ${k.meses} ${k.meses === 1 ? 'mes' : 'meses'} de atraso (${dinero(k.deuda)}). Si no pagas o haces un arreglo de pago antes del ${fechaCorta(k.fecha_limite)}, se cortará el servicio de agua.`});
+        texto:`${casa} tiene ${k.meses} ${k.meses === 1 ? 'mes' : 'meses'} de atraso (${dinero(k.deuda)}). Paga o haz un arreglo de pago antes del ${fechaCorta(k.fecha_limite)} para evitar el corte del servicio.`});
       else if (k.estado === 'cortado') lista.push({activa:true, tipo:'corte', cuando:k.cortado_en, casa,
-        titulo:`Servicio de agua suspendido · ${casa}`,
-        texto:`El servicio se cortó el ${fechaCorta(k.cortado_en)} por falta de pago. Las cuotas se siguen generando cada mes. Para reincorporar el servicio, ponte al día o haz un arreglo de pago con la administración.`});
-      else if (k.estado === 'reincorporado') lista.push({activa:false, tipo:'ok', cuando:k.cerrado_en, casa,
-        titulo:`Servicio reincorporado · ${casa}`, texto:`El servicio de agua se reincorporó el ${fechaCorta(k.cerrado_en)}.${k.nota ? ' ' + k.nota : ''}`});
-      else if (k.estado === 'atendido') lista.push({activa:false, tipo:'ok', cuando:k.cerrado_en, casa,
-        titulo:`Aviso de corte atendido · ${casa}`, texto:`Gracias: el aviso del ${fechaCorta(k.notificado_en)} quedó atendido.`});
+        texto:`El servicio de ${casa} está suspendido desde el ${fechaCorta(k.cortado_en)}. Las cuotas se siguen generando cada mes; ponte al día o haz un arreglo de pago para reincorporarlo.`});
+      else if (k.estado === 'reincorporado' && new Date(k.cerrado_en) > hace(30)) lista.push({activa:false, tipo:'ok', cuando:k.cerrado_en, casa,
+        texto:`El servicio de agua de ${casa} se reincorporó el ${fechaCorta(k.cerrado_en)}.`});
+      else if (k.estado === 'atendido' && new Date(k.cerrado_en) > hace(30)) lista.push({activa:false, tipo:'ok', cuando:k.cerrado_en, casa,
+        texto:`El aviso de corte de ${casa} quedó atendido. ¡Gracias!`});
     });
+    if (c.arreglo){
+      const a = c.arreglo;
+      lista.push({activa:a.atrasado || a.proxima === hoy, tipo:'arreglo', cuando:new Date().toISOString(), casa,
+        texto:a.atrasado ? `Tu arreglo de pago de ${casa} está atrasado: te toca la cuota de ${mesNombre(a.proxima)} (${dinero(a.monto_cuota)}), además de la cuota mensual.`
+          : a.proxima ? `Arreglo de pago de ${casa}: llevas ${a.cubiertas} de ${a.cuotas} cuotas. La próxima es la de ${mesNombre(a.proxima)} (${dinero(a.monto_cuota)}).`
+          : `¡Completaste el arreglo de pago de ${casa}!`});
+    } else if (!corte && c.saldo > 0){
+      lista.push({activa:true, tipo:'deuda', cuando:new Date().toISOString(), casa,
+        texto:c.atraso ? `${casa} tiene ${c.atraso} ${c.atraso === 1 ? 'mes' : 'meses'} de atraso: debes ${dinero(c.saldo)}.`
+          : `La cuota de ${mesNombre(hoy)} de ${casa} (${dinero(c.saldo)}) está pendiente.`});
+    }
+    if (c.adelanto.length){
+      const ultimo = c.adelanto[c.adelanto.length - 1], quedan = c.adelanto.length;
+      lista.push({activa:quedan <= 1, tipo:'adelanto', cuando:new Date().toISOString(), casa,
+        texto:quedan <= 1 ? `Tu pago adelantado de ${casa} cubre hasta ${mesNombre(ultimo)}. Pronto te tocará pagar de nuevo.`
+          : `${casa} está pagada por adelantado hasta ${mesNombre(ultimo)} (${quedan} meses).`});
+    }
   });
-  return lista.sort((a, b) => (b.activa - a.activa) || String(b.cuando).localeCompare(String(a.cuando)));
+  (misReportes || []).forEach(r => {
+    const cuando = r.actualizado_en || r.created_at;
+    if (r.estado !== 'nuevo' && cuando && new Date(cuando) > hace(14))
+      lista.push({activa:false, tipo:'reporte', cuando, casa:'',
+        texto:`Tu reporte «${r.tipo}» está ${r.estado === 'atendido' ? 'atendido' : r.estado === 'en_revision' ? 'en revisión' : 'cerrado'}.${r.respuesta ? ' Respuesta: ' + r.respuesta : ''}`});
+  });
+  const orden = ['corte', 'aviso', 'arreglo', 'deuda', 'adelanto', 'reporte', 'ok'];
+  return lista.sort((a, b) => (b.activa - a.activa) || orden.indexOf(a.tipo) - orden.indexOf(b.tipo) || String(b.cuando).localeCompare(String(a.cuando)));
 }
 function pintarNotificaciones(){
   const activas = notificaciones().filter(n => n.activa).length;
-  const b = $('#btnAvisos');
-  b.hidden = !sesion;
-  $('#avisosCuenta').textContent = activas; $('#avisosCuenta').hidden = !activas;
-  b.classList.toggle('con-avisos', !!activas);
-  b.title = activas ? `${activas} ${activas === 1 ? 'aviso importante' : 'avisos importantes'}` : 'Notificaciones';
+  $('#btnAvisos').hidden = !sesion;
+  document.querySelectorAll('[data-cuenta-avisos], #avisosCuenta').forEach(b => { b.textContent = activas; b.hidden = !activas; });
+  $('#btnAvisos').classList.toggle('con-avisos', !!activas);
+  $('#btnAvisos').title = activas ? `${activas} ${activas === 1 ? 'notificación' : 'notificaciones'}` : 'Notificaciones';
 }
-function renderNotificaciones(){
-  const cont = $('#pfNotificaciones'); if (!cont) return;
-  const lista = notificaciones();
-  $('#pfNotifBox').hidden = !lista.length;
-  cont.innerHTML = lista.slice(0, 8).map(n => `<div class="notif ${n.tipo} ${n.activa ? 'activa' : ''}">
-      <span class="ic" aria-hidden="true">${n.tipo === 'aviso' ? '⚠️' : n.tipo === 'corte' ? '🚱' : '✅'}</span>
-      <div><b>${esc(n.titulo)}</b><p>${esc(n.texto)}</p><small>${esc(fechaCorta(n.cuando))}</small></div></div>`).join('');
+function renderNotificaciones(){ pintarNotificaciones(); }
+function abrirAvisos(){
+  const lista = notificaciones(), activas = lista.filter(n => n.activa);
+  const item = n => { const t = TIPOS_AVISO[n.tipo];
+    return `<div class="notif ${t.cls} ${n.activa ? 'activa' : ''}"><span class="ic" aria-hidden="true">${t.icono}</span>
+      <div><b>${t.txt}${n.casa ? ' · ' + esc(n.casa) : ''}</b><p>${esc(n.texto)}</p></div></div>`; };
+  $('#avCuerpo').innerHTML = !activas.length
+    ? `<div class="al-dia"><div class="ic" aria-hidden="true">✓</div><h3>¡Estás al día!</h3><p>No tienes notificaciones pendientes.</p></div>
+       ${lista.length ? `<h4 class="av-sub">Información</h4>${lista.map(item).join('')}` : ''}`
+    : `<p class="av-resumen">Tienes <b>${activas.length} ${activas.length === 1 ? 'notificación' : 'notificaciones'}</b> de: ${esc([...new Set(activas.map(n => TIPOS_AVISO[n.tipo].txt.toLowerCase()))].join(', '))}.</p>
+       ${activas.map(item).join('')}
+       ${lista.length > activas.length ? `<h4 class="av-sub">Información</h4>${lista.filter(n => !n.activa).map(item).join('')}` : ''}`;
+  $('#dlgAvisos').showModal();
 }
-$('#btnAvisos').addEventListener('click', () => { location.hash = '#/perfil'; setTimeout(() => { const n = $('#pfNotifBox'); if (n && !n.hidden) n.scrollIntoView({block:'start', behavior:'smooth'}); }, 150); });
+$('#btnAvisos').addEventListener('click', abrirAvisos);
+document.querySelectorAll('[data-abrir-avisos]').forEach(b => b.addEventListener('click', abrirAvisos));
+
+/* --- Perfil (estilo aplicación) --- */
+let ocultarSaldo = (() => { try { return localStorage.getItem('acu-ocultar-saldo') === '1'; } catch (e){ return false; } })();
+function pintarHero(){
+  const cuentas = misCuentas.map(x => ({x, c:calcularCuenta(x)}));
+  // Lo que se debe (sumando solo las casas con deuda); si no se debe nada, el saldo a favor
+  const debe = r2(cuentas.reduce((s, y) => s + Math.max(0, y.c.saldo), 0)), favor = r2(cuentas.reduce((s, y) => s + Math.max(0, -y.c.saldo), 0));
+  const saldo = debe > 0 ? debe : -favor, g = clasificacionGeneral();
+  const nombre = (perfil && perfil.nombre) || '';
+  $('#pfHola').textContent = nombre ? `Hola, ${nombre.split(' ')[0]}` : 'Hola';
+  $('#pfClase').innerHTML = g ? etiquetaClase(g) : '';
+  $('#pfSaldoTitulo').textContent = !cuentas.length ? 'Aún no tienes casas vinculadas' : saldo > 0 ? 'Saldo pendiente de mis casas' : saldo < 0 ? 'Saldo a favor' : 'Saldo de mis casas';
+  $('#pfSaldo').textContent = !cuentas.length ? '—' : ocultarSaldo ? '•••••' : dinero(Math.abs(saldo));
+  $('#pfOjo').setAttribute('aria-pressed', String(ocultarSaldo));
+  $('#pfOjo').classList.toggle('oculto', ocultarSaldo);
+  const cortada = cuentas.some(y => (corteActivoDe(y.x) || {}).estado === 'cortado');
+  $('#pfEstadoGeneral').innerHTML = !cuentas.length ? 'Pide a la administración que vincule tu casa.'
+    : cortada ? '🚱 Tienes una casa con el servicio suspendido' : saldo <= 0 ? '✓ PAZ Y SALVO' : g ? esc(CLASIFICACION[g].desc) : '';
+  $('#pfEstadoGeneral').className = 'pf-estado ' + (cortada ? 'mal' : saldo <= 0 && cuentas.length ? 'paz' : '');
+  // Resumen del año
+  const anio = String(new Date().getFullYear());
+  const pagado = r2(cuentas.reduce((s, y) => s + (y.x.pagos || []).filter(p => String(p.fecha).startsWith(anio)).reduce((t, p) => t + Number(p.monto), 0), 0));
+  const porPagar = r2(cuentas.reduce((s, y) => s + Math.max(0, y.c.saldo), 0));
+  $('#pfResumenAnio').textContent = 'Año ' + anio;
+  $('#pfPagado').textContent = ocultarSaldo ? '•••' : dinero(pagado);
+  $('#pfPorPagar').textContent = ocultarSaldo ? '•••' : dinero(porPagar);
+  $('#pfPorPagar').classList.toggle('rojo', porPagar > 0);
+  $('#pfCuotaTotal').textContent = dinero(cuentas.reduce((s, y) => s + Number(y.x.cuota_mensual || 0), 0));
+  // Tarjetas deslizables de las casas
+  $('#pfCarrusel').hidden = !cuentas.length;
+  $('#pfMini').innerHTML = cuentas.map(({x, c}) => {
+    const l = capas.get(x.id), corte = corteActivoDe(x), cls = clasificarCasa(x, c);
+    const est = corte && corte.estado === 'cortado' ? ['mal', 'Servicio suspendido'] : c.saldo > 0 ? ['debe', 'Debe ' + dinero(c.saldo)] : ['paz', c.saldo < 0 ? 'Adelantado' : 'Paz y salvo'];
+    return `<button class="pf-mini ${est[0]}" data-ir-tarjeta="${esc(x.id)}">
+      <span class="pf-mini-ic" aria-hidden="true">🏠</span>
+      <span class="pf-mini-txt"><b>${esc(l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || ''))}</b><small>${esc(est[1])}</small></span>
+      ${cls ? `<span class="pf-mini-clase">${etiquetaClase(cls)}</span>` : ''}</button>`;
+  }).join('');
+  $('#pfMini').querySelectorAll('[data-ir-tarjeta]').forEach(b => b.addEventListener('click', () => {
+    const t = document.querySelector(`.cuenta-casa[data-casa="${b.dataset.irTarjeta}"]`);
+    if (t){ t.scrollIntoView({behavior:'smooth', block:'start'}); t.classList.add('resaltada'); setTimeout(() => t.classList.remove('resaltada'), 1400); }
+  }));
+}
+$('#pfOjo').addEventListener('click', () => {
+  ocultarSaldo = !ocultarSaldo;
+  try { localStorage.setItem('acu-ocultar-saldo', ocultarSaldo ? '1' : '0'); } catch (e){}
+  pintarHero();
+});
+document.querySelectorAll('[data-ir-casas]').forEach(b => b.addEventListener('click', () => {
+  if (vistaActual !== 'perfil') irA('perfil');
+  setTimeout(() => $('#pfCuentasBox').scrollIntoView({behavior:'smooth', block:'start'}), 60);
+}));
+document.querySelectorAll('[data-abrir-datos]').forEach(b => b.addEventListener('click', () => { renderPerfil(); $('#pfDatosMsg').hidden = true; $('#dlgDatos').showModal(); }));
+document.querySelectorAll('[data-abrir-clave]').forEach(b => b.addEventListener('click', () => { $('#pfClaveMsg').hidden = true; $('#dlgClave').showModal(); }));
+document.querySelectorAll('[data-abrir-pagos]').forEach(b => b.addEventListener('click', () => {
+  const pagos = misCuentas.flatMap(x => { const l = capas.get(x.id); return (x.pagos || []).map(p => ({...p, casa:l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || '')})); })
+    .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
+  $('#pgCuerpo').innerHTML = pagos.length ? `<ul class="lista-pagos">${pagos.slice(0, 40).map(p => `<li>
+      <span class="ic" aria-hidden="true">🧾</span><span class="txt"><b>${esc(p.casa)} · Recibo N.º ${String(p.recibo || '').padStart(6, '0')}</b>
+      <small>${esc(fechaCorta(p.fecha))} · ${esc(METODOS_PAGO[p.metodo] || '')}</small></span><b class="monto">${esc(dinero(p.monto))}</b></li>`).join('')}</ul>`
+    : '<p class="vacio">Todavía no hay pagos registrados en tus casas.</p>';
+  $('#dlgPagos').showModal();
+}));
 
 /* --- Mi perfil --- */
 function renderPerfil(){

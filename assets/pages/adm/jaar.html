@@ -39,14 +39,14 @@
         <button class="nav-btn" aria-expanded="false">Mapa <i class="flecha"></i></button>
         <ul class="submenu">
           <li><a href="#/mapa" data-ruta="mapa"><span>Ver mapa<small>Editar casas, tuberías, llaves y sectores</small></span></a></li>
-          <li class="sep" role="separator"></li>
-          <li class="titulo-sub">Dibujar</li>
-          <li><a href="#/mapa/dibujar/casa"><span>Casa</span></a></li>
-          <li><a href="#/mapa/dibujar/tuberia"><span>Tubería</span></a></li>
-          <li><a href="#/mapa/dibujar/llave"><span>Llave</span></a></li>
-          <li><a href="#/mapa/dibujar/sector"><span>Sector o zona</span></a></li>
-          <li><a href="#/mapa/dibujar/conectorT"><span>Conector en T</span></a></li>
-          <li><a href="#/mapa/dibujar/conectorY"><span>Conector en Y</span></a></li>
+          <li class="sep" role="separator" data-solo-dev></li>
+          <li class="titulo-sub" data-solo-dev>Dibujar</li>
+          <li data-solo-dev><a href="#/mapa/dibujar/casa"><span>Casa</span></a></li>
+          <li data-solo-dev><a href="#/mapa/dibujar/tuberia"><span>Tubería</span></a></li>
+          <li data-solo-dev><a href="#/mapa/dibujar/llave"><span>Llave</span></a></li>
+          <li data-solo-dev><a href="#/mapa/dibujar/sector"><span>Sector o zona</span></a></li>
+          <li data-solo-dev><a href="#/mapa/dibujar/conectorT"><span>Conector en T</span></a></li>
+          <li data-solo-dev><a href="#/mapa/dibujar/conectorY"><span>Conector en Y</span></a></li>
         </ul>
       </li>
       <li class="grupo" data-grupo="incidencias">
@@ -127,7 +127,7 @@
 
   <section class="vista vista-mapa" data-vista="mapa" hidden>
     <div id="map"></div>
-    <div class="herramientas" role="toolbar" aria-label="Dibujar">
+    <div class="herramientas" role="toolbar" aria-label="Dibujar" data-solo-dev>
       <button data-dibujar="casa" title="Dibujar una casa">
         <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 15 16 6l11 9"/><path d="M8 13v13h16V13"/><path d="M14 26v-7h4v7"/></svg>Casa</button>
       <button data-dibujar="tuberia" title="Dibujar una tubería">
@@ -143,7 +143,7 @@
     </div>
     <p class="pista-mapa" id="pista" role="status" hidden></p>
     <div class="banner-hist" id="bannerHist" role="status" hidden></div>
-    <button class="btn-alinear" id="alinearFondo" title="Mover el mapa de fondo hasta que coincida con lo dibujado">⇔ Alinear fondo</button>
+    <button class="btn-alinear" id="alinearFondo" data-solo-dev title="Mover el mapa de fondo hasta que coincida con lo dibujado">⇔ Alinear fondo</button>
     <div class="panel-alinear" id="panelAlinear" hidden>
       <b>Alinear fondo: <span id="alFondo"></span></b>
       <p class="nota">Mueve el fondo hasta que los techos y caminos coincidan con tus casas y tuberías. Cambia de fondo con el botón de capas (abajo a la izquierda). También puedes usar las flechas del teclado.</p>
@@ -273,8 +273,7 @@
     <div class="cab-vista"><div><h1>Resumen de cobros</h1><p>Cuánto se debe, cuánto se cobró y quién está atrasado.</p></div>
       <div class="fila">
         <label class="campo compacto"><span>Mes</span><input type="month" id="crMes"></label>
-        <label class="campo compacto buscar-casa"><span>Registrar un pago</span><input type="search" id="crBuscar" list="casasDatalist" placeholder="Escribe el número de casa o el nombre"></label>
-        <datalist id="casasDatalist"></datalist>
+        <button class="btn primario" id="crRegistrar">💵 Registrar pago</button>
       </div></div>
     <div id="crCont"></div>
   </section>
@@ -425,10 +424,10 @@
         <p class="nota" style="margin-top:0">Todo se guarda en Supabase. Aun así, conviene descargar una copia de vez en cuando. «Cargar copia» sube al mapa compartido las formas, pagos e incidencias de un archivo descargado antes.</p>
         <div class="fila">
           <button class="btn primario" id="exportar">Descargar copia</button>
-          <button class="btn" id="importarBtn">Cargar copia</button>
+          <button class="btn" id="importarBtn" data-solo-dev>Cargar copia</button>
           <input type="file" id="importar" accept=".json,application/json" hidden>
         </div>
-        <div class="fila" style="margin-top:14px"><button class="btn peligro" id="borrarTodo">Borrar todo el mapa</button></div>
+        <div class="fila" style="margin-top:14px" data-solo-dev><button class="btn peligro" id="borrarTodo">Borrar todo el mapa</button></div>
       </article>
 
       <article class="tarjeta" id="cfg-cuenta">
@@ -442,6 +441,15 @@
     </div>
   </section>
 </main>
+
+<dialog id="dlgElegirCasa" class="modal" aria-labelledby="ecTitulo">
+  <header><h2 id="ecTitulo">Registrar un pago</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
+  <div class="modal-cuerpo">
+    <label class="campo" style="margin-top:0"><span>¿De qué casa es el pago?</span>
+      <input type="search" id="ecBusca" placeholder="Número de casa o nombre del representante" autocomplete="off"></label>
+    <ul class="lista-elegir" id="ecLista"></ul>
+  </div>
+</dialog>
 
 <dialog id="dlgFicha" class="modal ficha" aria-labelledby="fcTitulo">
   <header class="fc-cab">
