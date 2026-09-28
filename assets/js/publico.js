@@ -875,8 +875,24 @@ document.querySelectorAll('[data-ir-casas]').forEach(b => b.addEventListener('cl
   if (vistaActual !== 'perfil') irA('perfil');
   setTimeout(() => $('#pfCuentasBox').scrollIntoView({behavior:'smooth', block:'start'}), 60);
 }));
-document.querySelectorAll('[data-abrir-datos]').forEach(b => b.addEventListener('click', () => { renderPerfil(); $('#pfDatosMsg').hidden = true; $('#dlgDatos').showModal(); }));
-document.querySelectorAll('[data-abrir-clave]').forEach(b => b.addEventListener('click', () => { $('#pfClaveMsg').hidden = true; $('#dlgClave').showModal(); }));
+/* Cabecera de las ventanas de perfil: inicial, nombre y casas */
+function cabeceraPerfil(){
+  const nombre = (perfil && perfil.nombre) || (sesion && sesion.user.email) || '';
+  const casas = misCuentas.map(x => { const l = capas.get(x.id); return l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || ''); });
+  document.querySelectorAll('[data-mp-avatar]').forEach(e => { e.textContent = (nombre.trim().charAt(0) || '?').toUpperCase(); });
+  document.querySelectorAll('[data-mp-nombre]').forEach(e => { e.textContent = (perfil && perfil.nombre) || 'Mi perfil'; });
+  document.querySelectorAll('[data-mp-sub]').forEach(e => { e.textContent = casas.length ? 'Representante de ' + casas.join(', ') : 'Vecino'; });
+  document.querySelectorAll('[data-aviso-temporal]').forEach(e => { e.hidden = !(perfil && perfil.debe_cambiar_clave); });
+}
+document.querySelectorAll('[data-abrir-datos]').forEach(b => b.addEventListener('click', () => {
+  $('#menuCuenta').hidden = true;
+  renderPerfil(); cabeceraPerfil(); $('#pfDatosMsg').hidden = true; $('#dlgDatos').showModal();
+}));
+document.querySelectorAll('[data-abrir-clave]').forEach(b => b.addEventListener('click', () => {
+  $('#menuCuenta').hidden = true;
+  if ($('#dlgDatos').open) $('#dlgDatos').close();
+  cabeceraPerfil(); AcuClave.limpiar($('#dlgClave')); $('#pfClaveMsg').hidden = true; $('#dlgClave').showModal();
+}));
 document.querySelectorAll('[data-abrir-pagos]').forEach(b => b.addEventListener('click', () => {
   const pagos = misCuentas.flatMap(x => { const l = capas.get(x.id); return (x.pagos || []).map(p => ({...p, casa:l ? nombreElemento(l.fila) : 'Casa ' + (x.numero || '')})); })
     .sort((a, b) => String(b.fecha).localeCompare(String(a.fecha)));
@@ -902,7 +918,7 @@ function renderPerfil(){
   if (document.activeElement !== $('#pfNombre')) $('#pfNombre').value = (perfil && perfil.nombre) || '';
   if (document.activeElement !== $('#pfCelular')) $('#pfCelular').value = (perfil && perfil.celular) || '';
 }
-$('#pfVer').addEventListener('change', e => { ['#pfClave', '#pfClave2'].forEach(s => { $(s).type = e.target.checked ? 'text' : 'password'; }); });
+
 $('#pfGuardar').addEventListener('click', async () => {
   const {data, error} = await sb.rpc('actualizar_mi_perfil', {p_nombre:$('#pfNombre').value, p_celular:$('#pfCelular').value});
   if (error){ mensajeForm('#pfDatosMsg', explicarError(error), false); return; }

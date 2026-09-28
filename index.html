@@ -38,7 +38,8 @@
     <ul class="menu-cuenta" id="menuCuenta" hidden>
       <li class="quien"><b id="menuNombre"></b><span id="menuCorreo"></span></li>
       <li><a href="#/perfil">Mi estado de cuenta</a></li>
-      <li><a href="#/perfil">Mi perfil y contraseña</a></li>
+      <li><button data-abrir-datos>Mi perfil</button></li>
+      <li><button data-abrir-clave>Cambiar contraseña</button></li>
       <li><a href="#/reportar">Mis reportes</a></li>
       <li id="menuAdm" hidden><a href="assets/pages/adm/jaar.html">🛠️ Ir a la administración</a></li>
       <li><button id="btnSalir">Cerrar sesión</button></li>
@@ -243,27 +244,49 @@
 </dialog>
 
 <!-- Mis datos -->
-<dialog id="dlgDatos" class="modal" aria-labelledby="dtTitulo">
-  <header><h2 id="dtTitulo">Mis datos</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
-  <div class="modal-cuerpo">
-    <p class="nota" style="margin-top:0">Correo: <b id="pfCorreo"></b><br>Casa: <b id="pfCasa"></b></p>
-    <label class="campo"><span>Nombre del representante</span><input type="text" id="pfNombre" maxlength="120" autocomplete="name"></label>
-    <label class="campo"><span>Celular</span><input type="tel" id="pfCelular" maxlength="20" autocomplete="tel"></label>
-    <div class="fila"><button class="btn primario" id="pfGuardar">Guardar datos</button></div>
-    <p class="mensaje-form" id="pfDatosMsg" hidden></p>
-    <p class="nota">Para cambiar tu correo o tus casas, escribe a la administración.</p>
+<dialog id="dlgDatos" class="modal modal-perfil" aria-labelledby="dtTitulo">
+  <header class="mp-cab">
+    <button class="cerrar" data-cerrar aria-label="Cerrar">×</button>
+    <div class="mp-avatar" data-mp-avatar aria-hidden="true">?</div>
+    <h2 id="dtTitulo" data-mp-nombre>Mis datos</h2>
+    <p class="mp-sub" data-mp-sub></p>
+  </header>
+  <div class="mp-cuerpo">
+    <section class="mp-tarjeta">
+      <h3><span class="ic" aria-hidden="true">👤</span>Mis datos</h3>
+      <dl class="mp-info"><dt>Correo</dt><dd id="pfCorreo"></dd><dt>Casas</dt><dd id="pfCasa"></dd></dl>
+      <label class="campo"><span>Nombre del representante</span><input type="text" id="pfNombre" maxlength="120" autocomplete="name"></label>
+      <label class="campo"><span>Celular</span><input type="tel" id="pfCelular" maxlength="20" autocomplete="tel"></label>
+      <div class="fila"><button class="btn primario" id="pfGuardar">Guardar datos</button></div>
+      <p class="mensaje-form" id="pfDatosMsg" hidden></p>
+      <p class="nota">Para cambiar tu correo o tus casas, escribe a la administración.</p>
+    </section>
+    <button class="btn mp-ir-clave" data-abrir-clave>🔒 Cambiar mi contraseña</button>
   </div>
 </dialog>
 
 <!-- Cambiar contraseña -->
-<dialog id="dlgClave" class="modal" aria-labelledby="clTitulo">
-  <header><h2 id="clTitulo">Cambiar contraseña</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
-  <div class="modal-cuerpo">
-    <label class="campo"><span>Contraseña nueva (mínimo 8 caracteres)</span><input type="password" id="pfClave" maxlength="72" autocomplete="new-password"></label>
-    <label class="campo"><span>Repite la contraseña</span><input type="password" id="pfClave2" maxlength="72" autocomplete="new-password"></label>
-    <label class="check"><input type="checkbox" id="pfVer"><span>Mostrar contraseña</span></label>
-    <div class="fila"><button class="btn primario" id="pfCambiar">Cambiar contraseña</button></div>
-    <p class="mensaje-form" id="pfClaveMsg" hidden></p>
+<dialog id="dlgClave" class="modal modal-perfil" aria-labelledby="clTitulo">
+  <header class="mp-cab">
+    <button class="cerrar" data-cerrar aria-label="Cerrar">×</button>
+    <div class="mp-avatar" data-mp-avatar aria-hidden="true">?</div>
+    <h2 id="clTitulo" data-mp-nombre>Contraseña</h2>
+    <p class="mp-sub" data-mp-sub></p>
+  </header>
+  <div class="mp-cuerpo">
+    <p class="aviso-temporal" data-aviso-temporal hidden>🔑 Estás usando una contraseña temporal que te dio la administración. Cámbiala por una que solo tú conozcas.</p>
+    <section class="mp-tarjeta">
+      <h3><span class="ic" aria-hidden="true">🔒</span>Seguridad</h3>
+      <p class="nota" style="margin-top:0">Usa una contraseña que solo tú conozcas, de al menos 8 caracteres.</p>
+      <label class="campo"><span>Contraseña nueva</span>
+        <span class="mp-input"><input type="password" id="pfClave" maxlength="72" autocomplete="new-password"><button type="button" class="mp-ojo" data-ojo="pfClave"></button></span></label>
+      <div class="mp-fuerza" data-fuerza-de="pfClave"><i></i><span></span></div>
+      <label class="campo"><span>Repite la contraseña</span>
+        <span class="mp-input"><input type="password" id="pfClave2" maxlength="72" autocomplete="new-password"><button type="button" class="mp-ojo" data-ojo="pfClave2"></button></span></label>
+      <p class="mp-coincide" data-coincide="pfClave|pfClave2"></p>
+      <div class="fila"><button class="btn primario" id="pfCambiar">Cambiar contraseña</button></div>
+      <p class="mensaje-form" id="pfClaveMsg" hidden></p>
+    </section>
   </div>
 </dialog>
 
@@ -301,6 +324,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
 <script src="assets/js/config.js"></script>
 <script src="assets/js/sesion.js"></script>
+<script src="assets/js/formulario-clave.js"></script>
 <script src="assets/js/comun.js"></script>
 <script src="assets/js/publico.js"></script>
 <script src="assets/js/sitio.js" data-privacidad="privacidad.html"></script>

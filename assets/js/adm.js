@@ -2535,10 +2535,14 @@ async function cambiarMiClave(){
   msg.className = 'mensaje-form ok'; msg.textContent = 'Contraseña cambiada. Úsala la próxima vez que entres.';
 }
 function abrirMiPerfil(){
+  const nombre = miPerfil.nombre || miPerfil.email || '';
+  $('#miAvatar').textContent = (nombre.trim().charAt(0) || '?').toUpperCase();
+  $('#perfTitulo').textContent = miPerfil.nombre || 'Mi perfil';
+  AcuClave.limpiar($('#dlgPerfil'));
   $('#miNombre').value = miPerfil.nombre || '';
   $('#miCelular').value = miPerfil.celular || '';
   $('#miCorreo').textContent = miPerfil.email || '';
-  $('#miCargo').textContent = nombreCargo(miPerfil) || NOMBRE_ROL[miPerfil.rol];
+  $('#miCargo').textContent = (nombreCargo(miPerfil) || NOMBRE_ROL[miPerfil.rol]) + (nombreCargo(miPerfil) && miPerfil.rol === 'desarrollador' ? ' · Desarrollador' : '');
   $('#miAvisoTemporal').hidden = !miPerfil.debe_cambiar_clave;
   $('#miClaveMsg').hidden = true;
   $('#dlgPerfil').showModal();

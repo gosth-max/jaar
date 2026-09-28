@@ -509,19 +509,34 @@
   <div class="modal-cuerpo" id="credCuerpo"></div>
 </dialog>
 
-<dialog id="dlgPerfil" class="modal" aria-labelledby="perfTitulo">
-  <header><h2 id="perfTitulo">Mi perfil</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>
-  <div class="modal-cuerpo">
+<dialog id="dlgPerfil" class="modal modal-perfil" aria-labelledby="perfTitulo">
+  <header class="mp-cab">
+    <button class="cerrar" data-cerrar aria-label="Cerrar">×</button>
+    <div class="mp-avatar" id="miAvatar" aria-hidden="true">?</div>
+    <h2 id="perfTitulo">Mi perfil</h2>
+    <p class="mp-sub"><span id="miCargo"></span></p>
+  </header>
+  <div class="mp-cuerpo">
     <p class="aviso-temporal" id="miAvisoTemporal" hidden>🔑 Estás usando una contraseña temporal. Cámbiala por una que solo tú conozcas.</p>
-    <p class="nota">Correo: <b id="miCorreo"></b><br>Cargo: <b id="miCargo"></b></p>
-    <label class="campo"><span>Nombre</span><input type="text" id="miNombre" maxlength="120"></label>
-    <label class="campo"><span>Celular</span><input type="tel" id="miCelular" maxlength="20"></label>
-    <div class="fila"><button class="btn" id="miGuardar">Guardar datos</button></div>
-    <h3 class="dlg-sub">Cambiar contraseña</h3>
-    <label class="campo"><span>Contraseña nueva (mínimo 8 caracteres)</span><input type="password" id="miClave" autocomplete="new-password" maxlength="72"></label>
-    <label class="campo"><span>Repite la contraseña</span><input type="password" id="miClave2" autocomplete="new-password" maxlength="72"></label>
-    <div class="fila"><button class="btn primario" id="miCambiarClave">Cambiar contraseña</button></div>
-    <p class="mensaje-form" id="miClaveMsg" hidden></p>
+    <section class="mp-tarjeta">
+      <h3><span class="ic" aria-hidden="true">👤</span>Mis datos</h3>
+      <dl class="mp-info"><dt>Correo</dt><dd id="miCorreo"></dd></dl>
+      <label class="campo"><span>Nombre</span><input type="text" id="miNombre" maxlength="120" autocomplete="name"></label>
+      <label class="campo"><span>Celular</span><input type="tel" id="miCelular" maxlength="20" autocomplete="tel"></label>
+      <div class="fila"><button class="btn" id="miGuardar">Guardar datos</button></div>
+    </section>
+    <section class="mp-tarjeta">
+      <h3><span class="ic" aria-hidden="true">🔒</span>Seguridad</h3>
+      <p class="nota" style="margin-top:0">Usa una contraseña que solo tú conozcas, de al menos 8 caracteres.</p>
+      <label class="campo"><span>Contraseña nueva</span>
+        <span class="mp-input"><input type="password" id="miClave" autocomplete="new-password" maxlength="72"><button type="button" class="mp-ojo" data-ojo="miClave"></button></span></label>
+      <div class="mp-fuerza" data-fuerza-de="miClave"><i></i><span></span></div>
+      <label class="campo"><span>Repite la contraseña</span>
+        <span class="mp-input"><input type="password" id="miClave2" autocomplete="new-password" maxlength="72"><button type="button" class="mp-ojo" data-ojo="miClave2"></button></span></label>
+      <p class="mp-coincide" data-coincide="miClave|miClave2"></p>
+      <div class="fila"><button class="btn primario" id="miCambiarClave">Cambiar contraseña</button></div>
+      <p class="mensaje-form" id="miClaveMsg" hidden></p>
+    </section>
   </div>
 </dialog>
 
@@ -539,6 +554,7 @@
 <script src="../../js/sesion.js"></script>
 <script src="../../js/comun.js"></script>
 <script src="../../js/politica.js"></script>
+<script src="../../js/formulario-clave.js"></script>
 <script src="../../js/adm.js"></script>
 </body>
 </html>
