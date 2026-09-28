@@ -82,6 +82,7 @@
           <li><a href="#/usuarios/solicitudes" data-ruta="usuarios/solicitudes"><span>Solicitudes de registro<small>Aprobar o rechazar vecinos</small></span><span class="badge azul" data-badge-sol hidden></span></a></li>
           <li><a href="#/usuarios/vecinos" data-ruta="usuarios/vecinos"><span>Vecinos<small>Cuentas de representantes de casas</small></span></a></li>
           <li><a href="#/usuarios/administradores" data-ruta="usuarios/administradores"><span>Administradores<small>Quién gestiona el acueducto</small></span></a></li>
+          <li data-solo-dev><a href="#/usuarios/permisos" data-ruta="usuarios/permisos"><span>Permisos<small>Qué puede ver y hacer cada administrador</small></span></a></li>
         </ul>
       </li>
       <li class="grupo" data-grupo="config">
@@ -213,6 +214,14 @@
       <select id="solFiltro" aria-label="Qué solicitudes ver" style="width:auto"><option value="pendientes">Pendientes</option><option value="revisadas">Ya revisadas</option></select></div>
     <p class="nota intro-seccion">Verifica que quien pide la cuenta sea el representante de la casa. Al aprobar, recibe un correo para crear su contraseña; al rechazar, puede volver a intentarlo en 24 horas.</p>
     <div id="solLista" class="lista-tarjetas"></div>
+  </section>
+
+  <section class="vista" data-vista="usuarios/permisos" hidden>
+    <div class="cab-vista"><div><h1>Permisos de los administradores</h1><p>Elige qué secciones puede ver y qué acciones puede hacer cada administrador. Lo desactivado se le oculta.</p></div></div>
+    <div class="perm-diseno">
+      <nav class="perm-lista" id="permLista" aria-label="Administradores"></nav>
+      <article class="tarjeta perm-panel" id="permPanel"></article>
+    </div>
   </section>
 
   <section class="vista" data-vista="usuarios/vecinos" hidden>
@@ -441,6 +450,15 @@
     </div>
   </section>
 </main>
+
+<!-- Barra inferior (celular) -->
+<nav class="barra-inferior" id="barraInferior" aria-label="Navegación">
+  <a href="#/inicio" data-ruta="inicio"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 11 12 3l9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/></svg>Inicio</a>
+  <a href="#/mapa" data-ruta="mapa"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 4 6 2 6-2v16l-6 2-6-2-6 2V6z"/><path d="M9 4v16M15 6v16"/></svg>Mapa</a>
+  <button class="central" data-accion-pago aria-label="Registrar pago"><span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></span>Pago</button>
+  <a href="#/incidencias/abiertas" data-ruta="incidencias/abiertas"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17v.5"/></svg><span class="badge" data-badge-inc hidden></span>Incidencias</a>
+  <button id="menuInferior"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>Menú</button>
+</nav>
 
 <dialog id="dlgElegirCasa" class="modal" aria-labelledby="ecTitulo">
   <header><h2 id="ecTitulo">Registrar un pago</h2><button class="cerrar" data-cerrar aria-label="Cerrar">×</button></header>

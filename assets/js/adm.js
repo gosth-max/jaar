@@ -250,7 +250,13 @@ function suscribir(){
       if (p.eventType === 'INSERT') aviso('Nuevo reporte de un vecino: ' + (p.new.tipo || ''), 6000);
       cargarUsuariosPronto();
     })
-    .on('postgres_changes', {event:'*', schema:'public', table:'perfiles'}, cargarUsuariosPronto)
+    .on('postgres_changes', {event:'*', schema:'public', table:'perfiles'}, p => {
+      if (p.new && miPerfil && p.new.id === miPerfil.id && p.new.permisos){
+        miPerfil.permisos = p.new.permisos; aplicarPermisos(); renderVistaActual();
+        aviso('Tus permisos cambiaron.', 4000);
+      }
+      cargarUsuariosPronto();
+    })
     .on('postgres_changes', {event:'*', schema:'public', table:'cargos'}, cargarUsuariosPronto)
     .subscribe(status => { enVivo = status === 'SUBSCRIBED'; pintarSync(); });
 }
@@ -1249,6 +1255,144 @@ function enfocar(layer){
 }
 
 /* =====================================================================
+   PERMISOS DE LOS ADMINISTRADORES (los define el desarrollador)
+   Cada permiso oculta sus secciones y botones cuando está desactivado.
+   La base de datos también los revisa para las acciones importantes.
+   ===================================================================== */
+const PERMISOS = [
+  {grupo:'Secciones que puede ver', items:[
+    {k:'mapa', txt:'Mapa de la red', desc:'Ver casas, tuberías, llaves y sectores en el mapa.', rutas:['mapa']},
+    {k:'incidencias', txt:'Incidencias', desc:'Abiertas, resueltas y calendario.', rutas:['incidencias/abiertas', 'incidencias/resueltas', 'incidencias/calendario']},
+    {k:'reportes', txt:'Reportes de vecinos', desc:'Lo que envían los vecinos desde su página.', rutas:['incidencias/reportes']},
+    {k:'sectores', txt:'Sectores y flujo', desc:'Lista de sectores y su servicio de agua.', rutas:['sectores']},
+    {k:'resumen', txt:'Resumen general', desc:'Cifras de la red, casas y cobros.', rutas:['resumen']},
+    {k:'cobros', txt:'Cobros', desc:'Resumen de cobros, casas y cuentas, historial de cobros.', rutas:['cobros/resumen', 'cobros/casas', 'cobros/historial']},
+    {k:'pagos', txt:'Pagos registrados', desc:'Lista de recibos y formas de pago.', rutas:['cobros/pagos']},
+    {k:'cortes', txt:'Cortes de agua', desc:'Casas para notificar, avisos y cortes.', rutas:['cobros/cortes']},
+    {k:'tarifas', txt:'Tarifas', desc:'Ver y cambiar cuánto se cobra.', rutas:['cobros/tarifas']},
+    {k:'solicitudes', txt:'Solicitudes de registro', desc:'Personas que piden una cuenta.', rutas:['usuarios/solicitudes']},
+    {k:'vecinos', txt:'Lista de vecinos', desc:'Cuentas de los representantes de las casas.', rutas:['usuarios/vecinos']},
+    {k:'administradores', txt:'Lista de administradores', desc:'Quiénes forman la junta y el personal.', rutas:['usuarios/administradores']},
+    {k:'configuracion', txt:'Configuración', desc:'Datos generales, contacto, política de privacidad y copias.', rutas:['configuracion']}
+  ]},
+  {grupo:'Acciones que puede realizar', items:[
+    {k:'crear_incidencias', txt:'Registrar y resolver incidencias', desc:'Reportar, resolver y reabrir incidencias.',
+      sel:'#incNueva, #incFormBox, [data-resolver], [data-resolver-id], [data-reabrir-id]'},
+    {k:'responder_reportes', txt:'Responder reportes', desc:'Cambiar el estado y responder a los vecinos.', sel:'[data-guardar-rep], .reporte .respuesta'},
+    {k:'operar_red', txt:'Operar la red', desc:'Abrir o cerrar llaves y marcar sectores con o sin agua.',
+      sel:'.p-estado .interruptor, .p-estado [data-estado], .interruptor-flujo'},
+    {k:'editar_casas', txt:'Editar datos de las casas', desc:'Representante, teléfono, núcleos familiares, tarifa y cobro.',
+      sel:'#fdGuardar, .fc-corregir, #nGuardar, #nAgregar, [data-quitar-n]'},
+    {k:'registrar_pagos', txt:'Registrar pagos y cargos', desc:'Registrar pagos, cargos extra y el cargo de reconexión.',
+      sel:'#crRegistrar, [data-fc-tab="pago"], #pPagar, #fcExtraBtn, #fcExtra, [data-ir-tab="pago"], [data-accion-pago]'},
+    {k:'anular', txt:'Anular pagos y cargos', desc:'Anular movimientos con un motivo.', sel:'.libreta [data-anular]'},
+    {k:'arreglos', txt:'Arreglos de pago', desc:'Crear, cumplir o cancelar arreglos de pago.', sel:'#arrNuevoBtn, #arrForm, [data-arreglo]'},
+    {k:'acciones_corte', txt:'Cortes de agua', desc:'Notificar, cortar, reincorporar y cambiar las reglas.',
+      sel:'[data-notificar], [data-cortar], [data-anular-aviso], [data-reincorporar], .corte-caja .rango, #ctReglas'},
+    {k:'aprobar', txt:'Aprobar solicitudes', desc:'Aprobar o rechazar a quienes piden una cuenta.', sel:'[data-aprobar], [data-rechazar], .modo-acceso, .solicitud .campo'},
+    {k:'gestionar_vecinos', txt:'Gestionar cuentas de vecinos', desc:'Vincular casas, suspender, eliminar o agregar vecinos.',
+      sel:'[data-suspender], [data-reactivar], [data-eliminar-cuenta], [data-agregar-casa], [data-quitar-casa], [data-hacer-admin], .invitar, #fdVincular'}
+  ]}
+];
+const TODOS_PERMISOS = PERMISOS.flatMap(g => g.items);
+const PLANTILLAS_PERMISOS = {
+  todo:{txt:'Todo', claves:TODOS_PERMISOS.map(p => p.k)},
+  tesoreria:{txt:'Tesorería', claves:['resumen', 'cobros', 'pagos', 'cortes', 'tarifas', 'vecinos', 'registrar_pagos', 'anular', 'arreglos', 'acciones_corte']},
+  operacion:{txt:'Operación de la red', claves:['mapa', 'incidencias', 'reportes', 'sectores', 'resumen', 'crear_incidencias', 'responder_reportes', 'operar_red']},
+  secretaria:{txt:'Secretaría', claves:['solicitudes', 'vecinos', 'administradores', 'reportes', 'cobros', 'resumen', 'aprobar', 'gestionar_vecinos', 'responder_reportes', 'editar_casas']},
+  lectura:{txt:'Solo mirar', claves:PERMISOS[0].items.map(p => p.k)}
+};
+const tienePermiso = k => esDev() || !(miPerfil && miPerfil.permisos && miPerfil.permisos[k] === false);
+function rutaPermitida(ruta){
+  if (esDev()) return true;
+  const it = PERMISOS[0].items.find(x => x.rutas.includes(ruta));
+  return !it || tienePermiso(it.k);
+}
+/* Oculta secciones y botones sin permiso (con una hoja de estilos generada) */
+function aplicarPermisos(){
+  let hoja = document.getElementById('estiloPermisos');
+  if (!hoja){ hoja = document.createElement('style'); hoja.id = 'estiloPermisos'; document.head.appendChild(hoja); }
+  const reglas = [];
+  // Funciones exclusivas del desarrollador: cualquier enlace para dibujar queda oculto
+  if (!esDev()) reglas.push('a[href^="#/mapa/dibujar/"]', '[data-solo-dev]');
+  TODOS_PERMISOS.forEach(p => {
+    if (tienePermiso(p.k)) return;
+    (p.rutas || []).forEach(r => reglas.push(`a[href="#/${r}"]`, `a[data-ruta="${r}"]`, `a[href^="#/${r}/"]`));
+    if (p.rutas) reglas.push(`[data-seccion="${p.k}"]`);
+    if (p.sel) reglas.push(p.sel);
+  });
+  hoja.textContent = reglas.map(r => r + '{display:none!important}').join('\n');
+  // Menús: ocultar opciones y grupos que quedaron vacíos
+  document.querySelectorAll('#nav .submenu li').forEach(li => {
+    const a = li.querySelector('a[href^="#/"]');
+    if (a) li.classList.toggle('sin-permiso', getComputedStyle(a).display === 'none');
+  });
+  document.querySelectorAll('#nav .grupo[data-grupo]').forEach(g => {
+    if (g.dataset.grupo === 'inicio') return;
+    const visibles = [...g.querySelectorAll('.submenu a[href^="#/"]')].filter(a => getComputedStyle(a).display !== 'none' && !a.closest('[hidden]'));
+    g.classList.toggle('sin-permiso', !visibles.length);
+  });
+  if (vistaActual && !rutaPermitida(vistaActual)) location.hash = '#/inicio';
+}
+
+/* --- Página de permisos (solo desarrollador) --- */
+let permElegido = null, permEdicion = null;
+function renderPermisos(){
+  if (!esDev()){ location.hash = '#/inicio'; return; }
+  const admins = adminsLista.filter(a => a.rol === 'administrador');
+  const cont = $('#permLista');
+  if (!admins.length){
+    cont.innerHTML = '<div class="vacio-grande">Todavía no hay administradores. Nómbralos desde <a href="#/usuarios/administradores">Administradores</a>.</div>';
+    $('#permPanel').innerHTML = ''; return;
+  }
+  if (!permElegido || !admins.some(a => a.id === permElegido)) permElegido = admins[0].id;
+  const perfilDe = id => perfilesLista.find(p => p.id === id) || admins.find(p => p.id === id) || {};
+  const negados = id => Object.entries(perfilDe(id).permisos || {}).filter(([, v]) => v === false).length;
+  cont.innerHTML = admins.map(a => `<button class="perm-admin ${a.id === permElegido ? 'on' : ''}" data-perm-admin="${esc(a.id)}">
+      <span class="ini" aria-hidden="true">${esc((a.nombre || '?').trim().charAt(0).toUpperCase())}</span>
+      <span class="nom"><b>${esc(a.nombre || 'Sin nombre')}</b><small>${esc(nombreCargo(a) || 'Administrador')}</small></span>
+      <span class="pill ${negados(a.id) ? 'warn' : 'ok'}">${negados(a.id) ? negados(a.id) + ' sin permiso' : 'Todo'}</span></button>`).join('');
+  cont.querySelectorAll('[data-perm-admin]').forEach(b => b.addEventListener('click', () => { permElegido = b.dataset.permAdmin; permEdicion = null; renderPermisos(); }));
+  const p = perfilDe(permElegido);
+  if (!permEdicion || permEdicion.id !== permElegido) permEdicion = {id:permElegido, permisos:{...(p.permisos || {})}};
+  const perm = permEdicion.permisos;
+  $('#permPanel').innerHTML = `
+    <header class="perm-cab"><div><h2>${esc(p.nombre || 'Administrador')}</h2><p class="nota">${esc(nombreCargo(p) || 'Administrador')}</p></div>
+      <div class="fila"><label class="campo compacto"><span>Plantilla</span><select id="permPlantilla"><option value="">Elegir…</option>
+        ${Object.entries(PLANTILLAS_PERMISOS).map(([k, v]) => `<option value="${k}">${v.txt}</option>`).join('')}</select></label></div></header>
+    ${PERMISOS.map(g => `<section class="perm-grupo"><h3>${g.grupo}</h3>${g.items.map(it => `
+      <label class="perm-item"><span class="txt"><b>${esc(it.txt)}</b><small>${esc(it.desc)}</small></span>
+        <span class="interruptor"><input type="checkbox" data-perm="${it.k}" ${perm[it.k] === false ? '' : 'checked'}><span class="riel"></span></span></label>`).join('')}</section>`).join('')}
+    <div class="fila perm-acciones">
+      <button class="btn primario" id="permGuardar">Guardar permisos</button>
+      <button class="btn" id="permTodos">Aplicar a todos los administradores</button>
+    </div>
+    <p class="nota">Lo que desactives desaparece de la pantalla de ${esc((p.nombre || 'este administrador').split(' ')[0])} en cuanto guardes, y la base de datos también le impide hacer esas acciones. El Inicio siempre lo puede ver.</p>`;
+  $('#permPanel').querySelectorAll('[data-perm]').forEach(c => c.addEventListener('change', () => { if (c.checked) delete perm[c.dataset.perm]; else perm[c.dataset.perm] = false; }));
+  $('#permPlantilla').addEventListener('change', e => {
+    const pl = PLANTILLAS_PERMISOS[e.target.value]; if (!pl) return;
+    permEdicion.permisos = Object.fromEntries(TODOS_PERMISOS.filter(x => !pl.claves.includes(x.k)).map(x => [x.k, false]));
+    renderPermisos();
+    aviso(`Plantilla «${pl.txt}» aplicada. Revisa y pulsa «Guardar permisos».`);
+  });
+  const guardar = async ids => {
+    const permisos = Object.fromEntries(Object.entries(permEdicion.permisos).filter(([, v]) => v === false));
+    for (const id of ids){
+      const ok = await tarea(sb.from('perfiles').update({permisos}).eq('id', id), 'No se pudieron guardar los permisos');
+      if (!ok) return;
+      const pp = perfilesLista.find(x => x.id === id); if (pp) pp.permisos = {...permisos};
+      const aa = adminsLista.find(x => x.id === id); if (aa) aa.permisos = {...permisos};
+    }
+    aviso(ids.length > 1 ? `Permisos aplicados a ${ids.length} administradores.` : 'Permisos guardados.');
+    renderPermisos();
+  };
+  $('#permGuardar').addEventListener('click', () => guardar([permElegido]));
+  $('#permTodos').addEventListener('click', () => {
+    if (confirm(`¿Dar estos mismos permisos a los ${admins.length} administradores?`)) guardar(admins.map(a => a.id));
+  });
+}
+
+/* =====================================================================
    PERMISOS: solo el desarrollador crea, borra o edita las formas del mapa
    ===================================================================== */
 function aplicarPermisosFormas(){
@@ -1425,11 +1569,12 @@ function renderPanel(){
   const cuerpo = $('#pCuerpo');
   cuerpo.innerHTML = `<div class="p-barra">${acciones}</div>${estado}${barraTabs}${cuerpoTabs}${dev ? mas : ''}`;
   enlazarPanel(layer, cuerpo);
-  if (!dev && aq.tipo !== 'casa'){
-    // Los administradores solo cambian lo operativo: agua del sector y llaves abiertas o cerradas
+  if (!dev && (aq.tipo !== 'casa' || !tienePermiso('editar_casas'))){
+    // Solo lectura: los datos se muestran como texto y los botones de edición no aparecen
     cuerpo.querySelectorAll('[data-panel="datos"], [data-panel="agua"]').forEach(p => {
-      p.querySelectorAll('input, select, textarea, button').forEach(el => { el.disabled = true; });
-      p.insertAdjacentHTML('afterbegin', '<p class="aviso-solo-dev">🔒 Solo el desarrollador puede editar este elemento del mapa.</p>');
+      p.classList.add('solo-lectura');
+      p.querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; });
+      p.querySelectorAll('button').forEach(el => { el.hidden = true; });
     });
     if (aq.tipo === 'conector') cuerpo.querySelectorAll('.p-estado button').forEach(el => { el.hidden = true; });
   }
@@ -1636,10 +1781,11 @@ const RENDER = {
   'cobros/pagos': renderCobPagos,
   'cobros/tarifas': renderCobTarifas,
   'cobros/historial': renderCobHistorial,
-  'cobros/cortes': renderCobCortes
+  'cobros/cortes': renderCobCortes,
+  'usuarios/permisos': renderPermisos
 };
 const GRUPO_DE = {'inicio':'inicio', 'resumen':'inicio', 'mapa':'mapa', 'incidencias/abiertas':'incidencias',
-  'incidencias/resueltas':'incidencias', 'incidencias/calendario':'incidencias', 'incidencias/reportes':'incidencias', 'usuarios/solicitudes':'usuarios', 'usuarios/vecinos':'usuarios', 'usuarios/administradores':'usuarios', 'sectores':'gestion', 'cobros/resumen':'cobros', 'cobros/casas':'cobros', 'cobros/pagos':'cobros', 'cobros/tarifas':'cobros', 'cobros/historial':'cobros', 'cobros/cortes':'cobros', 'configuracion':'config'};
+  'incidencias/resueltas':'incidencias', 'incidencias/calendario':'incidencias', 'incidencias/reportes':'incidencias', 'usuarios/solicitudes':'usuarios', 'usuarios/vecinos':'usuarios', 'usuarios/administradores':'usuarios', 'sectores':'gestion', 'cobros/resumen':'cobros', 'cobros/casas':'cobros', 'cobros/pagos':'cobros', 'cobros/tarifas':'cobros', 'cobros/historial':'cobros', 'cobros/cortes':'cobros', 'usuarios/permisos':'usuarios', 'configuracion':'config'};
 
 function router(){
   let ruta = location.hash.replace(/^#\/?/, '') || 'inicio';
@@ -1648,6 +1794,8 @@ function router(){
   if (ruta.startsWith('mapa/dibujar/')){ base = 'mapa'; extra = ruta.split('/')[2]; }
   else if (ruta.startsWith('configuracion/')){ base = 'configuracion'; extra = ruta.split('/')[1]; }
   if (!(base in GRUPO_DE)) base = 'inicio';
+  if (miPerfil && !rutaPermitida(base)){ aviso('No tienes permiso para ver esa sección.'); history.replaceState(null, '', '#/inicio'); base = 'inicio'; }
+  if (base === 'usuarios/permisos' && miPerfil && !esDev()){ history.replaceState(null, '', '#/inicio'); base = 'inicio'; }
   mostrarVista(base);
   if (base === 'mapa' && extra && PISTAS[extra] && extra !== 'acometida' && !esDev()){ history.replaceState(null, '', '#/mapa'); soloDev('dibujar formas nuevas'); }
   else if (base === 'mapa' && extra && PISTAS[extra] && extra !== 'acometida'){
@@ -1696,6 +1844,7 @@ function enfocarTodo(){ if (capa.getLayers().length) map.fitBounds(capa.getBound
 function marcarNav(){
   const grupo = GRUPO_DE[vistaActual];
   document.querySelectorAll('.grupo[data-grupo]').forEach(g => g.classList.toggle('activo', g.dataset.grupo === grupo));
+  document.querySelectorAll('#barraInferior a[data-ruta]').forEach(a => { if (a.dataset.ruta === vistaActual) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current'); });
   document.querySelectorAll('.submenu a[data-ruta]').forEach(a => {
     if (a.dataset.ruta === vistaActual) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
   });
@@ -1724,6 +1873,7 @@ document.querySelectorAll('.submenu a').forEach(a => a.addEventListener('click',
   cerrarMenus(); cerrarNavMovil();
   if (href && href === location.hash) setTimeout(router, 0);   // misma dirección: volver a aplicar
 }));
+$('#menuInferior').addEventListener('click', e => { e.stopPropagation(); $('#menuBtn').click(); });
 $('#menuBtn').addEventListener('click', e => {
   e.stopPropagation();
   const abierto = $('#nav').classList.toggle('abierto');
@@ -1863,7 +2013,7 @@ function filaSector(l){
   const det = inc ? '⚠ ' + inc : (d.activo ? 'Con agua' : 'Sin agua') + (d.activoDesde ? ' ' + Acu.desde(d.activoDesde) : '');
   return `<li class="fila-sector"><button class="item" data-ver="${esc(l.aq.id)}"><i class="muestra" style="background:${esc(muestra)}"></i>
       <span>${esc(d.nombre || 'Sector sin nombre')}<small>${esc(det)}</small></span></button>
-    <label class="interruptor" title="Flujo de agua"><input type="checkbox" data-flujo-id="${esc(l.aq.id)}" ${d.activo ? 'checked' : ''} aria-label="Agua en ${esc(d.nombre || 'sector')}"><span class="riel"></span></label></li>`;
+    <label class="interruptor interruptor-flujo" title="Flujo de agua"><input type="checkbox" data-flujo-id="${esc(l.aq.id)}" ${d.activo ? 'checked' : ''} aria-label="Agua en ${esc(d.nombre || 'sector')}"><span class="riel"></span></label></li>`;
 }
 
 function tarjetaIncidencia(inc){
@@ -1904,11 +2054,31 @@ function renderInicio(){
   sectores.sort((a, b) => String(a.aq.datos.nombre).localeCompare(String(b.aq.datos.nombre), 'es', {numeric:true}));
 
   const cont = $('#dash');
+  const nombre = (miPerfil && miPerfil.nombre) ? miPerfil.nombre.split(' ')[0] : '';
+  const acceso = (href, ic, txt, extra = '') => `<a href="${href}" ${extra}><span class="ic" aria-hidden="true">${ic}</span>${txt}</a>`;
   cont.innerHTML = `
-    <div class="cab-vista">
-      <div><h1>${esc(state.settings.nombre || 'Mi acueducto')}</h1><p>${esc(hoy)}</p></div>
-      <div class="fila"><a class="btn" href="#/mapa">Abrir mapa</a><a class="btn primario" href="#/incidencias/abiertas">Ver incidencias</a></div>
-    </div>
+    <section class="adm-hero">
+      <div class="adm-hero-cab">
+        <div><p class="hola">${nombre ? 'Hola, ' + esc(nombre) : esc(state.settings.nombre || 'Mi acueducto')}</p>
+          <span class="cargo">${esc(miPerfil ? (nombreCargo(miPerfil) || NOMBRE_ROL[miPerfil.rol]) : '')}</span></div>
+        <p class="fecha">${esc(hoy)}</p>
+      </div>
+      <div class="adm-hero-cifras">
+        <a href="#/incidencias/abiertas"><span>Incidencias abiertas</span><b>${abiertas.length}</b></a>
+        <a href="#/cobros/casas"><span>Por cobrar</span><b>${esc(dinero(total))}</b></a>
+        <a href="#/sectores"><span>Sectores con agua</span><b>${conAgua} de ${sectores.length}</b></a>
+      </div>
+    </section>
+    <nav class="adm-accesos" aria-label="Accesos rápidos">
+      ${acceso('#/mapa', '🗺️', 'Mapa')}
+      ${acceso('#/incidencias/abiertas', '⚠️', 'Incidencias')}
+      ${acceso('#/incidencias/reportes', '📝', 'Reportes')}
+      <button data-accion-pago><span class="ic" aria-hidden="true">💵</span>Registrar pago</button>
+      ${acceso('#/cobros/casas', '🏠', 'Casas y cuentas')}
+      ${acceso('#/cobros/cortes', '🚱', 'Cortes')}
+      ${acceso('#/usuarios/solicitudes', '🙋', 'Solicitudes')}
+      ${acceso('#/configuracion/general', '⚙️', 'Configuración')}
+    </nav>
     <div class="kpis">
       ${kpi('#/incidencias/abiertas', abiertas.length, 'Incidencias abiertas',
           abiertas.length ? 'La más reciente ' + esc(Acu.hace(abiertas[0].creada_en)) : 'Todo en orden', abiertas.length ? 'alerta' : 'ok')}
@@ -1919,37 +2089,26 @@ function renderInicio(){
       ${kpi('#/cobros/resumen', esc(dinero(cobradoMes)), 'Cobrado este mes', 'Ver el resumen de cobros')}
     </div>
     <div class="rejilla">
-      <article class="tarjeta">
+      <article class="tarjeta" data-seccion="incidencias">
         <header><h2>Incidencias abiertas</h2><a href="#/incidencias/abiertas">Ver todas</a></header>
         ${abiertas.length ? abiertas.slice(0, 4).map(tarjetaIncidencia).join('') : '<p class="vacio">✓ No hay incidencias abiertas.</p>'}
       </article>
-      <article class="tarjeta">
+      <article class="tarjeta" data-seccion="sectores">
         <header><h2>Flujo de agua por sector</h2><a href="#/sectores">Administrar</a></header>
-        ${sectores.length ? `<ul class="lista">${sectores.map(filaSector).join('')}</ul>` : '<p class="vacio">Aún no hay sectores. <a href="#/mapa/dibujar/sector">Dibujar un sector</a></p>'}
+        ${sectores.length ? `<ul class="lista">${sectores.map(filaSector).join('')}</ul>` : `<p class="vacio">Aún no hay sectores.${esDev() ? ' <a href="#/mapa/dibujar/sector">Dibujar un sector</a>' : ''}</p>`}
       </article>
-      <article class="tarjeta">
+      <article class="tarjeta" data-seccion="cobros">
         <header><h2>Casas con más deuda</h2><a href="#/cobros/casas">Ver casas</a></header>
         ${conDeuda.length ? `<ul class="lista">${conDeuda.slice(0, 6).map(({l, c}) => {
             const est = textoEstado(c);
             return `<li><button class="item" data-ficha-inicio="${esc(l.aq.id)}"><span>${esc(nombreCasa(l.aq.datos))}<small>${esc(l.aq.datos.responsable || 'Sin responsable')}</small></span><span class="pill ${est.cls}">${esc(est.txt)}</span></button></li>`;
           }).join('')}</ul>` : '<p class="vacio">✓ Ninguna casa tiene deuda.</p>'}
       </article>
-      <article class="tarjeta">
+      <article class="tarjeta" data-seccion="pagos">
         <header><h2>Últimos pagos</h2><a href="#/cobros/pagos">Ver pagos</a></header>
         ${pagos.length ? `<ul class="lista">${pagos.slice(0, 6).map(({l, p}) =>
             `<li><button class="item" data-recibo-inicio="${esc(p.id)}"><span>${esc(nombreCasa(l.aq.datos))}<small>${esc(fechaCorta(p.fecha))} · ${esc(numRecibo(p.recibo))}</small></span><b class="monto">${esc(dinero(p.monto))}</b></button></li>`).join('')}</ul>`
           : '<p class="vacio">Todavía no hay pagos registrados.</p>'}
-      </article>
-      <article class="tarjeta ancha">
-        <header><h2>Accesos rápidos</h2></header>
-        <div class="accesos">
-          <a class="acceso" href="#/mapa/dibujar/casa">＋ Dibujar casa</a>
-          <a class="acceso" href="#/mapa/dibujar/tuberia">＋ Dibujar tubería</a>
-          <a class="acceso" href="#/mapa/dibujar/llave">＋ Marcar llave</a>
-          <a class="acceso" href="#/mapa/dibujar/sector">＋ Dibujar sector</a>
-          <a class="acceso" href="#/cobros/casas">Buscar una casa</a>
-          <a class="acceso" href="../../../index.html" target="_blank" rel="noopener">Ver mapa público ↗</a>
-        </div>
       </article>
     </div>`;
   cont.querySelectorAll('[data-ficha-inicio]').forEach(b => b.addEventListener('click', () => abrirFicha(b.dataset.fichaInicio)));
@@ -2136,7 +2295,7 @@ function renderSectoresVista(){
   $('#secConteo').textContent = sectores.length ? `${conAgua} de ${sectores.length} sectores con agua` : '';
   const cont = $('#secLista');
   if (!sectores.length){
-    cont.innerHTML = '<div class="vacio-grande">Aún no hay sectores.<br><small><a href="#/mapa/dibujar/sector">Dibuja el primero en el mapa</a>.</small></div>';
+    cont.innerHTML = `<div class="vacio-grande">Aún no hay sectores.${esDev() ? '<br><small><a href="#/mapa/dibujar/sector">Dibuja el primero en el mapa</a>.</small>' : ''}</div>`;
     return;
   }
   cont.innerHTML = sectores.map(l => {
@@ -2148,7 +2307,7 @@ function renderSectoresVista(){
         <i class="muestra" style="background:${esc(color)}"></i>
         <div><h2>${esc(d.nombre || 'Sector sin nombre')}</h2>
           <p class="nota">${esc((activo ? 'Con agua ' : 'Sin agua ') + (d.activoDesde ? Acu.desde(d.activoDesde) : ''))}</p></div>
-        <label class="interruptor" title="Flujo de agua"><input type="checkbox" data-flujo-id="${esc(l.aq.id)}" ${activo ? 'checked' : ''} aria-label="Agua en ${esc(d.nombre || 'sector')}"><span class="riel"></span></label>
+        <label class="interruptor interruptor-flujo" title="Flujo de agua"><input type="checkbox" data-flujo-id="${esc(l.aq.id)}" ${activo ? 'checked' : ''} aria-label="Agua en ${esc(d.nombre || 'sector')}"><span class="riel"></span></label>
       </div>
       ${inc ? `<p class="aviso-inc">⚠ ${esc(inc)}</p>` : ''}
       <div class="stats compactas">
@@ -2594,12 +2753,14 @@ function renderAdministradores(){
         ${dev ? `<td>${yo || p.rol === 'desarrollador' ? '' : `<div class="fila acciones-cuenta">
             ${p.estado === 'activo' ? `<button class="btn chico" data-suspender="${esc(p.id)}">Suspender</button>` : `<button class="btn chico" data-reactivar="${esc(p.id)}">Reactivar</button>`}
             <button class="btn chico" data-nueva-clave="${esc(p.id)}">Nueva contraseña</button>
+            <a class="btn chico" href="#/usuarios/permisos" data-ver-permisos="${esc(p.id)}">Permisos</a>
             <button class="btn chico peligro" data-bajar="${esc(p.id)}">Bajar a vecino</button></div>`}</td>` : ''}
       </tr>`;
     }).join('')}</tbody></table></div>`;
   enlazarCuentas(cont);
   cont.querySelectorAll('[data-cargo]').forEach(s => s.addEventListener('change', () => cambiarPerfil(s.dataset.cargo, {cargo:s.value || null}, 'Cargo actualizado.')));
   cont.querySelectorAll('[data-genero]').forEach(s => s.addEventListener('change', () => cambiarPerfil(s.dataset.genero, {genero:s.value}, 'Listo: el cargo se muestra como ' + (s.value === 'F' ? 'dama.' : 'caballero.'))));
+  cont.querySelectorAll('[data-ver-permisos]').forEach(a => a.addEventListener('click', () => { permElegido = a.dataset.verPermisos; permEdicion = null; }));
   cont.querySelectorAll('[data-bajar]').forEach(b => b.addEventListener('click', () => {
     const p = adminsLista.find(x => x.id === b.dataset.bajar);
     if (p && confirm(`¿Quitarle la administración a ${p.nombre || 'esta persona'}? Vuelve a ser vecino: conserva su cuenta y sus reportes, pero pierde el cargo y el acceso a la administración. Las incidencias que atendió siguen registradas con su nombre y cargo.`))
@@ -3389,6 +3550,8 @@ function fichaNucleos(aq){
 }
 function enlazarNucleos(aq, c, cuerpo){
   const ed = nucleosEdicion;
+  cuerpo.classList.toggle('solo-lectura', !tienePermiso('editar_casas'));
+  if (!tienePermiso('editar_casas')) cuerpo.querySelectorAll('input').forEach(el => { el.disabled = true; });
   cuerpo.querySelectorAll('[data-n]').forEach(inp => inp.addEventListener('input', () => { ed.lista[Number(inp.dataset.n)][inp.dataset.c] = inp.value; }));
   cuerpo.querySelectorAll('[data-quitar-n]').forEach(b => b.addEventListener('click', () => { ed.lista.splice(Number(b.dataset.quitarN), 1); renderFicha(); }));
   $('#nAgregar').addEventListener('click', () => { ed.lista.push({nombre:'', personas:'', nota:''}); renderFicha();
@@ -3442,6 +3605,8 @@ function fichaDatos(aq, c){
 }
 function enlazarDatos(aq){
   const d = aq.datos;
+  if (!tienePermiso('editar_casas')){ $('#fcCuerpo').classList.add('solo-lectura'); $('#fcCuerpo').querySelectorAll('input, select, textarea').forEach(el => { el.disabled = true; }); }
+  else $('#fcCuerpo').classList.remove('solo-lectura');
   enlazarChipsCasas($('#fcCuerpo'));
   if ($('#fdVincular')) $('#fdVincular').addEventListener('change', e => { if (e.target.value) vincularCasa(e.target.value, aq.id); });
   const previa = () => {
@@ -3637,7 +3802,9 @@ function pintarElegirCasa(){
     : '<li class="vacio" style="padding:12px">Ninguna casa coincide.</li>';
   $('#ecLista').querySelectorAll('[data-elegir]').forEach(b => b.addEventListener('click', () => { $('#dlgElegirCasa').close(); abrirFicha(b.dataset.elegir, 'pago'); }));
 }
-$('#crRegistrar').addEventListener('click', () => { $('#ecBusca').value = ''; pintarElegirCasa(); $('#dlgElegirCasa').showModal(); setTimeout(() => $('#ecBusca').focus(), 0); });
+function abrirElegirCasa(){ if (!tienePermiso('registrar_pagos')) return; $('#ecBusca').value = ''; pintarElegirCasa(); $('#dlgElegirCasa').showModal(); setTimeout(() => $('#ecBusca').focus(), 0); }
+$('#crRegistrar').addEventListener('click', abrirElegirCasa);
+document.addEventListener('click', e => { if (e.target.closest('[data-accion-pago]')) abrirElegirCasa(); });
 $('#ecBusca').addEventListener('input', pintarElegirCasa);
 $('#ecBusca').addEventListener('keydown', e => { if (e.key === 'Enter'){ const b = $('#ecLista [data-elegir]'); if (b){ e.preventDefault(); b.click(); } } });
 { const dl = $('#dlgElegirCasa'); dl.querySelectorAll('[data-cerrar]').forEach(x => x.addEventListener('click', () => dl.close())); dl.addEventListener('click', e => { if (e.target === dl) dl.close(); }); }
@@ -3659,7 +3826,7 @@ function renderCobCasas(){
   const total = round2(lista.reduce((s, x) => s + Math.max(0, x.c.saldo), 0));
   $('#ccConteo').textContent = `${lista.length} de ${todas.length} casas · por cobrar ${dinero(total)}`;
   const cont = $('#ccTabla');
-  if (!todas.length){ cont.innerHTML = '<div class="vacio-grande">Aún no hay casas. <a href="#/mapa/dibujar/casa">Dibuja la primera en el mapa</a>.</div>'; return; }
+  if (!todas.length){ cont.innerHTML = `<div class="vacio-grande">Aún no hay casas.${esDev() ? ' <a href="#/mapa/dibujar/casa">Dibuja la primera en el mapa</a>.' : ''}</div>`; return; }
   if (!lista.length){ cont.innerHTML = '<div class="vacio-grande">Ninguna casa coincide con el filtro.</div>'; return; }
   cont.innerHTML = `<div class="tabla-cont"><table class="tabla clicable">
     <thead><tr><th>Casa</th><th>Representante</th><th class="num">Núcleos</th><th class="num">Personas</th><th>Tarifa</th><th class="num">Cuota</th><th>Último pago</th><th class="num">Saldo</th><th>Clasificación</th><th>Estado</th></tr></thead>
@@ -4217,6 +4384,7 @@ async function iniciarApp(session){
   }
   miPerfil = perfil;
   aplicarPermisosFormas();
+  aplicarPermisos();
   // Cierre automático si nadie usa la administración durante un rato (antes se guardan los cambios pendientes)
   AcuSesion.vigilarInactividad({auth:{signOut:async o => { try { await flush(); } catch (e){} return sb.auth.signOut(o); }}}, {destino:PAGINA_ACCESO});
   if (perfil.debe_cambiar_clave) setTimeout(() => { abrirMiPerfil(); aviso('Estás usando una contraseña temporal: cámbiala por una tuya.', 7000); }, 800);
