@@ -1706,7 +1706,7 @@ function actualizarTituloPanel(){
   if (aq.tipo === 'sector') sub = aq.datos.activo ? 'Sector con agua' : 'Sector sin agua';
   const inc = textoIncidencias(aq.id);
   if (inc) sub = '⚠ Incidencia: ' + inc;
-  $('#pTitulo').innerHTML = `${esc(titulo(aq))}<small${inc ? ` style="color:${ROJO};font-weight:700"` : ''}>${esc(sub)}</small>`;
+  $('#pTitulo').innerHTML = `${esc(titulo(aq))}<small${inc ? ' style="color:#C62828;font-weight:700"' : ''}>${esc(sub)}</small>`;
 }
 
 function refrescarCuenta(){

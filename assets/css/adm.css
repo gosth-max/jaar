@@ -746,3 +746,32 @@ body{background:var(--fondo-app)}
   .vista>.cab-vista h1{font-size:21px}
 }
 @media (max-width:900px){ #menuBtn{display:none!important} }
+
+/* =====================================================================
+   CORRECCIONES DE LEGIBILIDAD (auditoría de contraste)
+   ===================================================================== */
+:root{--ok:#23794A; --bad:#C62828; --suave:#4A5E66; --azul-1:#1256A0; --azul-2:#17629A; --azul-3:#0C6F93}
+/* Campos dentro de los encabezados azules: texto oscuro sobre fondo blanco (antes, blanco sobre blanco) */
+.vista>.cab-vista input,.vista>.cab-vista select,.vista>.cab-vista textarea{color:var(--tinta);background:#fff;-webkit-text-fill-color:var(--tinta)}
+/* Textos sobre azul: blanco pleno */
+.vista>.cab-vista p,.vista>.cab-vista .campo span,.marca small{color:#fff}
+.vista>.cab-vista p{opacity:.95}
+.sync{background:rgba(0,0,0,.22);color:#fff}
+.adm-hero-cifras a{background:rgba(0,30,70,.22)}
+.adm-hero-cifras a:hover{background:rgba(0,30,70,.32)}
+.nav-btn{color:#fff}
+/* Menú del celular: descripciones legibles sobre el azul */
+@media (max-width:900px){
+  #nav .submenu a small,#nav .submenu .titulo-sub{color:#E3EFF8}
+}
+/* Etiquetas y contadores */
+.pill.ok{color:#1E6B41;background:#E3F2E9}
+.pill.bad{color:#A5281B;background:#F8E1DE}
+.pill.nada,.pill.sin{color:#4A5E66}
+.badge{background:#D32F2F}
+.clase-atencion i{background:#9A6A0A}
+.clase-excelencia i{background:#9A6A0A}
+.clase-aldia i{background:var(--ok)}
+.clase-intervencion i{background:#C62828}
+/* Marcas internas que usa el código para encontrar elementos (no llevan estilo propio a propósito) */
+.notificado,.interruptor-flujo,.perm-panel{}

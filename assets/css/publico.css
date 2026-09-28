@@ -432,3 +432,19 @@ body.en-mapa:has(.banner-hist:not([hidden])) .wa{display:none}
 
 .mp-ir-clave{width:100%;justify-content:center;background:#fff;border:0;border-radius:16px;padding:12px;font-weight:700;box-shadow:0 8px 24px rgba(21,50,59,.1)}
 .menu-cuenta li>button{cursor:pointer}
+
+/* =====================================================================
+   CORRECCIONES DE LEGIBILIDAD (auditoría de contraste)
+   ===================================================================== */
+:root{--ok:#23794A; --bad:#C62828; --suave:#4A5E66}
+.estado-servicio .vivo{background:rgba(0,0,0,.22)}
+.pill.ok{color:#1E6B41;background:#E3F2E9}
+.pill.bad{color:#A5281B;background:#F8E1DE}
+.pill.nada,.pill.sin{color:#4A5E66}
+.clase-atencion i,.clase-excelencia i{background:#9A6A0A}
+.clase-intervencion i{background:#C62828}
+.pin-mini{background:#D32F2F}
+.badge-avisos{background:#D32F2F}
+.pf-mini.paz small{color:#1E6B41}
+/* Marcas internas que usa el código para encontrar elementos (no llevan estilo propio a propósito) */
+.notificado,.interruptor-flujo,.perm-panel{}
