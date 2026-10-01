@@ -1518,10 +1518,20 @@ window.addEventListener('beforeunload', e => { if (cambiosEdicion()){ e.preventD
 /* =====================================================================
    LLAVES CERRADAS: sin agua lo que está después, según el efecto elegido
    ===================================================================== */
+map.createPane('cierres').style.zIndex = 445;      // por encima de tuberías y casas, debajo de las incidencias
 const capaCierres = L.layerGroup().addTo(map);
 let efectosLlaves = [];
 const EFECTOS_CIERRE = {casas:'Solo las casas', sector:'Solo el sector', ambos:'Casas y sector'};
+const ESTILO_CIERRE = {
+  tubo:{pane:'cierres', color:'#D32F2F', weight:7, opacity:.95, lineCap:'round', className:'con-incidencia'},
+  casa:{pane:'cierres', color:'#B71C1C', weight:2.5, fillColor:'#E53935', fillOpacity:.7, className:'con-incidencia'},
+  sector:{pane:'cierres', color:'#C62828', weight:2.5, dashArray:'8 6', fillColor:'#E53935', fillOpacity:.28}
+};
+let sectoresCerrados = new Set();
 function calcularCierres(){
+  // Los sectores que estaban sin agua por una llave recuperan su etiqueta normal
+  sectoresCerrados.forEach(id => { const l = capas.get(id); if (l) actualizarTooltip(l); });
+  sectoresCerrados = new Set();
   capaCierres.clearLayers(); efectosLlaves = [];
   const rd = redActual();
   capas.forEach(l => {
@@ -1529,12 +1539,18 @@ function calcularCierres(){
     const efecto = l.aq.datos.efectoCierre || 'ambos';
     const r = Acu.efectoLlave(rd, l.aq.id, efecto);
     efectosLlaves.push({id:l.aq.id, efecto, r});
-    r.piezas.forEach(p => L.polyline(p.latlngs, {color:'#455A64', weight:7, opacity:.85, dashArray:'2 9', lineCap:'round', interactive:false}).addTo(capaCierres));
+    // En rojo: las tuberías desde la llave en adelante y, según lo elegido, las casas y/o el sector
+    r.piezas.forEach(p => L.polyline(p.latlngs, {...ESTILO_CIERRE.tubo, interactive:false}).addTo(capaCierres));
+    // Tuberías enteras sin agua (las piezas solo traen los tramos parciales)
+    r.formas.forEach(id => { const t = capas.get(id); if (t && t.aq.tipo === 'tuberia' && esLinea(t))
+      L.polyline(t.getLatLngs(), {...ESTILO_CIERRE.tubo, weight:Math.max(6, Acu.grosorTuberia(t.aq.datos) + 2), interactive:false}).addTo(capaCierres); });
     r.casas.forEach(id => { const c = capas.get(id); if (!c) return;
-      (esPunto(c) ? L.circleMarker(c.getLatLng(), {radius:10, color:'#37474F', weight:2.5, dashArray:'3 3', fillColor:'#90A4AE', fillOpacity:.6, interactive:false})
-        : L.polygon(c.getLatLngs(), {color:'#37474F', weight:2.5, dashArray:'4 4', fillColor:'#90A4AE', fillOpacity:.6, interactive:false})).addTo(capaCierres); });
+      (esPunto(c) ? L.circleMarker(c.getLatLng(), {radius:10, ...ESTILO_CIERRE.casa, interactive:false})
+        : L.polygon(c.getLatLngs(), {...ESTILO_CIERRE.casa, interactive:false})).addTo(capaCierres); });
     r.sectores.forEach(id => { const s = capas.get(id); if (!s || !esPoligono(s)) return;
-      L.polygon(s.getLatLngs(), {color:'#455A64', weight:2, dashArray:'8 6', fillColor:'#B0BEC5', fillOpacity:.35, interactive:false}).addTo(capaCierres); });
+      L.polygon(s.getLatLngs(), {...ESTILO_CIERRE.sector, interactive:false}).addTo(capaCierres);
+      sectoresCerrados.add(id);
+      Acu.ponerEtiquetaSector(s, {...s.aq.datos, activo:false}, 'Llave cerrada' + (l.aq.datos.nombre ? ': ' + l.aq.datos.nombre : '')); });
   });
 }
 /* Publica qué casas y sectores están afectados (lo usa la página de vecinos aunque la red esté oculta) */

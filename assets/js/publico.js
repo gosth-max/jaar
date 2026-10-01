@@ -115,7 +115,7 @@ function contenidoPopup(layer){
   if (r.tipo === 'sector') meta.push(esc((d.activo ? 'Con agua ' : 'Sin agua ') + Acu.desde(d.activoDesde)));
   const llaves = sinAguaPorLlave.get(r.id);
   if (llaves && !lista.length) return `<h3>${esc(nombreElemento(r))}</h3>${meta.filter(Boolean).length ? `<p class="meta">${meta.filter(Boolean).join('<br>')}</p>` : ''}
-    <div class="estado mal">⛔ Sin agua por ${esc([...new Set(llaves)].join(', '))}<small>Se restablece al abrir la llave.</small></div>`;
+    <div class="estado mal">⛔ Sin agua: llave cerrada (${esc([...new Set(llaves)].join(', '))})<small>El servicio vuelve cuando se abra la llave.</small></div>`;
   const estado = lista.length
     ? `<div class="estado mal">${lista.map(i => `⚠ ${esc(i.tipo)}<small>${esc(explicacion(i, r.id))} · desde ${esc(Acu.fechaHora(i.creada_en))}${i.detalle_publico ? '<br>' + esc(i.detalle_publico) : ''}</small>`).join('')}</div>`
     : `<div class="estado ok">✓ ${r.tipo === 'tuberia' ? 'Funcionando con normalidad' : 'Sin incidencias'}</div>`;
@@ -143,24 +143,31 @@ function ordenarSectores(){ grupos.sector.eachLayer(l => { if (l._map) l.bringTo
 /* Efectos publicados por la administración (sirven aunque la red esté oculta) */
 let efectos = [];
 const redOculta = () => !!config.ocultar_red_vecinos;
+map.createPane('cierres').style.zIndex = 445;      // por encima de tuberías y casas
 const capaCierres = L.layerGroup().addTo(map);
 /* Llaves cerradas: casas y sectores sin agua (y tuberías sin flujo si la red es visible) */
 function dibujarCierres(){
+  // Los sectores que estaban sin agua por una llave recuperan su etiqueta normal
+  sinAguaPorLlave.forEach((_, id) => { const l = capas.get(id); if (l && l.fila.tipo === 'sector') estilo(l); });
   capaCierres.clearLayers();
   sinAguaPorLlave = new Map();
   const marcar = (id, llave) => { if (!sinAguaPorLlave.has(id)) sinAguaPorLlave.set(id, []); sinAguaPorLlave.get(id).push(llave); };
-  const pintar = (casas, sectores, etiqueta, piezas) => {
-    (piezas || []).forEach(p => L.polyline(p.latlngs, {color:'#455A64', weight:7, opacity:.85, dashArray:'2 9', lineCap:'round', interactive:false}).addTo(capaCierres));
+  const pintar = (casas, sectores, etiqueta, piezas, tubos) => {
+    // En rojo: tuberías desde la llave en adelante y las casas y/o sectores sin agua
+    (piezas || []).forEach(p => L.polyline(p.latlngs, {pane:'cierres', color:'#D32F2F', weight:7, opacity:.95, lineCap:'round', className:'con-incidencia', interactive:false}).addTo(capaCierres));
+    (tubos || []).forEach(id => { const t = capas.get(id); if (t && t.fila.tipo === 'tuberia' && t.getLatLngs)
+      L.polyline(t.getLatLngs(), {pane:'cierres', color:'#D32F2F', weight:Math.max(6, Acu.grosorTuberia(t.fila.datos || {}) + 2), opacity:.95, lineCap:'round', className:'con-incidencia', interactive:false}).addTo(capaCierres); });
     casas.forEach(id => { const c = capas.get(id); if (!c) return; marcar(id, etiqueta);
-      (c.getBounds ? L.polygon(c.getLatLngs(), {color:'#37474F', weight:2.5, dashArray:'4 4', fillColor:'#90A4AE', fillOpacity:.6, interactive:false})
-        : L.circleMarker(c.getLatLng(), {radius:9, color:'#37474F', weight:2.5, fillColor:'#90A4AE', fillOpacity:.6, interactive:false})).addTo(capaCierres); });
+      (c.getBounds ? L.polygon(c.getLatLngs(), {pane:'cierres', color:'#B71C1C', weight:2.5, fillColor:'#E53935', fillOpacity:.7, className:'con-incidencia', interactive:false})
+        : L.circleMarker(c.getLatLng(), {pane:'cierres', radius:9, color:'#B71C1C', weight:2.5, fillColor:'#E53935', fillOpacity:.7, interactive:false})).addTo(capaCierres); });
     sectores.forEach(id => { const s2 = capas.get(id); if (!s2 || !s2.getBounds) return; marcar(id, etiqueta);
-      L.polygon(s2.getLatLngs(), {color:'#455A64', weight:2, dashArray:'8 6', fillColor:'#B0BEC5', fillOpacity:.35, interactive:false}).addTo(capaCierres); });
+      L.polygon(s2.getLatLngs(), {pane:'cierres', color:'#C62828', weight:2.5, dashArray:'8 6', fillColor:'#E53935', fillOpacity:.28, interactive:false}).addTo(capaCierres);
+      Acu.ponerEtiquetaSector(s2, {...(s2.fila.datos || {}), activo:false}, 'Llave cerrada: ' + String(etiqueta).replace(/^Llave\s+/i, '').replace(/\s*\(cerrada\)$/i, '')); });
   };
   const llavesLocales = [...capas.values()].filter(l => l.fila.tipo === 'llave' && (l.fila.datos || {}).estado === 'cerrada');
   if (!redOculta() && llavesLocales.length){
     const rd = red();
-    llavesLocales.forEach(l => { const r = Acu.efectoLlave(rd, l.fila.id, l.fila.datos.efectoCierre || 'ambos'); pintar([...r.casas], [...r.sectores], nombreElemento(l.fila), r.piezas); });
+    llavesLocales.forEach(l => { const r = Acu.efectoLlave(rd, l.fila.id, l.fila.datos.efectoCierre || 'ambos'); pintar([...r.casas], [...r.sectores], l.fila.datos.nombre || 'la llave', r.piezas, [...r.formas]); });
   } else {
     efectos.filter(e => e.tipo === 'llave').forEach(e => pintar(e.casas || [], e.sectores || [], e.etiqueta || 'una llave cerrada'));
   }
@@ -276,7 +283,7 @@ function sectoresOrdenados(){
     .sort((a, b) => String(a.fila.datos.nombre || '').localeCompare(String(b.fila.datos.nombre || ''), 'es', {numeric:true}));
 }
 function filaSector(l, i){
-  const d = l.fila.datos || {}, llave = sinAguaPorLlave.get(l.fila.id), activo = !!d.activo && !llave, inc = textoIncs(l.fila.id) || (llave ? 'Sin agua por ' + [...new Set(llave)].join(', ') : '');
+  const d = l.fila.datos || {}, llave = sinAguaPorLlave.get(l.fila.id), activo = !!d.activo && !llave, inc = textoIncs(l.fila.id) || (llave ? 'Llave cerrada: ' + [...new Set(llave)].join(', ') : '');
   const muestra = inc ? ROJO : activo ? (l.fila.color || TIPOS.sector.color) : Acu.SIN_FLUJO.relleno;
   return `<li><button data-sector="${i}"><i class="muestra" style="background:${esc(muestra)}"></i>
     <span class="nom">${esc(d.nombre || 'Sector sin nombre')}<small>${esc(inc ? '⚠ ' + inc : Acu.desde(d.activoDesde))}</small></span>
