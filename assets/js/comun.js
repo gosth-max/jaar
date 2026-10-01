@@ -301,56 +301,85 @@ function unirIntervalos(lista){
   return out;
 }
 
-/* ---------- Conectores en T y en Y ----------
-   Cada unión tiene tres brazos (puertos) numerados 1, 2 y 3:
-     T: 1 y 2 en línea recta, 3 lateral.   Y: 1 es el tronco, 2 y 3 las ramas.
-   datos.entrada: índice (0, 1 o 2) del brazo por donde entra el agua; los otros dos
-   son salidas. null = sin definir (el agua puede pasar entre cualquier par de brazos).
-   datos.tamano: largo de cada brazo en metros. datos.rotacion: grados (0 = este). */
+/* ---------- Conectores: T, Y, Cruz, Codo y Buje reductor ----------
+   Cada conector tiene puntas (puertos) numeradas desde 1. Todas empiezan LIBRES:
+   el rol de cada punta se asigna a mano en datos.puertos = ['entrada' | 'salida' | null, ...].
+   · entrada: el agua llega por esa punta     · salida: el agua sale por esa punta
+   · libre (null): el agua puede pasar en cualquier sentido
+   datos.tamano: largo de los brazos (m). datos.rotacion: grados (0 = este). datos.espejo: lado del brazo lateral.
+   Buje reductor: datos.tamanos = [pulgadas punta 1, pulgadas punta 2]; la tubería unida a cada punta toma ese diámetro. */
 const BRAZO = 4;                        // tamaño de las uniones creadas antes de poder cambiarlo
 const tamanoConector = d => Math.min(10, Math.max(0.3, num(d && d.tamano) || BRAZO));
-function entradaConector(d){
-  if (!d || d.entrada === undefined) return 0;           // uniones antiguas: el brazo 1 era la entrada
-  if (d.entrada === null || d.entrada === '') return null;
-  const k = Number(d.entrada);
-  return k >= 0 && k <= 2 ? k : null;
+const FORMAS_CONECTOR = {
+  T:{nombre:'T', brazos:['Recto', 'Recto', 'Lateral'], locales:(b, l) => [[-b, 0], [b, 0], [0, l * b]], sep:1.41},
+  Y:{nombre:'Y', brazos:['Tronco', 'Rama', 'Rama'], locales:b => [[-b, 0], [b * Math.cos(0.61), b * Math.sin(0.61)], [b * Math.cos(0.61), -b * Math.sin(0.61)]], sep:1.14},
+  cruz:{nombre:'Cruz', brazos:['Oeste', 'Este', 'Norte', 'Sur'], locales:b => [[-b, 0], [b, 0], [0, b], [0, -b]], sep:1.41},
+  codo:{nombre:'Codo', brazos:['Punta', 'Punta'], locales:(b, l) => [[-b, 0], [0, l * b]], sep:1.41},
+  buje:{nombre:'Buje reductor', brazos:['Lado', 'Lado'], locales:b => [[-b, 0], [b, 0]], sep:2}
+};
+const formaDe = d => FORMAS_CONECTOR[d && d.forma] || FORMAS_CONECTOR.T;
+/* Roles de las puntas. Las uniones creadas antes guardaban "entrada" (un índice): se convierten. */
+function rolesConector(d){
+  d = d || {};
+  const n = formaDe(d).locales(1, 1).length;
+  if (Array.isArray(d.puertos)) return Array.from({length:n}, (_, i) => d.puertos[i] === 'entrada' || d.puertos[i] === 'salida' ? d.puertos[i] : null);
+  if (d.entrada === null || d.entrada === '') return Array(n).fill(null);
+  const k = d.entrada === undefined ? 0 : Number(d.entrada);           // uniones antiguas: el brazo 1 era la entrada
+  return Array.from({length:n}, (_, i) => i === k ? 'entrada' : 'salida');
 }
-/* Distancia mínima entre dos brazos: define cuánto puede alejarse una punta y seguir unida */
-const separacionPuertos = d => tamanoConector(d) * (d && d.forma === 'Y' ? 1.14 : 1.41);
+function entradaConector(d){ const r = rolesConector(d), k = r.indexOf('entrada'); return k < 0 ? null : k; }
+/* Distancia mínima entre dos puntas: define cuánto puede alejarse una tubería y seguir unida */
+const separacionPuertos = d => tamanoConector(d) * formaDe(d).sep;
 const tolPuerto = d => Math.min(1.5, separacionPuertos(d) * 0.35);
 function puertosConector(centro, d){
   d = d || {};
   const th = (Number(d.rotacion) || 0) * Math.PI / 180, b = tamanoConector(d);
-  const lado = d.espejo ? -1 : 1;
-  const locales = d.forma === 'Y'
-    ? [[-b, 0], [b * Math.cos(0.61), b * Math.sin(0.61)], [b * Math.cos(0.61), -b * Math.sin(0.61)]]
-    : [[-b, 0], [b, 0], [0, lado * b]];
+  const locales = formaDe(d).locales(b, d.espejo ? -1 : 1);
   const cos = Math.cos(centro.lat * Math.PI / 180);
   const pts = locales.map(([x, y]) => {
     const xr = x * Math.cos(th) - y * Math.sin(th), yr = x * Math.sin(th) + y * Math.cos(th);
     return L.latLng(centro.lat + yr / 110540, centro.lng + xr / (111320 * cos));
   });
-  const e = entradaConector(d);
-  return {todos:pts, entradaIdx:e, entrada:e === null ? null : pts[e], salidas:e === null ? [] : pts.filter((_, i) => i !== e)};
+  const roles = rolesConector(d), e = roles.indexOf('entrada');
+  return {todos:pts, roles, entradaIdx:e < 0 ? null : e, entrada:e < 0 ? null : pts[e], salidas:pts.filter((_, i) => roles[i] === 'salida')};
 }
-/* Dibujo: brazos gruesos; con etiquetas muestra el número de cada brazo y si es entrada (E) o salida (S) */
+/* Diámetro en pulgadas a partir de textos como "2", "1/2" o "1 1/2" */
+function pulgadas(v){
+  const t = String(v ?? '').trim().replace(/["”]/g, '');
+  if (!t) return 0;
+  const m = /^(\d+)?\s*(?:(\d+)\/(\d+))?$/.exec(t);
+  if (!m) return num(t);
+  return (Number(m[1]) || 0) + (m[2] ? Number(m[2]) / Number(m[3]) : 0);
+}
+/* Grosor con el que se dibuja una tubería según su diámetro */
+function grosorTuberia(d){
+  const p = pulgadas(d && d.diametro);
+  if (!p) return d && d.clase === 'acometida' ? 3 : 5;
+  return Math.max(2.5, Math.min(11, 2 + p * 1.6));
+}
+/* Dibujo: brazos gruesos; con etiquetas muestra el número de cada punta y su rol (E entrada, S salida) */
 function formaConector(centro, d, opciones = {}){
   const g = L.featureGroup();
   const pr = puertosConector(centro, d), col = opciones.color || '#0B5C73';
   const comun = {interactive:!!opciones.interactivo, pmIgnore:true, snapIgnore:true, bubblingMouseEvents:true};
-  pr.todos.forEach(p => L.polyline([centro, p], {...comun, color:col, weight:opciones.grosor || 6, opacity:1, lineCap:'round'}).addTo(g));
+  const tam = Array.isArray(d && d.tamanos) ? d.tamanos : [];
+  pr.todos.forEach((p, i) => {
+    const grosor = d && d.forma === 'buje' && tam[i] ? Math.max(3, Math.min(12, 2 + pulgadas(tam[i]) * 1.8)) : (opciones.grosor || 6);
+    L.polyline([centro, p], {...comun, color:col, weight:grosor, opacity:1, lineCap:'round'}).addTo(g);
+  });
   L.circleMarker(centro, {...comun, radius:4, color:'#fff', weight:2, fillColor:col, fillOpacity:1}).addTo(g);
   if (opciones.puertos){
     pr.todos.forEach((p, i) => {
-      const esEntrada = pr.entradaIdx === i;
-      L.circleMarker(p, {...comun, interactive:false, radius:4, color:col, weight:2, fillColor:esEntrada ? '#2F8F5B' : '#fff', fillOpacity:1}).addTo(g);
+      const rol = pr.roles[i];
+      L.circleMarker(p, {...comun, interactive:false, radius:4, color:col, weight:2,
+        fillColor:rol === 'entrada' ? '#2F8F5B' : rol === 'salida' ? '#1D6FA3' : '#fff', fillOpacity:1}).addTo(g);
       if (opciones.etiquetas){
-        const txt = (i + 1) + (pr.entradaIdx === null ? '' : esEntrada ? ' · E' : ' · S');
+        const txt = (i + 1) + (rol === 'entrada' ? ' · E' : rol === 'salida' ? ' · S' : '') + (d && d.forma === 'buje' && tam[i] ? ` · ${tam[i]}"` : '');
         // la etiqueta se corre hacia afuera, en la dirección del brazo, para leerse aunque la unión sea pequeña
         const cos = Math.cos(centro.lat * Math.PI / 180), dx = (p.lng - centro.lng) * 111320 * cos, dy = (p.lat - centro.lat) * 110540;
         const l = Math.hypot(dx, dy) || 1, ox = dx / l * 20, oy = -dy / l * 20;
         L.marker(p, {interactive:false, keyboard:false, pmIgnore:true, snapIgnore:true,
-          icon:L.divIcon({className:'puerto-conector' + (esEntrada ? ' entrada' : ''),
+          icon:L.divIcon({className:'puerto-conector' + (rol === 'entrada' ? ' entrada' : rol === 'salida' ? ' salida' : ''),
             html:`<span style="transform:translate(calc(-50% + ${ox.toFixed(1)}px), calc(-50% + ${oy.toFixed(1)}px))">${txt}</span>`, iconSize:null})}).addTo(g);
       }
     });
@@ -395,7 +424,9 @@ function construirRed(elementos){
       nodos.push({x:p.x, y:p.y}); nodosPuerto.add(n); puertosRed.push({x:p.x, y:p.y, n, tol});
       return n;
     });
-    conectorNodos.set(e.id, {puertos:ns, entrada:pr.entradaIdx});
+    const pc = P.a(c), centro = nodos.length;
+    nodos.push({x:pc.x, y:pc.y}); nodosPuerto.add(centro);
+    conectorNodos.set(e.id, {puertos:ns, roles:pr.roles, centro, entrada:pr.entradaIdx});
   });
   const nodoPunta = p => {
     let mejor = null;
@@ -486,13 +517,14 @@ function construirRed(elementos){
     unir(a, {e, otro:b, puede:alIr});
     unir(b, {e, otro:a, puede:alVolver});
   };
-  conectorNodos.forEach((c, id) => {
-    if (c.entrada === null) c.puertos.slice(1).forEach(n => virtual(c.puertos[0], n, true, true, {conector:id}));   // sin entrada: pasa en cualquier sentido
-    else c.puertos.forEach((n, i) => { if (i !== c.entrada) virtual(c.puertos[c.entrada], n, true, false, {conector:id}); });
-  });
+  // Cada punta se une al centro: entrada → centro, centro → salida, libre ↔ centro
+  conectorNodos.forEach((c, id) => c.puertos.forEach((n, i) => {
+    const rol = c.roles[i];
+    virtual(n, c.centro, rol !== 'salida', rol !== 'entrada', {conector:id});
+  }));
   casaNodos.forEach((set, id) => { const [primero, ...resto] = [...set]; resto.forEach(n => virtual(primero, n, true, true, {casa:id})); });
   const nodoConectores = new Map();
-  conectorNodos.forEach((c, id) => c.puertos.forEach(n => { if (!nodoConectores.has(n)) nodoConectores.set(n, []); nodoConectores.get(n).push(id); }));
+  conectorNodos.forEach((c, id) => [...c.puertos, c.centro].forEach(n => { if (!nodoConectores.has(n)) nodoConectores.set(n, []); nodoConectores.get(n).push(id); }));
 
   const nodoCasas = new Map(), nodoLlaves = new Map();
   casaNodos.forEach((set, id) => set.forEach(n => { if (!nodoCasas.has(n)) nodoCasas.set(n, []); nodoCasas.get(n).push(id); }));
@@ -525,7 +557,7 @@ function nodosDeElemento(red, id, tipo){
   if (tipo === 'tuberia') return (red.tuboAristas.get(id) || []).flatMap(i => [red.aristas[i].a, red.aristas[i].b]);
   if (tipo === 'casa') return [...(red.casaNodos.get(id) || [])];
   if (tipo === 'llave') return red.llaveNodo.has(id) ? [red.llaveNodo.get(id)] : [];
-  if (tipo === 'conector'){ const c = red.conectorNodos.get(id); return c ? c.puertos.slice() : []; }
+  if (tipo === 'conector'){ const c = red.conectorNodos.get(id); return c ? [...c.puertos, c.centro] : []; }
   return [];
 }
 
@@ -586,6 +618,13 @@ function camino(red, A, B){
    origen: {id, tipo}
    Devuelve: formas (ids que se pintan completos en rojo), piezas (partes de
    tubería en rojo), puntos (marcadores del problema) y listas por tipo. */
+/* Efecto de una llave cerrada según lo elegido: 'casas', 'sector' o 'ambos' */
+function efectoLlave(red, llaveId, efecto){
+  const r = afectacion(red, {propagar:true, ubicacion:'completo', sectores_enlazados:efecto !== 'casas'}, {id:llaveId, tipo:'llave'});
+  if (efecto === 'sector') r.casas = new Set();
+  if (efecto === 'casas') r.sectores = new Set();
+  return r;
+}
 function afectacion(red, inc, origen){
   const res = {formas:new Set(), piezas:[], puntos:[], tubos:new Set(), casas:new Set(), llaves:new Set(), sectores:new Set(), conectores:new Set()};
   if (!origen) return res;
@@ -611,7 +650,11 @@ function afectacion(red, inc, origen){
   };
   const aLL = p => p && isFinite(p.lat) && isFinite(p.lng) ? L.latLng(p.lat, p.lng) : null;
 
-  if (origen.tipo === 'sector'){
+  if (origen.tipo === 'llave'){
+    // Llave cerrada: sin agua todo lo que está después de ella (sigue la dirección del agua)
+    const n = red.llaveNodo.get(origen.id);
+    if (n !== undefined) bfs([n], true);
+  } else if (origen.tipo === 'sector'){
     res.sectores.add(origen.id);
   } else if (origen.tipo === 'casa'){
     res.casas.add(origen.id);
@@ -736,6 +779,6 @@ function hace(iso){
 }
 
 window.Acu = {TIPOS, SIN_FLUJO, ImagenEsri, esc, num, cliente, traerTodo, crearMapa, capaDesdeGeom, fechaHora, hace,
-  COLOR_TUBERIA, ROJO, BRAZO, tamanoConector, entradaConector, tolPuerto, puertosConector, formaConector, construirRed, conectado, afectacion, textoAfectacion, dibujarFlechas, iconoIncidencia, centroDe,
+  COLOR_TUBERIA, ROJO, BRAZO, tamanoConector, entradaConector, rolesConector, FORMAS_CONECTOR, formaDe, pulgadas, grosorTuberia, efectoLlave, tolPuerto, puertosConector, formaConector, construirRed, conectado, afectacion, textoAfectacion, dibujarFlechas, iconoIncidencia, centroDe,
   opacidadSector, estiloSector, quitarClasesSector, etiquetaSector, ponerEtiquetaSector, ponerTooltip, desde};
 })();

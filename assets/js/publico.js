@@ -78,7 +78,7 @@ function estilo(layer){
     Acu.quitarClasesSector(layer);
     if (esPunto) layer.setStyle({radius:r.tipo === 'llave' ? 8 : 6, color:'#fff', weight:2, fillColor:col, fillOpacity:op});
     else if (esPol) layer.setStyle({color:col, weight:2.5, opacity:1, fillColor:col, fillOpacity:op, dashArray:null});
-    else layer.setStyle({color:col, weight:d.clase === 'acometida' ? 3.5 : 5.5, opacity:op, lineCap:'round', dashArray:null});
+    else layer.setStyle({color:col, weight:Acu.grosorTuberia(d) + .5, opacity:op, lineCap:'round', dashArray:null});
     marcar(layer, 'con-incidencia', true);
     if (r.tipo === 'sector'){ Acu.ponerEtiquetaSector(layer, d, textoIncs(r.id)); if (layer._map) layer.bringToBack(); }
     return;
@@ -90,7 +90,7 @@ function estilo(layer){
     const cerrada = r.tipo === 'llave' && d.estado === 'cerrada';
     layer.setStyle({radius:r.tipo === 'llave' ? 8 : 6, color:cerrada ? col : '#fff', weight:cerrada ? 3 : 2, fillColor:col, fillOpacity:cerrada ? 0.15 : 0.95});
   } else if (esPol) layer.setStyle({color:col, weight:1.5, opacity:1, fillColor:col, fillOpacity:0.5, dashArray:null});
-  else layer.setStyle({color:col, weight:r.tipo === 'tuberia' ? (d.clase === 'acometida' ? 3 : 5) : 3, opacity:.95, lineCap:'round', dashArray:null});
+  else layer.setStyle({color:col, weight:r.tipo === 'tuberia' ? Acu.grosorTuberia(d) : 3, opacity:.95, lineCap:'round', dashArray:null});
 }
 
 function explicacion(inc, id){
@@ -113,6 +113,9 @@ function contenidoPopup(layer){
   if (r.tipo === 'llave') meta.push(d.estado === 'cerrada' ? 'Llave cerrada' : 'Llave abierta');
   if (r.tipo === 'conector') meta.push('Divide el agua en dos tuberías');
   if (r.tipo === 'sector') meta.push(esc((d.activo ? 'Con agua ' : 'Sin agua ') + Acu.desde(d.activoDesde)));
+  const llaves = sinAguaPorLlave.get(r.id);
+  if (llaves && !lista.length) return `<h3>${esc(nombreElemento(r))}</h3>${meta.filter(Boolean).length ? `<p class="meta">${meta.filter(Boolean).join('<br>')}</p>` : ''}
+    <div class="estado mal">⛔ Sin agua por ${esc([...new Set(llaves)].join(', '))}<small>Se restablece al abrir la llave.</small></div>`;
   const estado = lista.length
     ? `<div class="estado mal">${lista.map(i => `⚠ ${esc(i.tipo)}<small>${esc(explicacion(i, r.id))} · desde ${esc(Acu.fechaHora(i.creada_en))}${i.detalle_publico ? '<br>' + esc(i.detalle_publico) : ''}</small>`).join('')}</div>`
     : `<div class="estado ok">✓ ${r.tipo === 'tuberia' ? 'Funcionando con normalidad' : 'Sin incidencias'}</div>`;
@@ -137,7 +140,36 @@ function agregar(r){
 }
 function ordenarSectores(){ grupos.sector.eachLayer(l => { if (l._map) l.bringToBack(); }); }
 
+/* Efectos publicados por la administración (sirven aunque la red esté oculta) */
+let efectos = [];
+const redOculta = () => !!config.ocultar_red_vecinos;
+const capaCierres = L.layerGroup().addTo(map);
+/* Llaves cerradas: casas y sectores sin agua (y tuberías sin flujo si la red es visible) */
+function dibujarCierres(){
+  capaCierres.clearLayers();
+  sinAguaPorLlave = new Map();
+  const marcar = (id, llave) => { if (!sinAguaPorLlave.has(id)) sinAguaPorLlave.set(id, []); sinAguaPorLlave.get(id).push(llave); };
+  const pintar = (casas, sectores, etiqueta, piezas) => {
+    (piezas || []).forEach(p => L.polyline(p.latlngs, {color:'#455A64', weight:7, opacity:.85, dashArray:'2 9', lineCap:'round', interactive:false}).addTo(capaCierres));
+    casas.forEach(id => { const c = capas.get(id); if (!c) return; marcar(id, etiqueta);
+      (c.getBounds ? L.polygon(c.getLatLngs(), {color:'#37474F', weight:2.5, dashArray:'4 4', fillColor:'#90A4AE', fillOpacity:.6, interactive:false})
+        : L.circleMarker(c.getLatLng(), {radius:9, color:'#37474F', weight:2.5, fillColor:'#90A4AE', fillOpacity:.6, interactive:false})).addTo(capaCierres); });
+    sectores.forEach(id => { const s2 = capas.get(id); if (!s2 || !s2.getBounds) return; marcar(id, etiqueta);
+      L.polygon(s2.getLatLngs(), {color:'#455A64', weight:2, dashArray:'8 6', fillColor:'#B0BEC5', fillOpacity:.35, interactive:false}).addTo(capaCierres); });
+  };
+  const llavesLocales = [...capas.values()].filter(l => l.fila.tipo === 'llave' && (l.fila.datos || {}).estado === 'cerrada');
+  if (!redOculta() && llavesLocales.length){
+    const rd = red();
+    llavesLocales.forEach(l => { const r = Acu.efectoLlave(rd, l.fila.id, l.fila.datos.efectoCierre || 'ambos'); pintar([...r.casas], [...r.sectores], nombreElemento(l.fila), r.piezas); });
+  } else {
+    efectos.filter(e => e.tipo === 'llave').forEach(e => pintar(e.casas || [], e.sectores || [], e.etiqueta || 'una llave cerrada'));
+  }
+}
+let sinAguaPorLlave = new Map();
+
 function recalcular(){
+  dibujarCierres();
+  if (redOculta()) return recalcularOculta();
   const rd = red();
   resultados = new Map();
   const antes = new Set([...afectados.keys(), ...tocados.keys()]);
@@ -173,6 +205,26 @@ function recalcular(){
 }
 const recalcularPronto = debounce(recalcular, 200);
 
+function recalcularOculta(){
+  resultados = new Map();
+  const antes = new Set([...afectados.keys(), ...tocados.keys()]);
+  const nA = new Map(), poner = (id, inc) => { if (!nA.has(id)) nA.set(id, []); nA.get(id).push(inc); };
+  capaInc.clearLayers();
+  const lista = historico ? [historico] : abiertas();
+  lista.forEach(inc => {
+    const e = efectos.find(x => x.tipo === 'incidencia' && x.ref === inc.id);
+    const casas = new Set(e ? e.casas : []), sectores = new Set(e ? e.sectores : []);
+    if (capas.has(inc.forma_id)) (capas.get(inc.forma_id).fila.tipo === 'sector' ? sectores : casas).add(inc.forma_id);
+    const formas = new Set([...casas, ...sectores]);
+    resultados.set(inc.id, {formas, tubos:new Set(), casas, sectores, llaves:new Set(), piezas:[], puntos:[]});
+    formas.forEach(id => poner(id, inc));
+  });
+  afectados = nA; tocados = new Map();
+  new Set([...antes, ...afectados.keys()]).forEach(id => { const l = capas.get(id); if (l) estilo(l); });
+  ordenarSectores();
+  renderPanelMapa();
+  renderVistaActual();
+}
 function casasAfectadas(){ const s = new Set(); resultados.forEach(r => r.casas.forEach(c => s.add(c))); return s; }
 /* ---------- Modo historial: solo una incidencia pasada y lo que afectó ---------- */
 let historico = null;
@@ -224,11 +276,11 @@ function sectoresOrdenados(){
     .sort((a, b) => String(a.fila.datos.nombre || '').localeCompare(String(b.fila.datos.nombre || ''), 'es', {numeric:true}));
 }
 function filaSector(l, i){
-  const d = l.fila.datos || {}, activo = !!d.activo, inc = textoIncs(l.fila.id);
+  const d = l.fila.datos || {}, llave = sinAguaPorLlave.get(l.fila.id), activo = !!d.activo && !llave, inc = textoIncs(l.fila.id) || (llave ? 'Sin agua por ' + [...new Set(llave)].join(', ') : '');
   const muestra = inc ? ROJO : activo ? (l.fila.color || TIPOS.sector.color) : Acu.SIN_FLUJO.relleno;
   return `<li><button data-sector="${i}"><i class="muestra" style="background:${esc(muestra)}"></i>
     <span class="nom">${esc(d.nombre || 'Sector sin nombre')}<small>${esc(inc ? '⚠ ' + inc : Acu.desde(d.activoDesde))}</small></span>
-    <span class="pill ${activo ? 'con' : 'sin'}">${activo ? 'Con agua' : 'Sin agua'}</span></button></li>`;
+    <span class="pill ${activo ? 'con' : 'sin'}">${activo ? 'Con agua' : llave ? 'Sin agua (llave)' : 'Sin agua'}</span></button></li>`;
 }
 function enlazarSectores(cont, sectores){
   cont.querySelectorAll('[data-sector]').forEach(b => b.addEventListener('click', () => {
@@ -240,7 +292,7 @@ function enlazarSectores(cont, sectores){
   }));
 }
 function renderPanelMapa(){
-  const lista = abiertas().filter(i => capas.has(i.forma_id)).sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en)));
+  const lista = abiertas().filter(i => redOculta() || capas.has(i.forma_id)).sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en)));
   const est = $('#estadoRed'), ul = $('#listaIncs');
   if (!lista.length){ est.innerHTML = '<div class="ok-red">✓ No hay incidencias en la red en este momento.</div>'; ul.hidden = true; }
   else {
@@ -340,7 +392,7 @@ $('#nav').addEventListener('click', e => { if (e.target.closest('a')) $('#nav').
 
 /* ---------- Inicio (dashboard) ---------- */
 function renderInicio(){
-  const act = abiertas().filter(i => capas.has(i.forma_id)).sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en)));
+  const act = abiertas().filter(i => redOculta() || capas.has(i.forma_id)).sort((a, b) => String(b.creada_en).localeCompare(String(a.creada_en)));
   const sectores = sectoresOrdenados(), conAgua = sectores.filter(l => l.fila.datos.activo).length;
   const nCasas = casasAfectadas().size;
   const ahora = new Date(), mes = `${ahora.getFullYear()}-${String(ahora.getMonth() + 1).padStart(2, '0')}`;
@@ -950,6 +1002,12 @@ function waURL(){
   if (!config.whatsapp_activo || dig.length < 8) return '';
   return `https://wa.me/${dig}${config.whatsapp_mensaje ? '?text=' + encodeURIComponent(config.whatsapp_mensaje) : ''}`;
 }
+/* Con la red oculta, no se muestran los controles ni la leyenda de tuberías, llaves y conectores */
+function pintarRedVisible(){
+  const oculta = redOculta();
+  document.querySelectorAll('[data-capa="tuberia"], [data-capa="llave"]').forEach(c => { const l = c.closest('label'); if (l) l.hidden = oculta; });
+  document.querySelectorAll('[data-leyenda-red]').forEach(e => { e.hidden = oculta; });
+}
 function pintarConfig(){
   const nombre = config.nombre || 'Acueducto';
   $('#nombreAcu').textContent = nombre;
@@ -964,12 +1022,14 @@ function pintarConfig(){
    CARGA Y TIEMPO REAL
    ===================================================================== */
 async function cargar(){
-  const [cfg, filas, lista] = await Promise.all([
+  const [cfg, filas, lista, efs] = await Promise.all([
     sb.from('configuracion').select('*').eq('id', 1).maybeSingle(),
     Acu.traerTodo(sb, 'mapa_publico'),
-    Acu.traerTodo(sb, 'incidencias_publicas').catch(e => { console.warn('Sin incidencias públicas:', e.message); return []; })
+    Acu.traerTodo(sb, 'incidencias_publicas').catch(e => { console.warn('Sin incidencias públicas:', e.message); return []; }),
+    sb.from('efectos_publicos').select('*').then(r => r.data || [], () => [])
   ]);
-  if (cfg.data){ config = cfg.data; pintarConfig(); map.ajustarFondos(config.ajuste_fondos || {}); if (mapaRep) mapaRep.ajustarFondos(config.ajuste_fondos || {}); }
+  efectos = efs;
+  if (cfg.data){ config = cfg.data; pintarConfig(); pintarRedVisible(); map.ajustarFondos(config.ajuste_fondos || {}); if (mapaRep) mapaRep.ajustarFondos(config.ajuste_fondos || {}); }
   const vistos = new Set(filas.map(r => r.id));
   [...capas.keys()].forEach(id => { if (!vistos.has(id)) quitar(id); });
   filas.forEach(agregar);
@@ -993,11 +1053,21 @@ function suscribir(){
       if (p.eventType === 'DELETE') quitar(p.old.id); else agregar(p.new);
       recalcularPronto(); flechasPronto();
     })
+    .on('postgres_changes', {event:'*', schema:'public', table:'efectos_publicos'}, p => {
+      if (p.eventType === 'DELETE') efectos = efectos.filter(e => e.id !== p.old.id);
+      else { const i = efectos.findIndex(e => e.id === p.new.id); if (i >= 0) efectos[i] = p.new; else efectos.push(p.new); }
+      recalcularPronto();
+    })
     .on('postgres_changes', {event:'*', schema:'public', table:'incidencias_publicas'}, p => {
       if (p.eventType === 'DELETE') incsTodas.delete(p.old.id); else incsTodas.set(p.new.id, p.new);
       recalcularPronto();
     })
-    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'configuracion'}, p => { if (p.new){ config = p.new; pintarConfig(); map.ajustarFondos(config.ajuste_fondos || {}); renderVistaActual(); } });
+    .on('postgres_changes', {event:'UPDATE', schema:'public', table:'configuracion'}, p => {
+      if (!p.new) return;
+      const cambioRed = !!p.new.ocultar_red_vecinos !== redOculta();
+      config = p.new; pintarConfig(); pintarRedVisible(); map.ajustarFondos(config.ajuste_fondos || {});
+      if (cambioRed) cargar(); else renderVistaActual();
+    });
   if (sesion) canal.on('postgres_changes', {event:'*', schema:'public', table:'reportes'}, () => cargarMisReportes());
   canal.subscribe(status => pintarVivo(status === 'SUBSCRIBED'));
 }

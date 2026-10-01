@@ -39,14 +39,6 @@
         <button class="nav-btn" aria-expanded="false">Mapa <i class="flecha"></i></button>
         <ul class="submenu">
           <li><a href="#/mapa" data-ruta="mapa"><span>Ver mapa<small>Editar casas, tuberías, llaves y sectores</small></span></a></li>
-          <li class="sep" role="separator" data-solo-dev></li>
-          <li class="titulo-sub" data-solo-dev>Dibujar</li>
-          <li data-solo-dev><a href="#/mapa/dibujar/casa"><span>Casa</span></a></li>
-          <li data-solo-dev><a href="#/mapa/dibujar/tuberia"><span>Tubería</span></a></li>
-          <li data-solo-dev><a href="#/mapa/dibujar/llave"><span>Llave</span></a></li>
-          <li data-solo-dev><a href="#/mapa/dibujar/sector"><span>Sector o zona</span></a></li>
-          <li data-solo-dev><a href="#/mapa/dibujar/conectorT"><span>Conector en T</span></a></li>
-          <li data-solo-dev><a href="#/mapa/dibujar/conectorY"><span>Conector en Y</span></a></li>
         </ul>
       </li>
       <li class="grupo" data-grupo="incidencias">
@@ -128,19 +120,29 @@
 
   <section class="vista vista-mapa" data-vista="mapa" hidden>
     <div id="map"></div>
-    <div class="herramientas" role="toolbar" aria-label="Dibujar" data-solo-dev>
-      <button data-dibujar="casa" title="Dibujar una casa">
-        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 15 16 6l11 9"/><path d="M8 13v13h16V13"/><path d="M14 26v-7h4v7"/></svg>Casa</button>
-      <button data-dibujar="tuberia" title="Dibujar una tubería">
-        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M3 20h9a4 4 0 0 0 4-4V12a4 4 0 0 1 4-4h9"/><circle cx="3" cy="20" r="1.4" fill="currentColor"/><circle cx="29" cy="8" r="1.4" fill="currentColor"/></svg>Tubería</button>
-      <button data-dibujar="llave" title="Marcar una llave">
-        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M4 22V12l10 5-10 5Z"/><path d="M28 22V12l-10 5 10 5Z"/><path d="M16 17V8M11 8h10"/></svg>Llave</button>
-      <button data-dibujar="sector" title="Dibujar un sector o zona">
-        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><path d="M5 10 14 4l13 5-2 15-15 4-5-8Z" stroke-dasharray="3.5 3"/><path d="M16 11c-2.5 3.2-3.6 5-3.6 6.6a3.6 3.6 0 0 0 7.2 0c0-1.6-1.1-3.4-3.6-6.6Z" fill="currentColor" stroke="none"/></svg>Sector</button>
-      <button data-dibujar="conectorT" title="Unión en T: divide una tubería en dos">
-        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M4 12h24M16 12v15"/><circle cx="16" cy="12" r="2.2" fill="currentColor"/></svg>Unión T</button>
-      <button data-dibujar="conectorY" title="Unión en Y: divide una tubería en dos">
-        <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><path d="M16 28V16M16 16 6 5M16 16 26 5"/><circle cx="16" cy="16" r="2.2" fill="currentColor"/></svg>Unión Y</button>
+    <div class="barra-edicion" id="barraEdicion">
+      <button class="btn primario" id="btnEditarMapa" hidden>✏️ Editar mapa</button>
+      <div class="edicion-activa" id="edicionActiva" hidden>
+        <span class="ed-etiqueta">✏️ Editando</span>
+        <div class="menu-anadir">
+          <button class="btn primario" id="btnAnadir" aria-expanded="false" aria-controls="menuAnadir">＋ Añadir ▾</button>
+          <div class="desplegable-anadir" id="menuAnadir" hidden>
+            <button data-dibujar="casa"><span>🏠</span>Casa</button>
+            <button data-dibujar="sector"><span>🟦</span>Sector</button>
+            <button data-dibujar="tuberia"><span>〰️</span>Tubería</button>
+            <button data-dibujar="llave"><span>🔧</span>Llave</button>
+            <p class="titulo-anadir">Conectores</p>
+            <button data-dibujar="conectorCodo"><span>↱</span>Codo</button>
+            <button data-dibujar="conectorT"><span>┳</span>Unión en T</button>
+            <button data-dibujar="conectorY"><span>Y</span>Unión en Y</button>
+            <button data-dibujar="conectorCruz"><span>╋</span>Cruz</button>
+            <button data-dibujar="conectorBuje"><span>⇉</span>Buje reductor</button>
+          </div>
+        </div>
+        <span class="ed-cambios" id="edCambios">Sin cambios</span>
+        <button class="btn" id="btnGuardarEd">💾 Guardar</button>
+        <button class="btn" id="btnCancelarEd">✕ Cancelar</button>
+      </div>
     </div>
     <p class="pista-mapa" id="pista" role="status" hidden></p>
     <div class="banner-hist" id="bannerHist" role="status" hidden></div>
@@ -390,6 +392,7 @@
             <option value="US$">US$ (dólar estadounidense)</option>
           </select></label>
         <p class="aviso-cuota">💡 La <b>cuota mensual</b> no se cambia aquí: se configura en <a href="#/cobros/tarifas">Cobros → Tarifas</a>.</p>
+        <label class="check"><input type="checkbox" id="cfgOcultarRed"><span><b>Ocultar las tuberías, llaves y conectores a los vecinos.</b> Solo los verán los administradores; los vecinos seguirán viendo sus casas y sectores, incluidos los afectados por incidencias o llaves cerradas.</span></label>
         <label class="check"><input type="checkbox" id="cfgColorPago"><span>Colorear las casas según su estado de pago (verde al día, amarillo con deuda, rojo morosa: 3 meses o más). Solo se ve en la administración, nunca en el mapa público.</span></label>
         <p class="nota">El nombre del acueducto también aparece en el mapa público.</p>
       </article>

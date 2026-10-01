@@ -113,3 +113,4 @@ path.con-incidencia{animation:acu-alerta 1.6s ease-in-out infinite}
 .mp-input input:focus,.mp-input input:focus-visible{outline:none!important;border:0!important;box-shadow:none!important}
 /* Legibilidad: el "!" de los marcadores de incidencia sobre un rojo más oscuro */
 .pin-inc span{background:#D32F2F}
+.puerto-conector.salida span{background:#1D6FA3}

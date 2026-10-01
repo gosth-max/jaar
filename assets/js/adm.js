@@ -10,8 +10,11 @@ const PISTAS = {
   llave:'Toca el mapa donde está la llave.',
   sector:'Toca el mapa alrededor de la zona. Toca el primer punto para cerrar el sector.',
   acometida:'Empieza tocando sobre la tubería y termina tocando dentro de la casa. Toca el último punto otra vez para terminar.',
-  conectorT:'Toca sobre la tubería donde va la unión en T: se corta sola. Después eliges en el panel por cuál brazo entra el agua.',
-  conectorY:'Toca sobre la tubería donde va la unión en Y: se corta sola. Después eliges en el panel por cuál brazo entra el agua.'
+  conectorT:'Toca sobre la tubería donde va la unión en T: se corta sola. Después asignas en el panel la entrada y las salidas.',
+  conectorY:'Toca sobre la tubería donde va la unión en Y: se corta sola. Después asignas en el panel la entrada y las salidas.',
+  conectorCruz:'Toca sobre la tubería donde va la cruz: se corta sola. Después asignas en el panel la entrada y las salidas.',
+  conectorCodo:'Toca el punto donde va el codo (o la punta de una tubería). Después asignas en el panel la entrada y la salida.',
+  conectorBuje:'Toca sobre la tubería donde va el buje reductor: se corta sola. Después eliges los diámetros de cada lado.'
 };
 const ROJO = Acu.ROJO;
 const PALETA = ['#1E88E5','#3B6EA8','#1596C4','#2F8F5B','#C8901A','#C0392B','#8A4FBF','#E0679A','#6F7F85','#15323B'];
@@ -68,7 +71,7 @@ function datosBase(tipo){
   if (tipo === 'tuberia') return {nombre:'', clase:'principal', flujo:'', sectores:[], diametro:'', material:'PVC', notas:''};
   if (tipo === 'llave') return {nombre:'', estado:'abierta', notas:''};
   if (tipo === 'sector') return {nombre:'', opacidad:0.35, activo:false, activoDesde:'', notas:''};
-  if (tipo === 'conector') return {nombre:'', forma:'T', rotacion:0, espejo:false, tamano:TAMANO_UNION, entrada:null, notas:''};
+  if (tipo === 'conector') return {nombre:'', forma:'T', rotacion:0, espejo:false, tamano:TAMANO_UNION, notas:''};
   return {notas:''};
 }
 
@@ -114,10 +117,12 @@ function fila(layer){
 }
 function guardarForma(id, rapido){
   pendientes.add(id); pintarSync();
+  if (typeof edicion !== 'undefined' && edicion) pintarEdicion();
   clearTimeout(flushTimer); flushTimer = setTimeout(flush, rapido ? 50 : 700);
 }
-async function flush(){
+async function flush(forzar){
   clearTimeout(flushTimer);
+  if (typeof edicion !== 'undefined' && edicion && forzar !== true){ pintarSync(); if (typeof pintarEdicion === 'function') pintarEdicion(); return; }
   if (flushEnCurso) await flushEnCurso;
   if (!pendientes.size || !sb){ pintarSync(); return; }
   const ids = [...pendientes]; pendientes.clear();
@@ -126,7 +131,7 @@ async function flush(){
   flushEnCurso = (async () => {
     enVuelo++; pintarSync();
     let error = null;
-    if (esDev()) ({error} = await sb.from('formas').upsert(filas));
+    if (puedeEditarMapa()) ({error} = await sb.from('formas').upsert(filas));
     else {
       // Solo actualizar (no pueden crear formas); la base de datos revisa qué datos pueden cambiar
       for (const f of filas){
@@ -151,7 +156,7 @@ async function flush(){
 const guardarConfig = debounce(() => {
   const s = state.settings;
   tarea(sb.from('configuracion').upsert({id:1, nombre:s.nombre, cuota:num(s.cuota), moneda:s.moneda,
-    color_por_pago:!!s.colorPorPago, whatsapp:s.whatsapp || null, whatsapp_mensaje:s.whatsappMensaje || null,
+    color_por_pago:!!s.colorPorPago, ocultar_red_vecinos:!!s.ocultarRed, whatsapp:s.whatsapp || null, whatsapp_mensaje:s.whatsappMensaje || null,
     whatsapp_activo:!!s.whatsappActivo, correo_contacto:s.correoContacto || null, editado_por:CLIENTE_ID}), 'No se pudo guardar la configuración');
 }, 600);
 
@@ -171,7 +176,7 @@ function aplicarFilaConfig(r){
     });
   }
   state.settings = {nombre:r.nombre || 'Mi acueducto', cuota:num(r.cuota), moneda:r.moneda ?? 'B/.', colorPorPago:!!r.color_por_pago, tarifaDefecto:r.tarifa_defecto || 'estandar',
-    ajusteFondos:r.ajuste_fondos || {}, mesesCorte:r.meses_para_corte ?? 2, diasAvisoCorte:r.dias_aviso_corte ?? 8, montoReconexion:num(r.monto_reconexion),
+    ajusteFondos:r.ajuste_fondos || {}, ocultarRed:!!r.ocultar_red_vecinos, mesesCorte:r.meses_para_corte ?? 2, diasAvisoCorte:r.dias_aviso_corte ?? 8, montoReconexion:num(r.monto_reconexion),
     politica:r.politica_privacidad || '', politicaFecha:r.politica_actualizada_en || null,
     whatsapp:r.whatsapp || '', whatsappMensaje:r.whatsapp_mensaje || '', whatsappActivo:!!r.whatsapp_activo, correoContacto:r.correo_contacto || ''};
   if (typeof map !== 'undefined' && map.ajustarFondos && !ajusteEdicion) map.ajustarFondos(state.settings.ajusteFondos);
@@ -295,12 +300,9 @@ map.on('moveend', debounce(() => {
 
 const capa = L.featureGroup().addTo(map);
 map.pm.setLang('es');
-map.pm.addControls({
-  position:'topleft',
-  drawMarker:false, drawCircle:false, drawText:false, drawCircleMarker:true,
-  drawPolyline:true, drawRectangle:true, drawPolygon:true,
-  cutPolygon:false, rotateMode:false
-});
+map.pm.addControls({position:'topleft', drawMarker:false, drawCircle:false, drawText:false, drawCircleMarker:true,
+  drawPolyline:true, drawRectangle:true, drawPolygon:true, cutPolygon:false, rotateMode:false});
+map.pm.removeControls();   // solo aparecen al pulsar «Editar mapa»
 map.pm.setGlobalOptions({layerGroup:capa, snappable:true, snapDistance:18});
 
 /* ================= Estilo y etiquetas ================= */
@@ -319,6 +321,7 @@ function marcarClase(layer, cls, si){
 function aplicarEstilo(layer){
   aplicarEstiloBase(layer);
   const aq = layer.aq;
+  if (aq && aq.tipo === 'tuberia' && esLinea(layer)) layer.setStyle({weight:Acu.grosorTuberia(aq.datos) + (layer === selected ? 3 : 0)});
   if (!aq || aq.tipo !== 'casa' || !cobrosListos) return;
   const s = situacionCorte(aq, cuenta(aq));
   marcarClase(layer, 'casa-cortada', s.estado === 'cortado');
@@ -390,7 +393,10 @@ function titulo(aq){
   if (aq.tipo === 'tuberia') return (d.clase === 'acometida' ? 'Acometida' : 'Tubería') + (d.nombre ? ' ' + d.nombre : '');
   if (aq.tipo === 'llave') return (d.nombre ? 'Llave ' + d.nombre : 'Llave') + (d.estado === 'cerrada' ? ' (cerrada)' : '');
   if (aq.tipo === 'sector') return d.nombre || 'Sector sin nombre';
-  if (aq.tipo === 'conector') return 'Conector en ' + (d.forma === 'Y' ? 'Y' : 'T') + (d.nombre ? ': ' + d.nombre : '');
+  if (aq.tipo === 'conector'){
+    const f = Acu.formaDe(d), base = d.forma === 'T' || d.forma === 'Y' || !d.forma ? 'Unión en ' + f.nombre : f.nombre;
+    return base + (d.forma === 'buje' && Array.isArray(d.tamanos) ? ` ${d.tamanos[0] || '?'}" → ${d.tamanos[1] || '?'}"` : '') + (d.nombre ? ': ' + d.nombre : '');
+  }
   return 'Forma sin función';
 }
 function textoIncidencias(id){
@@ -448,13 +454,13 @@ function refrescarForma(layer){
   renderResumenPronto();
 }
 async function eliminarForma(layer){
-  if (!soloDev('eliminar formas')) return;
+  if (!requiereEdicion()) return;
   const id = layer.aq.id;
   quitarCapaLocal(layer);
-  quitarIncidenciasDe(id);
   pendientes.delete(id);
+  if (edicion.foto.has(id)) edicion.borrados.add(id);   // se borra al guardar
+  pintarEdicion();
   renderResumen();
-  await tarea(sb.from('formas').delete().eq('id', id), 'No se pudo eliminar la forma');
 }
 
 /* =====================================================================
@@ -586,6 +592,8 @@ function recalcularIncidencias(){
   renderIncidenciasLateral();
   if (selected){ actualizarTituloPanel(); if (!formIncAbierto) renderIncidenciasPanel(); }
   actualizarBadges();
+  calcularCierres();
+  publicarEfectos();
 }
 const recalcularPronto = debounce(recalcularIncidencias, 300);
 
@@ -1002,9 +1010,12 @@ function ajustarAConectores(tubo){
     if (!libre){ msgs.push('Todas las puntas de ese conector ya están ocupadas.'); return; }
     pts[i] = pr.todos[libre.k];
     cambio = true;
-    if (pr.entradaIdx === null){ msgs.push(`Unida al brazo ${libre.k + 1} de la unión.`); return; }
-    d.flujo = flujoEnPuerto(ext, libre.k === pr.entradaIdx);
-    msgs.push(`Unida al brazo ${libre.k + 1} (${libre.k === pr.entradaIdx ? 'entrada' : 'salida'}); dirección del agua ajustada.`);
+    const dc = mejor.c.aq.datos, tam = dc.forma === 'buje' && Array.isArray(dc.tamanos) ? dc.tamanos[libre.k] : null;
+    if (tam){ d.diametro = tam; msgs.push(`Diámetro ajustado a ${tam}" por el buje reductor.`); }
+    const rol = pr.roles[libre.k];
+    if (!rol){ msgs.push(`Unida a la punta ${libre.k + 1} (libre).`); return; }
+    d.flujo = flujoEnPuerto(ext, rol === 'entrada');
+    msgs.push(`Unida a la punta ${libre.k + 1} (${rol}); dirección del agua ajustada.`);
   });
   if (cambio){ ponerPuntos(tubo, pts); guardarForma(tubo.aq.id); geometriaCambio(); aplicarEstilo(tubo); }
   return msgs.join(' ');
@@ -1016,13 +1027,17 @@ function cambiarConector(con, cambios, soloVista){
   const antes = Acu.puertosConector(con.getLatLng(), con.aq.datos);
   const unidas = conexionesConector(con, antes);
   Object.assign(con.aq.datos, cambios);
+  con.aq.datos.puertos = Acu.rolesConector(con.aq.datos);    // el rol de cada punta queda guardado explícitamente
+  delete con.aq.datos.entrada;
   moverUnidas(con, unidas);
-  // La entrada decide la dirección del agua de todas las tuberías unidas
-  const e = Acu.entradaConector(con.aq.datos);
-  if ('entrada' in cambios || e !== null) unidas.forEach((u, k) => {
-    if (!u || e === null) return;
-    const f = flujoEnPuerto(u.extremo, k === e);
-    if (u.layer.aq.datos.flujo !== f){ u.layer.aq.datos.flujo = f; guardarForma(u.layer.aq.id); aplicarEstilo(u.layer); }
+  // El rol de cada punta decide la dirección del agua; el buje, el diámetro
+  const roles = con.aq.datos.puertos, d = con.aq.datos;
+  unidas.forEach((u, k) => {
+    if (!u || k >= roles.length) return;
+    let cambiada = false;
+    if (roles[k]){ const f = flujoEnPuerto(u.extremo, roles[k] === 'entrada'); if (u.layer.aq.datos.flujo !== f){ u.layer.aq.datos.flujo = f; cambiada = true; } }
+    if (d.forma === 'buje' && Array.isArray(d.tamanos) && d.tamanos[k] && u.layer.aq.datos.diametro !== d.tamanos[k]){ u.layer.aq.datos.diametro = d.tamanos[k]; cambiada = true; }
+    if (cambiada){ guardarForma(u.layer.aq.id); aplicarEstilo(u.layer); }
   });
   aplicarEstilo(con);
   if (!soloVista){ guardarForma(con.aq.id); geometriaCambio(); if (selected === con) renderPanel(); }
@@ -1114,7 +1129,7 @@ function casaEn(ll, excluir){
     (esPunto(l) ? l.getLatLng().distanceTo(ll) < 5 : dentroDe(ll, l))) || null;
 }
 function iniciarTrazado(tipo, origen, puntoInicial){
-  if (!soloDev('trazar tuberías')) return;
+  if (!requiereEdicion()) return;
   asegurarMapa();
   terminarEdicion();
   map.pm.disableDraw();
@@ -1158,7 +1173,7 @@ function completarTrazado(layer, tr){
 
 /* ================= Dibujo ================= */
 function iniciarDibujo(t){
-  if (!soloDev('dibujar formas nuevas')) return;
+  if (!requiereEdicion()) return;
   asegurarMapa();
   salirHistorico();
   if (pendingTipo === t){ map.pm.disableDraw(); pendingTipo = null; marcarBotones(); return; }
@@ -1182,13 +1197,17 @@ map.on('pm:create', e => {
   const layer = e.layer;
   let tipo = pendingTipo || 'sin';
   const tr = trazado; trazado = null;
-  const formaConector = tipo === 'conectorT' ? 'T' : tipo === 'conectorY' ? 'Y' : null;
+  const formaConector = {conectorT:'T', conectorY:'Y', conectorCruz:'cruz', conectorCodo:'codo', conectorBuje:'buje'}[tipo] || null;
   if (formaConector) tipo = esPunto(layer) ? 'conector' : 'sin';
   if (tipo === 'sector' && !esPoligono(layer)) tipo = 'sin';
   if (tipo === 'tuberia' && !esLinea(layer)) tipo = 'sin';
   const aq = {id:uid(), tipo, color:TIPOS[tipo].color, colorManual:false, datos:datosBase(tipo)};
   if (tipo === 'tuberia') aq.datos.flujo = 'adelante';
-  if (tipo === 'conector') aq.datos.forma = formaConector;
+  if (tipo === 'conector'){
+    aq.datos.forma = formaConector;
+    aq.datos.puertos = Acu.rolesConector({forma:formaConector, puertos:[]});    // todas las puntas libres
+    if (formaConector === 'buje') aq.datos.tamanos = ['3', '2'];
+  }
   agregarCapa(layer, aq);
   let msg = '';
   if (tipo === 'tuberia'){
@@ -1199,7 +1218,10 @@ map.on('pm:create', e => {
     aq.datos.sectores = [...new Set([...(aq.datos.sectores || []), ...cruza])];
     geometriaCambio();
   }
-  if (tipo === 'conector'){ map.pm.disableDraw(); pendingTipo = null; marcarBotones(); colocarConector(layer); }
+  if (tipo === 'conector'){
+    map.pm.disableDraw(); pendingTipo = null; marcarBotones(); colocarConector(layer);
+    cambiarConector(layer, {});    // aplica a las tuberías unidas los diámetros del buje y los roles de las puntas
+  }
   guardarForma(aq.id);
   renderResumen();
   seleccionar(layer);
@@ -1290,19 +1312,27 @@ const PERMISOS = [
     {k:'acciones_corte', txt:'Cortes de agua', desc:'Notificar, cortar, reincorporar y cambiar las reglas.',
       sel:'[data-notificar], [data-cortar], [data-anular-aviso], [data-reincorporar], .corte-caja .rango, #ctReglas'},
     {k:'aprobar', txt:'Aprobar solicitudes', desc:'Aprobar o rechazar a quienes piden una cuenta.', sel:'[data-aprobar], [data-rechazar], .modo-acceso, .solicitud .campo'},
+    {k:'editar_mapa', txt:'Editar el mapa', desc:'Agregar, mover, cambiar o eliminar casas, tuberías, llaves, sectores y conectores. Empieza desactivado.',
+      opcional:true, sel:'#btnEditarMapa, #edicionActiva'},
     {k:'gestionar_vecinos', txt:'Gestionar cuentas de vecinos', desc:'Vincular casas, suspender, eliminar o agregar vecinos.',
       sel:'[data-suspender], [data-reactivar], [data-eliminar-cuenta], [data-agregar-casa], [data-quitar-casa], [data-hacer-admin], .invitar, #fdVincular'}
   ]}
 ];
 const TODOS_PERMISOS = PERMISOS.flatMap(g => g.items);
 const PLANTILLAS_PERMISOS = {
-  todo:{txt:'Todo', claves:TODOS_PERMISOS.map(p => p.k)},
+  todo:{txt:'Todo (incluye editar el mapa)', claves:TODOS_PERMISOS.map(p => p.k)},
   tesoreria:{txt:'Tesorería', claves:['resumen', 'cobros', 'pagos', 'cortes', 'tarifas', 'vecinos', 'registrar_pagos', 'anular', 'arreglos', 'acciones_corte']},
   operacion:{txt:'Operación de la red', claves:['mapa', 'incidencias', 'reportes', 'sectores', 'resumen', 'crear_incidencias', 'responder_reportes', 'operar_red']},
   secretaria:{txt:'Secretaría', claves:['solicitudes', 'vecinos', 'administradores', 'reportes', 'cobros', 'resumen', 'aprobar', 'gestionar_vecinos', 'responder_reportes', 'editar_casas']},
   lectura:{txt:'Solo mirar', claves:PERMISOS[0].items.map(p => p.k)}
 };
-const tienePermiso = k => esDev() || !(miPerfil && miPerfil.permisos && miPerfil.permisos[k] === false);
+/* Los permisos marcados como «opcional» (editar el mapa) empiezan desactivados */
+const tienePermiso = k => {
+  if (esDev()) return true;
+  const p = (miPerfil && miPerfil.permisos) || {}, it = TODOS_PERMISOS.find(x => x.k === k);
+  return it && it.opcional ? p[k] === true : p[k] !== false;
+};
+const permisoActivo = (perm, it) => it.opcional ? perm[it.k] === true : perm[it.k] !== false;
 function rutaPermitida(ruta){
   if (esDev()) return true;
   const it = PERMISOS[0].items.find(x => x.rutas.includes(ruta));
@@ -1362,21 +1392,25 @@ function renderPermisos(){
         ${Object.entries(PLANTILLAS_PERMISOS).map(([k, v]) => `<option value="${k}">${v.txt}</option>`).join('')}</select></label></div></header>
     ${PERMISOS.map(g => `<section class="perm-grupo"><h3>${g.grupo}</h3>${g.items.map(it => `
       <label class="perm-item"><span class="txt"><b>${esc(it.txt)}</b><small>${esc(it.desc)}</small></span>
-        <span class="interruptor"><input type="checkbox" data-perm="${it.k}" ${perm[it.k] === false ? '' : 'checked'}><span class="riel"></span></span></label>`).join('')}</section>`).join('')}
+        <span class="interruptor"><input type="checkbox" data-perm="${it.k}" ${permisoActivo(perm, it) ? 'checked' : ''}><span class="riel"></span></span></label>`).join('')}</section>`).join('')}
     <div class="fila perm-acciones">
       <button class="btn primario" id="permGuardar">Guardar permisos</button>
       <button class="btn" id="permTodos">Aplicar a todos los administradores</button>
     </div>
     <p class="nota">Lo que desactives desaparece de la pantalla de ${esc((p.nombre || 'este administrador').split(' ')[0])} en cuanto guardes, y la base de datos también le impide hacer esas acciones. El Inicio siempre lo puede ver.</p>`;
-  $('#permPanel').querySelectorAll('[data-perm]').forEach(c => c.addEventListener('change', () => { if (c.checked) delete perm[c.dataset.perm]; else perm[c.dataset.perm] = false; }));
+  $('#permPanel').querySelectorAll('[data-perm]').forEach(c => c.addEventListener('change', () => {
+    const it = TODOS_PERMISOS.find(x => x.k === c.dataset.perm);
+    if (it.opcional){ if (c.checked) perm[it.k] = true; else delete perm[it.k]; }
+    else { if (c.checked) delete perm[it.k]; else perm[it.k] = false; }
+  }));
   $('#permPlantilla').addEventListener('change', e => {
     const pl = PLANTILLAS_PERMISOS[e.target.value]; if (!pl) return;
-    permEdicion.permisos = Object.fromEntries(TODOS_PERMISOS.filter(x => !pl.claves.includes(x.k)).map(x => [x.k, false]));
+    permEdicion.permisos = Object.fromEntries(TODOS_PERMISOS.map(x => [x.k, pl.claves.includes(x.k) ? (x.opcional ? true : null) : (x.opcional ? null : false)]).filter(([, v]) => v !== null));
     renderPermisos();
     aviso(`Plantilla «${pl.txt}» aplicada. Revisa y pulsa «Guardar permisos».`);
   });
   const guardar = async ids => {
-    const permisos = Object.fromEntries(Object.entries(permEdicion.permisos).filter(([, v]) => v === false));
+    const permisos = Object.fromEntries(Object.entries(permEdicion.permisos).filter(([, v]) => v === false || v === true));
     for (const id of ids){
       const ok = await tarea(sb.from('perfiles').update({permisos}).eq('id', id), 'No se pudieron guardar los permisos');
       if (!ok) return;
@@ -1393,12 +1427,147 @@ function renderPermisos(){
 }
 
 /* =====================================================================
+   EDITAR MAPA: los cambios del mapa quedan pendientes hasta "Guardar".
+   "Cancelar" vuelve todo como estaba. Fuera de este modo el mapa no se modifica
+   (salvo lo operativo: abrir o cerrar llaves, agua de sectores, datos de casas).
+   ===================================================================== */
+const CONTROLES_GEOMAN = {position:'topleft', drawMarker:false, drawCircle:false, drawText:false, drawCircleMarker:true,
+  drawPolyline:true, drawRectangle:true, drawPolygon:true, cutPolygon:false, rotateMode:false};
+let edicion = null;                    // {foto: Map(id → fila), borrados: Set}
+const enEdicion = () => !!edicion;
+const puedeEditarMapa = () => tienePermiso('editar_mapa');
+function entrarEdicion(){
+  if (!puedeEditarMapa()){ aviso('No tienes permiso para editar el mapa.'); return false; }
+  if (edicion) return true;
+  asegurarMapa();
+  flush(true);
+  edicion = {foto:new Map([...capas].map(([id, l]) => [id, JSON.parse(JSON.stringify(fila(l)))])), borrados:new Set()};
+  try { map.pm.addControls(CONTROLES_GEOMAN); } catch (e){}
+  document.body.classList.add('mapa-en-edicion');
+  pintarEdicion();
+  if (selected) renderPanel();
+  aviso('Modo edición: los cambios se guardan cuando pulses «Guardar».', 5000);
+  return true;
+}
+function salirEdicion(){
+  edicion = null;
+  try { map.pm.disableDraw(); map.pm.removeControls(); } catch (e){}
+  pendingTipo = null; trazado = null; marcarBotones();
+  document.body.classList.remove('mapa-en-edicion');
+  $('#menuAnadir').hidden = true;
+  pintarEdicion();
+  if (selected) renderPanel();
+}
+function cambiosEdicion(){ return edicion ? pendientes.size + edicion.borrados.size : 0; }
+function pintarEdicion(){
+  const ed = enEdicion();
+  $('#btnEditarMapa').hidden = ed || !puedeEditarMapa();
+  $('#edicionActiva').hidden = !ed;
+  const n = cambiosEdicion();
+  $('#edCambios').textContent = n ? `${n} ${n === 1 ? 'cambio sin guardar' : 'cambios sin guardar'}` : 'Sin cambios';
+  $('#edCambios').classList.toggle('hay', !!n);
+}
+async function guardarEdicion(){
+  if (!edicion) return;
+  terminarEdicion(); map.pm.disableDraw();
+  const n = cambiosEdicion();
+  $('#btnGuardarEd').disabled = true;
+  await flush(true);
+  if (pendientes.size){ $('#btnGuardarEd').disabled = false; aviso('No se pudieron guardar todos los cambios. Revisa la conexión e inténtalo de nuevo.', 7000); return; }
+  for (const id of [...edicion.borrados]){
+    if (!await tarea(sb.from('formas').delete().eq('id', id), 'No se pudo eliminar una forma')){ $('#btnGuardarEd').disabled = false; return; }
+    edicion.borrados.delete(id);
+  }
+  $('#btnGuardarEd').disabled = false;
+  salirEdicion();
+  aviso(n ? `Mapa guardado (${n} ${n === 1 ? 'cambio' : 'cambios'}).` : 'No había cambios que guardar.');
+  recalcularIncidencias();
+}
+function cancelarEdicion(){
+  if (!edicion) return;
+  const n = cambiosEdicion();
+  if (n && !confirm(`¿Descartar ${n} ${n === 1 ? 'cambio' : 'cambios'} sin guardar? El mapa volverá a como estaba.`)) return;
+  terminarEdicion(); map.pm.disableDraw(); cerrarPanel();
+  const foto = edicion.foto;
+  pendientes.clear();
+  [...capas.keys()].forEach(id => { if (!foto.has(id)) quitarCapaLocal(capas.get(id)); });
+  foto.forEach(f => {
+    const l = capas.get(f.id);
+    if (!l || JSON.stringify(fila(l)) !== JSON.stringify(f)) aplicarFilaForma(f);
+  });
+  salirEdicion();
+  geometriaCambio(); recalcularIncidencias();
+  aviso(n ? 'Cambios descartados: el mapa volvió a como estaba.' : 'Edición cerrada.');
+}
+/* Pide estar en modo edición (si la persona puede, entra sola) */
+function requiereEdicion(){
+  if (!puedeEditarMapa()){ aviso('No tienes permiso para editar el mapa.', 5000); return false; }
+  return enEdicion() || entrarEdicion();
+}
+$('#btnEditarMapa').addEventListener('click', entrarEdicion);
+$('#btnGuardarEd').addEventListener('click', guardarEdicion);
+$('#btnCancelarEd').addEventListener('click', cancelarEdicion);
+$('#btnAnadir').addEventListener('click', e => {
+  e.stopPropagation();
+  const ab = $('#menuAnadir').hidden; $('#menuAnadir').hidden = !ab; $('#btnAnadir').setAttribute('aria-expanded', String(ab));
+});
+document.addEventListener('click', e => { if (!e.target.closest('.menu-anadir')) $('#menuAnadir').hidden = true; });
+$('#menuAnadir').addEventListener('click', e => { if (e.target.closest('[data-dibujar]')) $('#menuAnadir').hidden = true; });
+window.addEventListener('beforeunload', e => { if (cambiosEdicion()){ e.preventDefault(); e.returnValue = ''; } });
+
+/* =====================================================================
+   LLAVES CERRADAS: sin agua lo que está después, según el efecto elegido
+   ===================================================================== */
+const capaCierres = L.layerGroup().addTo(map);
+let efectosLlaves = [];
+const EFECTOS_CIERRE = {casas:'Solo las casas', sector:'Solo el sector', ambos:'Casas y sector'};
+function calcularCierres(){
+  capaCierres.clearLayers(); efectosLlaves = [];
+  const rd = redActual();
+  capas.forEach(l => {
+    if (!l.aq || l.aq.tipo !== 'llave' || l.aq.datos.estado !== 'cerrada') return;
+    const efecto = l.aq.datos.efectoCierre || 'ambos';
+    const r = Acu.efectoLlave(rd, l.aq.id, efecto);
+    efectosLlaves.push({id:l.aq.id, efecto, r});
+    r.piezas.forEach(p => L.polyline(p.latlngs, {color:'#455A64', weight:7, opacity:.85, dashArray:'2 9', lineCap:'round', interactive:false}).addTo(capaCierres));
+    r.casas.forEach(id => { const c = capas.get(id); if (!c) return;
+      (esPunto(c) ? L.circleMarker(c.getLatLng(), {radius:10, color:'#37474F', weight:2.5, dashArray:'3 3', fillColor:'#90A4AE', fillOpacity:.6, interactive:false})
+        : L.polygon(c.getLatLngs(), {color:'#37474F', weight:2.5, dashArray:'4 4', fillColor:'#90A4AE', fillOpacity:.6, interactive:false})).addTo(capaCierres); });
+    r.sectores.forEach(id => { const s = capas.get(id); if (!s || !esPoligono(s)) return;
+      L.polygon(s.getLatLngs(), {color:'#455A64', weight:2, dashArray:'8 6', fillColor:'#B0BEC5', fillOpacity:.35, interactive:false}).addTo(capaCierres); });
+  });
+}
+/* Publica qué casas y sectores están afectados (lo usa la página de vecinos aunque la red esté oculta) */
+let ultimosEfectos = '';
+const publicarEfectos = debounce(async () => {
+  if (!sb || enEdicion() || !miPerfil) return;
+  const filas = [];
+  incAbiertas().filter(i => i.publica !== false).forEach(inc => {
+    const r = afectacionDe(inc);
+    filas.push({id:'incidencia:' + inc.id, tipo:'incidencia', ref:inc.id, etiqueta:inc.tipo, casas:[...r.casas].sort(), sectores:[...r.sectores].sort()});
+  });
+  efectosLlaves.forEach(x => {
+    const l = capas.get(x.id);
+    filas.push({id:'llave:' + x.id, tipo:'llave', ref:x.id, etiqueta:l ? titulo(l.aq) : 'Llave cerrada', casas:[...x.r.casas].sort(), sectores:[...x.r.sectores].sort()});
+  });
+  const firma = JSON.stringify(filas);
+  if (firma === ultimosEfectos) return;
+  const {data:actuales, error} = await sb.from('efectos_publicos').select('id');
+  if (error) return;
+  const ids = new Set(filas.map(f => f.id)), borrar = (actuales || []).map(x => x.id).filter(id => !ids.has(id));
+  if (filas.length){ const r = await sb.from('efectos_publicos').upsert(filas.map(f => ({...f, updated_at:new Date().toISOString()}))); if (r.error) return; }
+  if (borrar.length) await sb.from('efectos_publicos').delete().in('id', borrar);
+  ultimosEfectos = firma;
+}, 1500);
+
+/* =====================================================================
    PERMISOS: solo el desarrollador crea, borra o edita las formas del mapa
    ===================================================================== */
 function aplicarPermisosFormas(){
   const dev = esDev();
   document.querySelectorAll('[data-solo-dev]').forEach(e => { e.hidden = !dev; });
-  if (!dev){ try { map.pm.removeControls(); map.pm.disableDraw(); } catch (e){} }
+  if (!enEdicion()){ try { map.pm.removeControls(); map.pm.disableDraw(); } catch (e){} }
+  pintarEdicion();
 }
 function soloDev(accion){
   if (esDev()) return true;
@@ -1430,7 +1599,7 @@ function renderPanel(){
 
   /* --- Acciones rápidas --- */
   const editandoEsta = editando === layer;
-  const dev = esDev();
+  const dev = enEdicion();          // las acciones de edición solo en «Editar mapa»
   let acciones = accion('pCentrar', '◎', 'Centrar');
   if (dev) acciones += accion('pEditar', editandoEsta ? '✓' : '✥',
     editandoEsta ? 'Listo' : (esPunto(layer) ? 'Mover' : 'Mover puntos'), editandoEsta ? 'class="p-acc on"' : '');
@@ -1458,26 +1627,38 @@ function renderPanel(){
       <label class="interruptor grande"><input type="checkbox" id="secFlujo" ${d.activo ? 'checked' : ''}><span class="riel"></span><span>${d.activo ? 'Con agua ahora' : 'Sin agua ahora'}</span></label>
       <p class="nota">${esc(d.activoDesde ? (d.activo ? 'Con agua ' : 'Sin agua ') + Acu.desde(d.activoDesde) + '.' : 'Aún no se ha cambiado el estado.')} Se ve en vivo en la página pública.</p></div>`;
   } else if (aq.tipo === 'llave'){
-    estado = `<div class="p-estado"><div class="segmento" role="group" aria-label="Estado de la llave">
-      <button data-estado="abierta" class="${d.estado !== 'cerrada' ? 'on' : ''}">Abierta</button>
-      <button data-estado="cerrada" class="${d.estado === 'cerrada' ? 'on' : ''}">Cerrada</button></div></div>`;
+    const ef = d.efectoCierre || 'ambos', x = efectosLlaves.find(e => e.id === aq.id);
+    const tubos = redConectada(aq.id);
+    estado = `<div class="p-estado ${d.estado === 'cerrada' ? 'aviso' : ''}">
+      ${tubos.tubos.size ? '' : '<p>⚠ Esta llave no está sobre ninguna tubería. Colócala encima de una línea para que controle el agua.</p>'}
+      <div class="segmento" role="group" aria-label="Estado de la llave">
+        <button data-estado="abierta" class="${d.estado !== 'cerrada' ? 'on' : ''}">💧 Abrir</button>
+        <button data-estado="cerrada" class="${d.estado === 'cerrada' ? 'on' : ''}">⛔ Cerrar</button></div>
+      <label class="campo efecto-cierre"><span>Al cerrarla, marcar sin agua</span></label>
+      <div class="segmento" role="group" aria-label="Efecto del cierre">${Object.entries(EFECTOS_CIERRE).map(([k, v]) =>
+        `<button data-efecto="${k}" class="${k === ef ? 'on' : ''}">${v}</button>`).join('')}</div>
+      ${d.estado === 'cerrada' && x ? `<p class="resumen-cierre">⛔ Sin agua: <b>${x.r.casas.size}</b> ${x.r.casas.size === 1 ? 'casa' : 'casas'}${x.r.sectores.size ? ', sectores: ' + esc([...x.r.sectores].map(id => { const l = capas.get(id); return l ? titulo(l.aq) : ''; }).filter(Boolean).join(', ')) : ''} y ${x.r.tubos.size} ${x.r.tubos.size === 1 ? 'tubería' : 'tuberías'} sin flujo.</p>` : ''}
+      <p class="nota">El agua se corta desde la llave en la dirección del flujo. Revisa que las tuberías tengan su dirección del agua definida.</p></div>`;
   } else if (aq.tipo === 'conector'){
-    const con = conexionesConector(layer), ent = Acu.entradaConector(d);
-    const nombres = d.forma === 'Y' ? ['Tronco', 'Rama', 'Rama'] : ['Recto', 'Recto', 'Lateral'];
+    const con = conexionesConector(layer), roles = Acu.rolesConector(d), forma = Acu.formaDe(d);
+    const sinRoles = roles.every(r => !r), tam = Array.isArray(d.tamanos) ? d.tamanos : [];
     const fila = i => {
-      const t = con[i], esEnt = ent === i;
-      return `<li class="${esEnt ? 'es-entrada' : ''}"><span class="puerto ${esEnt ? 'ent' : ''}">${i + 1}</span>
-        <span class="nom">Brazo ${i + 1} <small class="lado">${nombres[i]}</small>
-          <small>${ent === null ? '' : esEnt ? '💧 Entrada · ' : 'Salida · '}${t ? esc(titulo(t.layer.aq)) : 'libre'}</small></span>
-        <span class="botones">${esEnt ? '' : `<button class="btn chico" data-entrada="${i}" title="El agua entra por este brazo; los otros dos quedan como salidas">Entrada</button>`}
-        ${t ? `<button class="btn chico" data-ir="${esc(t.layer.aq.id)}">Ver</button>` : `<button class="btn chico" data-desde-puerto="${i}">Conectar</button>`}</span></li>`;
+      const t = con[i], rol = roles[i];
+      return `<li class="${rol === 'entrada' ? 'es-entrada' : ''}"><span class="puerto ${rol === 'entrada' ? 'ent' : ''}">${i + 1}</span>
+        <span class="nom">Punta ${i + 1} <small class="lado">${esc(forma.brazos[i] || '')}${d.forma === 'buje' && tam[i] ? ' · ' + esc(tam[i]) + '"' : ''}</small>
+          <small>${rol === 'entrada' ? '💧 Entrada · ' : rol === 'salida' ? 'Salida · ' : 'Libre · '}${t ? esc(titulo(t.layer.aq)) : 'sin tubería'}</small></span>
+        <span class="botones">
+          ${dev ? `<span class="roles-punta" role="group" aria-label="Rol de la punta ${i + 1}">
+            <button class="entrada ${rol === 'entrada' ? 'on' : ''}" data-rol="${i}:entrada" title="El agua entra por esta punta">E</button>
+            <button class="salida ${rol === 'salida' ? 'on' : ''}" data-rol="${i}:salida" title="El agua sale por esta punta">S</button>
+            <button class="libre ${!rol ? 'on' : ''}" data-rol="${i}:" title="Sin definir: pasa en cualquier sentido">–</button></span>` : ''}
+          ${t ? `<button class="btn chico" data-ir="${esc(t.layer.aq.id)}">Ver</button>` : dev ? `<button class="btn chico" data-desde-puerto="${i}">Conectar</button>` : ''}</span></li>`;
     };
-    estado = `<div class="p-estado ${ent === null ? 'aviso' : ''}">
-      <p>${ent === null ? '⚠ <b>Elige por cuál brazo entra el agua.</b> Los otros dos quedarán como salidas y la dirección del agua de las tuberías unidas se ajusta sola.'
-                        : `💧 El agua entra por el brazo ${ent + 1} y sale por los otros dos.`}</p>
-      <ul class="puertos">${[0, 1, 2].map(fila).join('')}</ul>
-      ${ent === null ? '' : '<button class="btn chico" id="quitarEntrada">Quitar la entrada</button>'}
-      <p class="nota">En el mapa, cada brazo muestra su número; «E» es la entrada y «S» las salidas.</p></div>`;
+    estado = `<div class="p-estado ${sinRoles ? 'aviso' : ''}">
+      <p>${sinRoles ? '⚠ <b>Todas las puntas están libres.</b> Asigna con <b>E</b> la entrada y con <b>S</b> las salidas para controlar el flujo del agua.'
+                     : `💧 Entrada por ${roles.map((r, i) => r === 'entrada' ? i + 1 : null).filter(Boolean).join(', ') || '—'} · salida por ${roles.map((r, i) => r === 'salida' ? i + 1 : null).filter(Boolean).join(', ') || '—'}.`}</p>
+      <ul class="puertos">${roles.map((_, i) => fila(i)).join('')}</ul>
+      <p class="nota">En el mapa, cada punta muestra su número; «E» es entrada y «S» salida. Las puntas libres dejan pasar el agua en cualquier sentido.</p></div>`;
   } else {
     estado = `<div class="p-estado aviso"><p>Esta forma todavía no tiene función. Elige qué es:</p>${botonesTipo(layer)}</div>`;
   }
@@ -1530,17 +1711,21 @@ function renderPanel(){
     pestañas.datos = `${campo('Nombre o ubicación','nombre',d.nombre,'text','placeholder="Ej. Llave del sector norte"')}${areaNotas(d.notas)}`;
   } else if (aq.tipo === 'conector'){
     const rot = Math.round(num(d.rotacion)) % 360;
+    const DIAMETROS = ['1/2', '3/4', '1', '1 1/4', '1 1/2', '2', '2 1/2', '3', '4', '6'];
+    const tamB = Array.isArray(d.tamanos) ? d.tamanos : ['', ''];
+    const selDiam = (i) => `<select data-tamano="${i}">${DIAMETROS.map(x => `<option value="${x}" ${x === tamB[i] ? 'selected' : ''}>${x}"</option>`).join('')}</select>`;
     pestañas.datos = `
-      <label class="campo"><span>Forma</span></label>
-      <div class="segmento" role="group" aria-label="Forma del conector">
-        <button data-forma="T" class="${d.forma !== 'Y' ? 'on' : ''}">En T</button>
-        <button data-forma="Y" class="${d.forma === 'Y' ? 'on' : ''}">En Y</button></div>
+      <label class="campo"><span>Tipo de conector</span><select id="conForma">
+        ${Object.entries(Acu.FORMAS_CONECTOR).map(([k, f]) => `<option value="${k}" ${k === (d.forma || 'T') ? 'selected' : ''}>${k === 'T' || k === 'Y' ? 'Unión en ' + f.nombre : f.nombre} (${f.locales(1, 1).length} puntas)</option>`).join('')}
+      </select></label>
+      ${d.forma === 'buje' ? `<div class="dos"><label class="campo"><span>Diámetro punta 1</span>${selDiam(0)}</label><label class="campo"><span>Diámetro punta 2</span>${selDiam(1)}</label></div>
+        <p class="nota">La tubería unida a cada punta toma ese diámetro y se dibuja más gruesa o más delgada.</p>` : ''}
       <label class="campo"><span>Orientación: <output id="rotVal">${rot}°</output></span>
         <input type="range" id="rotRange" min="0" max="359" step="1" value="${rot}"></label>
       <div class="fila">
         <button class="btn chico" data-girar="-15">↺ 15°</button><button class="btn chico" data-girar="15">↻ 15°</button>
         <button class="btn chico" data-girar="180">Girar 180°</button>
-        ${d.forma !== 'Y' ? '<button class="btn chico" id="conEspejo">Cambiar lado del brazo lateral</button>' : ''}</div>
+        ${d.forma === 'T' || d.forma === 'codo' || !d.forma ? '<button class="btn chico" id="conEspejo">Cambiar lado del brazo lateral</button>' : ''}</div>
       <label class="campo"><span>Tamaño de los brazos: <output id="tamVal">${Acu.tamanoConector(d).toFixed(1)} m</output></span>
         <input type="range" id="tamRange" min="0.5" max="6" step="0.5" value="${Acu.tamanoConector(d)}"></label>
       <p class="nota">Las tuberías unidas se estiran o acortan solas al cambiar el tamaño o el giro.</p>
@@ -1600,8 +1785,13 @@ function enlazarPanel(layer, cuerpo){
   if ($('#colorLibre')) $('#colorLibre').addEventListener('input', e => ponerColor(e.target.value, true));
   cuerpo.querySelectorAll('[data-estado]').forEach(b => b.addEventListener('click', () => {
     aq.datos.estado = b.dataset.estado;
-    cuerpo.querySelectorAll('[data-estado]').forEach(x => x.classList.toggle('on', x === b));
     cambio(); actualizarTituloPanel();
+    recalcularIncidencias(); renderPanel();
+    if (aq.tipo === 'llave') aviso(b.dataset.estado === 'cerrada' ? 'Llave cerrada: se marcó sin agua lo que está después.' : 'Llave abierta: el agua vuelve a circular.', 4000);
+  }));
+  cuerpo.querySelectorAll('[data-efecto]').forEach(b => b.addEventListener('click', () => {
+    aq.datos.efectoCierre = b.dataset.efecto;
+    cambio(); recalcularIncidencias(); renderPanel();
   }));
   const rango = $('#opRange');
   if (rango) rango.addEventListener('input', () => { aq.datos.opacidad = Number(rango.value) / 100; $('#opVal').textContent = rango.value + '%'; cambio(); });
@@ -1639,14 +1829,25 @@ function enlazarPanel(layer, cuerpo){
     tam.addEventListener('input', () => { $('#tamVal').textContent = Number(tam.value).toFixed(1) + ' m'; cambiarConector(layer, {tamano:Number(tam.value)}, true); });
     tam.addEventListener('change', () => cambiarConector(layer, {tamano:Number(tam.value)}));
   }
-  cuerpo.querySelectorAll('[data-entrada]').forEach(b => b.addEventListener('click', () => {
-    cambiarConector(layer, {entrada:Number(b.dataset.entrada)});
-    aviso(`El agua entra por el brazo ${Number(b.dataset.entrada) + 1}; las tuberías unidas ya muestran la nueva dirección.`, 5000);
+  cuerpo.querySelectorAll('[data-rol]').forEach(b => b.addEventListener('click', () => {
+    const [i, rol] = b.dataset.rol.split(':'), roles = Acu.rolesConector(aq.datos);
+    roles[Number(i)] = rol || null;
+    cambiarConector(layer, {puertos:roles});
+    aviso(rol ? `Punta ${Number(i) + 1}: ${rol}. La dirección del agua de la tubería unida se ajustó.` : `Punta ${Number(i) + 1}: libre.`, 4000);
   }));
-  if ($('#quitarEntrada')) $('#quitarEntrada').addEventListener('click', () => cambiarConector(layer, {entrada:null}));
+  if ($('#conForma')) $('#conForma').addEventListener('change', e => {
+    const forma = e.target.value, cambios = {forma, puertos:Acu.rolesConector({forma, puertos:[]})};
+    if (forma === 'buje' && !Array.isArray(aq.datos.tamanos)) cambios.tamanos = ['3', '2'];
+    cambiarConector(layer, cambios);
+  });
+  cuerpo.querySelectorAll('[data-tamano]').forEach(sel => sel.addEventListener('change', () => {
+    const t = Array.isArray(aq.datos.tamanos) ? [...aq.datos.tamanos] : ['', ''];
+    t[Number(sel.dataset.tamano)] = sel.value;
+    cambiarConector(layer, {tamanos:t});
+  }));
   cuerpo.querySelectorAll('[data-desde-puerto]').forEach(b => b.addEventListener('click', () => {
     const i = Number(b.dataset.desdePuerto), pr = Acu.puertosConector(layer.getLatLng(), aq.datos);
-    if (pr.entradaIdx === i) iniciarTrazado('entrada', layer, null);     // hacia la entrada: se termina en la punta
+    if (pr.roles[i] === 'entrada') iniciarTrazado('entrada', layer, null);     // hacia la entrada: se termina en la punta
     else iniciarTrazado('salida', layer, pr.todos[i]);                   // desde el brazo: el trazo ya empieza ahí
   }));
   cuerpo.querySelectorAll('[data-ir]').forEach(b => b.addEventListener('click', () => { const l = capas.get(b.dataset.ir); if (l){ enfocar(l); seleccionar(l); } }));
@@ -1671,7 +1872,7 @@ function enlazarPanel(layer, cuerpo){
    ===================================================================== */
 let editando = null;
 function alternarEdicion(layer){
-  if (!soloDev('mover los puntos de las formas')) return;
+  if (!requiereEdicion()) return;
   if (editando === layer){ terminarEdicion(); return; }
   terminarEdicion();
   asegurarMapa();
@@ -1729,7 +1930,7 @@ function cambio(){
 }
 
 async function cambiarTipo(nuevo){
-  if (!soloDev('cambiar la función de las formas')) return;
+  if (!requiereEdicion()) return;
   const layer = selected, aq = layer.aq;
   if (nuevo === aq.tipo) return;
   if (nuevo === 'sector' && !esPoligono(layer)){ aviso('Un sector debe ser un área cerrada.'); return; }
@@ -1797,7 +1998,7 @@ function router(){
   if (miPerfil && !rutaPermitida(base)){ aviso('No tienes permiso para ver esa sección.'); history.replaceState(null, '', '#/inicio'); base = 'inicio'; }
   if (base === 'usuarios/permisos' && miPerfil && !esDev()){ history.replaceState(null, '', '#/inicio'); base = 'inicio'; }
   mostrarVista(base);
-  if (base === 'mapa' && extra && PISTAS[extra] && extra !== 'acometida' && !esDev()){ history.replaceState(null, '', '#/mapa'); soloDev('dibujar formas nuevas'); }
+  if (base === 'mapa' && extra && PISTAS[extra] && extra !== 'acometida' && !puedeEditarMapa()){ history.replaceState(null, '', '#/mapa'); aviso('No tienes permiso para editar el mapa.'); }
   else if (base === 'mapa' && extra && PISTAS[extra] && extra !== 'acometida'){
     history.replaceState(null, '', '#/mapa');
     if (pendingTipo !== extra) iniciarDibujo(extra);
@@ -4162,6 +4363,7 @@ function cargarConfigEnFormulario(){
   if (![...selMon.options].some(o => o.value === mon)) selMon.add(new Option(mon, mon));
   selMon.value = mon;
   $('#cfgColorPago').checked = !!state.settings.colorPorPago;
+  $('#cfgOcultarRed').checked = !!state.settings.ocultarRed;
   $('#cfgWhatsapp').value = state.settings.whatsapp;
   $('#cfgWhatsappMsg').value = state.settings.whatsappMensaje;
   $('#cfgWhatsappActivo').checked = state.settings.whatsappActivo;
@@ -4179,6 +4381,7 @@ function alCambiarConfig(){
   state.settings.cuota = num($('#cfgCuota').value);
   state.settings.moneda = limpiarMoneda($('#cfgMoneda').value);
   state.settings.colorPorPago = $('#cfgColorPago').checked;
+  state.settings.ocultarRed = $('#cfgOcultarRed').checked;
   state.settings.whatsapp = $('#cfgWhatsapp').value.trim();
   state.settings.whatsappMensaje = $('#cfgWhatsappMsg').value;
   state.settings.whatsappActivo = $('#cfgWhatsappActivo').checked;
@@ -4191,6 +4394,8 @@ function alCambiarConfig(){
 ['#cfgNombre','#cfgWhatsapp','#cfgWhatsappMsg','#cfgCorreo'].forEach(s => $(s).addEventListener('input', alCambiarConfig));
 $('#cfgMoneda').addEventListener('change', alCambiarConfig);
 $('#cfgWhatsappActivo').addEventListener('change', alCambiarConfig);
+$('#cfgOcultarRed').addEventListener('change', () => { alCambiarConfig();
+  aviso($('#cfgOcultarRed').checked ? 'Los vecinos ya no ven las tuberías, llaves ni conectores.' : 'Los vecinos vuelven a ver las tuberías, llaves y conectores.', 5000); });
 $('#cfgColorPago').addEventListener('change', () => { alCambiarConfig(); if (selected) renderPanel(); });
 
 /* ================= Copias de seguridad ================= */
