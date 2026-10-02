@@ -1289,7 +1289,7 @@ let asaGiro = null;
 function actualizarAsaGiro(){
   if (asaGiro){ map.removeLayer(asaGiro); asaGiro = null; }
   const l = selected;
-  if (typeof edicion === 'undefined' || !enEdicion() || !puedeGirar(l) || editando || !map.hasLayer(l)) return;
+  if (typeof edicion === 'undefined' || !enEdicion() || !puedeGirar(l) || (editando && !editandoPuntos) || !map.hasLayer(l)) return;
   const c = centroForma(l), cp = map.latLngToLayerPoint(c);
   let arriba;
   if (l.aq.tipo === 'conector') arriba = cp.y - Math.max(34, Acu.tamanoConector(l.aq.datos) * 110540 / 40075016 * 256 * Math.pow(2, map.getZoom()) / 360 + 28);
@@ -1757,6 +1757,7 @@ function cancelarEdicion(){
   const foto = edicion.foto;
   pendientes.clear();
   [...capas.keys()].forEach(id => { if (!foto.has(id)) quitarCapaLocal(capas.get(id)); });
+  try { if (editando && editando.pm) editando.pm.disableLayerDrag(); } catch (e){}
   foto.forEach(f => {
     const l = capas.get(f.id);
     if (!l || JSON.stringify(fila(l)) !== JSON.stringify(f)) aplicarFilaForma(f);
@@ -1995,8 +1996,15 @@ function renderPanel(){
   const dev = enEdicion();          // las acciones de edición solo en «Editar mapa»
   let conexionTubo = '';
   let acciones = accion('pCentrar', '◎', 'Centrar');
-  if (dev) acciones += accion('pEditar', editandoEsta ? '✓' : '✥',
-    editandoEsta ? 'Listo' : (esPunto(layer) ? 'Mover' : 'Mover puntos'), editandoEsta ? 'class="p-acc on"' : '');
+  const editandoEstaP = editandoPuntos === layer;
+  if (dev && esPunto(layer))
+    acciones += accion('pEditar', editandoEsta ? '✓' : '✥', editandoEsta ? 'Listo' : 'Mover', editandoEsta ? 'class="p-acc on"' : '');
+  if (dev && esPoligono(layer)){
+    acciones += accion('pMoverTodo', editandoEsta && !editandoEstaP ? '✓' : '✥', 'Mover', editandoEsta && !editandoEstaP ? 'class="p-acc on"' : '');
+    acciones += accion('pEditar', editandoEstaP ? '✓' : '✏', editandoEstaP ? 'Listo' : 'Ajustar puntos', editandoEstaP ? 'class="p-acc on"' : '');
+  }
+  if (dev && esLinea(layer))
+    acciones += accion('pEditar', editandoEsta ? '✓' : '✏', editandoEsta ? 'Listo' : 'Mover puntos', editandoEsta ? 'class="p-acc on"' : '');
   if (dev && aq.tipo === 'tuberia') acciones += accion('pRamal', '⑂', 'Sacar ramal');
 
 
@@ -2226,6 +2234,7 @@ function enlazarPanel(layer, cuerpo){
   }));
   // Acciones rápidas
   $('#pCentrar').addEventListener('click', () => enfocar(layer));
+  if ($('#pMoverTodo')) $('#pMoverTodo').addEventListener('click', () => moverTodo(layer));
   if ($('#pEditar')) $('#pEditar').addEventListener('click', () => alternarEdicion(layer));
   if ($('#pRamal')) $('#pRamal').addEventListener('click', () => iniciarTrazado('ramal', layer));
   if ($('#pCasaCasa')) $('#pCasaCasa').addEventListener('click', () => iniciarTrazado('casaCasa', layer, centroCasa(layer)));
@@ -2304,13 +2313,29 @@ function enlazarPanel(layer, cuerpo){
    MOVER PUNTOS DE UNA FORMA
    ===================================================================== */
 let editando = null;
+/* Mover toda la forma de una vez (arrastrar) */
+function moverTodo(layer){
+  if (!requiereEdicion()) return;
+  if (editando === layer && editandoPuntos === null){ terminarEdicion(); return; }
+  terminarEdicion();
+  asegurarMapa();
+  editando = layer; editandoPuntos = null;
+  setTimeout(actualizarAsaGiro, 0);
+  layer.pm.enableLayerDrag();
+  // Geoman: el evento de fin de arrastre va sobre el layer, no sobre pm
+  layer.once('pm:dragend', () => { guardarForma(layer.aq.id); geometriaCambio(); actualizarAsaGiro(); });
+  if (selected === layer) renderPanel();
+  $('#pista').textContent = 'Arrastra la casa a su nueva posición y suelta. Pulsa «Listo» al terminar.';
+  $('#pista').hidden = false;
+}
+/* Ajustar los vértices de la forma punto a punto */
 function alternarEdicion(layer){
   if (!requiereEdicion()) return;
-  if (editando === layer){ terminarEdicion(); return; }
+  if (editandoPuntos === layer){ terminarEdicion(); return; }
   terminarEdicion();
   setTimeout(actualizarAsaGiro, 0);
   asegurarMapa();
-  editando = layer;
+  editando = layer; editandoPuntos = esPoligono(layer) ? layer : null;
   if (esLinea(layer)) layer.pm._otherSnapLayers = puertosParaUnir();
   layer.pm.enable({snappable:true, snapDistance:18, allowSelfIntersection:true, draggable:esPunto(layer)});
   $('#pista').textContent = esPunto(layer)
@@ -2324,9 +2349,12 @@ function alternarEdicion(layer){
 function terminarEdicion(){
   const layer = editando;
   if (!layer) return;
-  editando = null;
+  editando = null; editandoPuntos = null;
   setTimeout(actualizarAsaGiro, 0);
-  if (layer.pm && layer.pm.enabled()) layer.pm.disable();
+  if (layer.pm){
+    try { layer.pm.disableLayerDrag(); } catch (e){}
+    if (layer.pm.enabled()) layer.pm.disable();
+  }
   $('#pista').hidden = !pendingTipo;
   if (layer.aq && layer.aq.tipo === 'tuberia'){
     const msg = ajustarAConectores(layer);
@@ -3538,7 +3566,7 @@ $('#repBusca').addEventListener('input', debounce(renderReportes, 200));
    · pagos: abonos con número de recibo. Nada se borra: se anula con un motivo.
    Saldo = cargos no anulados − pagos no anulados.
    ===================================================================== */
-let tarifas = [], cobrosListos = false;
+let tarifas = [], cobrosListos = false, editandoPuntos = null;
 const cobrosDe = new Map(), pagosDe = new Map();
 const METODOS = {efectivo:'Efectivo', transferencia:'Transferencia', yappy:'Yappy', cheque:'Cheque', otro:'Otro'};
 const MODOS_TARIFA = {casa:'Monto fijo por casa', nucleo:'Por cada núcleo familiar', persona:'Por cada persona'};
