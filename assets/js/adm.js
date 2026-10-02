@@ -1327,7 +1327,7 @@ function actualizarAsaGiro(){
 map.on('zoomend', () => { if (asaGiro) actualizarAsaGiro(); });
 /* Controles de giro en el panel */
 function controlesGiro(l){
-  if (!enEdicion() || !puedeGirar(l) || l.aq.tipo === 'conector') return '';
+  if (!puedeEditarMapa() || !puedeGirar(l) || l.aq.tipo === 'conector') return '';
   const ang = normalGrados(num(l.aq.datos.rotacion));
   return `<div class="p-giro"><span class="t">Girar</span>
     <button class="btn chico" data-giro="90" title="90° a la izquierda">↺ 90°</button>
@@ -1993,15 +1993,18 @@ function renderPanel(){
 
   /* --- Acciones rápidas --- */
   const editandoEsta = editando === layer;
-  const dev = enEdicion();          // las acciones de edición solo en «Editar mapa»
+  const dev = enEdicion();          // acciones de edición completas solo en «Editar mapa»
+  const puedeEd = puedeEditarMapa(); // puede editar aunque no esté en el modo todavía
   let conexionTubo = '';
   let acciones = accion('pCentrar', '◎', 'Centrar');
   const editandoEstaP = editandoPuntos === layer;
-  if (dev && esPunto(layer))
+  // Mover y Girar: se muestran siempre que el usuario pueda editar el mapa
+  if (puedeEd && esPunto(layer))
     acciones += accion('pEditar', editandoEsta ? '✓' : '✥', editandoEsta ? 'Listo' : 'Mover', editandoEsta ? 'class="p-acc on"' : '');
-  if (dev && esPoligono(layer)){
+  if (puedeEd && esPoligono(layer)){
     acciones += accion('pMoverTodo', editandoEsta && !editandoEstaP ? '✓' : '✥', 'Mover', editandoEsta && !editandoEstaP ? 'class="p-acc on"' : '');
     acciones += accion('pEditar', editandoEstaP ? '✓' : '✏', editandoEstaP ? 'Listo' : 'Ajustar puntos', editandoEstaP ? 'class="p-acc on"' : '');
+    if (!editandoEstaP && !editandoEsta) acciones += accion('pGirar', '↻', 'Girar');
   }
   if (dev && esLinea(layer))
     acciones += accion('pEditar', editandoEsta ? '✓' : '✏', editandoEsta ? 'Listo' : 'Mover puntos', editandoEsta ? 'class="p-acc on"' : '');
@@ -2234,8 +2237,23 @@ function enlazarPanel(layer, cuerpo){
   }));
   // Acciones rápidas
   $('#pCentrar').addEventListener('click', () => enfocar(layer));
-  if ($('#pMoverTodo')) $('#pMoverTodo').addEventListener('click', () => moverTodo(layer));
-  if ($('#pEditar')) $('#pEditar').addEventListener('click', () => alternarEdicion(layer));
+  if ($('#pMoverTodo')) $('#pMoverTodo').addEventListener('click', () => {
+    if (!enEdicion() && !entrarEdicion()) return;
+    moverTodo(layer);
+  });
+  if ($('#pGirar')) $('#pGirar').addEventListener('click', () => {
+    if (!enEdicion() && !entrarEdicion()) return;
+    // Enfoca el primer campo de giro para que sea inmediato
+    const inp = cuerpo.querySelector('#giroAng');
+    if (inp){ inp.focus(); inp.select(); }
+    // Si el panel de giro no se ve, reconstruirlo con él visible
+    renderPanel();
+    setTimeout(() => cuerpo.querySelector('#giroAng')?.focus(), 50);
+  });
+  if ($('#pEditar')) $('#pEditar').addEventListener('click', () => {
+    if (!enEdicion() && !entrarEdicion()) return;
+    alternarEdicion(layer);
+  });
   if ($('#pRamal')) $('#pRamal').addEventListener('click', () => iniciarTrazado('ramal', layer));
   if ($('#pCasaCasa')) $('#pCasaCasa').addEventListener('click', () => iniciarTrazado('casaCasa', layer, centroCasa(layer)));
   if ($('#verRed')) $('#verRed').addEventListener('click', () => resaltarRed(layer));
