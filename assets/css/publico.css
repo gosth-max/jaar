@@ -1,10 +1,8 @@
+:root{--agua:#1D6FA3;--agua-claro:#E1EEF6;--agua-luz:#7EC3EA;--bad:#C62828;--blanco:#fff;--gris:#8C989C;--linea:#D5E0E3;--ok:#23794A;--papel:#F2F6F7;--suave:#5B7078;--tinta:#15323B;--warn:#C8901A;}
 /* =====================================================================
    Sitio público del acueducto
    ===================================================================== */
-:root{
-  --papel:#F2F6F7; --blanco:#fff; --tinta:#15323B; --suave:#5B7078; --linea:#D5E0E3;
-  --agua:#1D6FA3; --agua-claro:#E1EEF6; --agua-luz:#7EC3EA; --ok:#2F8F5B; --bad:#C0392B; --warn:#C8901A; --gris:#8C989C;
-}
+
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{font-family:"Inter","Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);font-size:15px;line-height:1.45;
@@ -436,7 +434,7 @@ body.en-mapa:has(.banner-hist:not([hidden])) .wa{display:none}
 /* =====================================================================
    CORRECCIONES DE LEGIBILIDAD (auditoría de contraste)
    ===================================================================== */
-:root{--ok:#23794A; --bad:#C62828; --suave:#4A5E66}
+
 .estado-servicio .vivo{background:rgba(0,0,0,.22)}
 .pill.ok{color:#1E6B41;background:#E3F2E9}
 .pill.bad{color:#A5281B;background:#F8E1DE}

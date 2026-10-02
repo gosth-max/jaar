@@ -1,3 +1,4 @@
+const METODOS_PAGO = Acu.METODOS_PAGO;
 /* =====================================================================
    Sitio público del acueducto
    Secciones: #/inicio, #/mapa, #/calendario, #/reportar (y #/registro)
@@ -142,9 +143,7 @@ function agregar(r){
 function ordenarSectores(){ grupos.sector.eachLayer(l => { if (l._map) l.bringToBack(); }); }
 
 /* Efectos publicados por la administración (sirven aunque la red esté oculta) */
-
 let efectos = [], categorias = [];
-let efectos = [];
 const redOculta = () => !!config.ocultar_red_vecinos;
 map.createPane('cierres').style.zIndex = 445;      // por encima de tuberías y casas
 const capaCierres = L.layerGroup().addTo(map);
@@ -636,7 +635,6 @@ function renderMisReportes(){
    ===================================================================== */
 let misCuentas = [];
 const capaMisCasas = L.layerGroup().addTo(map);
-const METODOS_PAGO = {efectivo:'Efectivo', transferencia:'Transferencia', yappy:'Yappy', cheque:'Cheque', otro:'Otro'};
 const r2 = n => Math.round((Number(n) || 0) * 100) / 100;
 const dinero = n => (String(config.moneda || '').split(/[0-9]/)[0].trim().slice(0, 5) || 'B/.') + ' ' + r2(n).toFixed(2);
 function mesNombre(per, corto){
@@ -1032,7 +1030,6 @@ function pintarConfig(){
    CARGA Y TIEMPO REAL
    ===================================================================== */
 async function cargar(){
-
   const [cfg, filas, lista, efs, cats] = await Promise.all([
     sb.from('configuracion').select('*').eq('id', 1).maybeSingle(),
     Acu.traerTodo(sb, 'mapa_publico'),
@@ -1041,7 +1038,6 @@ async function cargar(){
     sb.from('categorias_casa').select('id,nombre,color').then(r => r.data || [], () => [])
   ]);
   efectos = efs; categorias = cats;
-
   if (cfg.data){ config = cfg.data; pintarConfig(); pintarRedVisible(); map.ajustarFondos(config.ajuste_fondos || {}); if (mapaRep) mapaRep.ajustarFondos(config.ajuste_fondos || {}); }
   const vistos = new Set(filas.map(r => r.id));
   [...capas.keys()].forEach(id => { if (!vistos.has(id)) quitar(id); });

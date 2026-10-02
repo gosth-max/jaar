@@ -1,12 +1,8 @@
+:root{--agua:#1D6FA3;--agua-claro:#E1EEF6;--agua-luz:#7EC3EA;--alto-barra:58px;--azul-1:#1256A0;--azul-2:#17629A;--azul-3:#0F8FB8;--bad:#C62828;--blanco:#FFFFFF;--fondo-app:#EEF4FA;--linea:#D5E0E3;--ok:#23794A;--papel:#F2F6F7;--suave:#4A5E66;--tinta:#15323B;--warn:#C8901A;}
 /* =====================================================================
    Administración del acueducto
    ===================================================================== */
-:root{
-  --papel:#F2F6F7; --blanco:#FFFFFF; --tinta:#15323B; --suave:#5B7078; --linea:#D5E0E3;
-  --agua:#1D6FA3; --agua-claro:#E1EEF6; --agua-luz:#7EC3EA;
-  --ok:#2F8F5B; --warn:#C8901A; --bad:#C0392B;
-  --alto-barra:58px;
-}
+
 *{box-sizing:border-box}
 html,body{height:100%;margin:0}
 body{font-family:"Inter","Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;color:var(--tinta);background:var(--papel);
@@ -642,7 +638,7 @@ code{background:var(--papel);border-radius:4px;padding:1px 5px;font-size:12.5px}
 /* =====================================================================
    TEMA "APLICACIÓN" (mismo estilo que el perfil de los vecinos)
    ===================================================================== */
-:root{--azul-1:#1565C0; --azul-2:#1D6FA3; --azul-3:#0F8FB8; --fondo-app:#EEF4FA; --sombra-suave:0 6px 20px rgba(21,50,59,.08)}
+
 body{background:var(--fondo-app)}
 /* Barra superior azul */
 .barra{background:linear-gradient(120deg,var(--azul-1),var(--azul-2) 55%,var(--azul-3));box-shadow:0 4px 18px rgba(21,101,192,.25)}
@@ -750,7 +746,7 @@ body{background:var(--fondo-app)}
 /* =====================================================================
    CORRECCIONES DE LEGIBILIDAD (auditoría de contraste)
    ===================================================================== */
-:root{--ok:#23794A; --bad:#C62828; --suave:#4A5E66; --azul-1:#1256A0; --azul-2:#17629A; --azul-3:#0C6F93}
+
 /* Campos dentro de los encabezados azules: texto oscuro sobre fondo blanco (antes, blanco sobre blanco) */
 .vista>.cab-vista input,.vista>.cab-vista select,.vista>.cab-vista textarea{color:var(--tinta);background:#fff;-webkit-text-fill-color:var(--tinta)}
 /* Textos sobre azul: blanco pleno */
@@ -777,7 +773,7 @@ body{background:var(--fondo-app)}
 .notificado,.interruptor-flujo,.perm-panel{}
 
 /* =====================================================================
-  EDITAR MAPA
+   EDITAR MAPA
    ===================================================================== */
 .barra-edicion{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1050;display:flex;gap:8px;align-items:center}
 .barra-edicion .btn{box-shadow:0 6px 18px rgba(21,50,59,.22)}
@@ -809,7 +805,6 @@ body{background:var(--fondo-app)}
 /* Indicador de guardado legible en todos sus estados sobre la barra azul */
 .sync.trabajando,.sync.pendiente{background:#FFF4D6;color:#6B4D05}
 .sync.error{background:#FDECEA;color:#8C1D18}
-
 
 /* Categorías de casas */
 .cat-tarjeta{margin-bottom:16px}

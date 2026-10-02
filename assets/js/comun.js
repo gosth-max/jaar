@@ -253,6 +253,7 @@ function desde(iso){
    'atras' = al revés, '' = sin definir (el agua puede ir en ambos sentidos).
    ===================================================================== */
 const COLOR_TUBERIA = '#00C4FF';
+const METODOS_PAGO = {efectivo:'Efectivo', transferencia:'Transferencia', yappy:'Yappy', cheque:'Cheque', otro:'Otro'};
 const ROJO = '#E53935';
 const TOL_RED = 2.5;     // metros: dos tuberías a esta distancia se consideran unidas
 const TOL_PUNTO = 3;     // metros: llaves y casas marcadas como punto
@@ -794,7 +795,7 @@ function hace(iso){
   return dias === 1 ? 'hace 1 día' : `hace ${dias} días`;
 }
 
-window.Acu = {TIPOS, SIN_FLUJO, ImagenEsri, esc, num, cliente, traerTodo, crearMapa, capaDesdeGeom, fechaHora, hace,
+window.Acu = {METODOS_PAGO,TIPOS, SIN_FLUJO, ImagenEsri, esc, num, cliente, traerTodo, crearMapa, capaDesdeGeom, fechaHora, hace,
   COLOR_TUBERIA, ROJO, BRAZO, tamanoConector, entradaConector, rolesConector, FORMAS_CONECTOR, formaDe, pulgadas, grosorTuberia, efectoLlave, tolPuerto, puertosConector, formaConector, construirRed, conectado, afectacion, textoAfectacion, dibujarFlechas, iconoIncidencia, centroDe,
   opacidadSector, estiloSector, quitarClasesSector, etiquetaSector, ponerEtiquetaSector, ponerTooltip, desde};
 })();
