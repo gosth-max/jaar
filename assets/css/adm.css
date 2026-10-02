@@ -775,3 +775,73 @@ body{background:var(--fondo-app)}
 .clase-intervencion i{background:#C62828}
 /* Marcas internas que usa el código para encontrar elementos (no llevan estilo propio a propósito) */
 .notificado,.interruptor-flujo,.perm-panel{}
+
+/* =====================================================================
+   EDITAR MAPA
+   ===================================================================== */
+.barra-edicion{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1050;display:flex;gap:8px;align-items:center}
+.barra-edicion .btn{box-shadow:0 6px 18px rgba(21,50,59,.22)}
+.edicion-activa{display:flex;gap:8px;align-items:center;background:#fff;border-radius:16px;padding:6px 8px;box-shadow:0 8px 24px rgba(21,50,59,.25);border:2px solid #E8A33C}
+.edicion-activa[hidden]{display:none}
+.ed-etiqueta{font-weight:700;color:#8A5A00;font-size:13.5px;padding:0 4px}
+.ed-cambios{font-size:13px;color:var(--suave);white-space:nowrap}
+.ed-cambios.hay{color:#8A5A00;font-weight:700}
+.menu-anadir{position:relative}
+.desplegable-anadir{position:absolute;top:calc(100% + 8px);left:0;background:#fff;border-radius:16px;box-shadow:0 14px 34px rgba(21,50,59,.25);padding:8px;min-width:210px;display:grid;gap:2px;z-index:5}
+.desplegable-anadir[hidden]{display:none}
+.desplegable-anadir button{display:flex;align-items:center;gap:10px;border:0;background:none;border-radius:10px;padding:8px 10px;text-align:left;font-weight:700;color:var(--tinta);cursor:pointer}
+.desplegable-anadir button:hover,.desplegable-anadir button.activo{background:var(--agua-claro)}
+.desplegable-anadir button span{display:grid;place-items:center;width:28px;height:28px;border-radius:8px;background:#EEF4FA;font-size:15px;font-weight:700}
+.titulo-anadir{margin:6px 10px 2px;font-size:12px;color:var(--suave);text-transform:uppercase;letter-spacing:.05em}
+.mapa-en-edicion #map{outline:4px solid #E8A33C;outline-offset:-4px}
+.roles-punta{display:flex;gap:3px}
+.roles-punta button{border:1px solid var(--linea);background:#fff;border-radius:8px;padding:3px 7px;font-size:12px;font-weight:700;cursor:pointer}
+.roles-punta button.on.entrada{background:#E3F2E9;border-color:#2F8F5B;color:#1E6B41}
+.roles-punta button.on.salida{background:#E1EEF6;border-color:#1D6FA3;color:#17629A}
+.roles-punta button.on.libre{background:#F2F6F7;border-color:#8C989C}
+.efecto-cierre{margin-top:8px}
+.resumen-cierre{background:#ECEFF1;border-radius:10px;padding:8px 10px;margin-top:8px;font-size:13.5px}
+@media (max-width:900px){
+  .barra-edicion{top:auto;bottom:calc(76px + env(safe-area-inset-bottom,0px));left:8px;right:8px;transform:none;justify-content:center}
+  .edicion-activa{flex-wrap:wrap;justify-content:center}
+  .desplegable-anadir{top:auto;bottom:calc(100% + 8px)}
+}
+/* Indicador de guardado legible en todos sus estados sobre la barra azul */
+.sync.trabajando,.sync.pendiente{background:#FFF4D6;color:#6B4D05}
+.sync.error{background:#FDECEA;color:#8C1D18}
+
+/* Categorías de casas */
+.cat-tarjeta{margin-bottom:16px}
+.cat-tarjeta>header{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.cat-fila{display:grid;grid-template-columns:auto 1fr minmax(170px,240px) auto auto;gap:10px;align-items:center;padding:9px 0;border-bottom:1px solid var(--linea)}
+.cat-fila:last-child{border-bottom:0}
+.cat-fila input[type=color]{width:42px;height:34px;border:1px solid var(--linea);border-radius:10px;padding:2px;background:#fff;cursor:pointer}
+.cat-fila b small{display:block;font-weight:400;color:var(--suave);font-size:12.5px}
+.cat-fila select{border:1px solid var(--linea);border-radius:10px;padding:6px 8px}
+.color-fila{display:flex;align-items:center;gap:10px}
+.color-fila input[type=color]{width:52px;height:40px;border:1px solid var(--linea);border-radius:10px;padding:2px;background:#fff}
+.muestra-cat{display:inline-block;padding:6px 12px;border-radius:8px;color:#fff;font-weight:700;font-size:13px}
+.cat-nueva-tarifa{background:var(--papel);border-radius:12px;padding:4px 12px;margin-top:6px}
+.cat-chip{display:inline-flex;align-items:center;gap:6px;font-weight:700;font-size:13px}
+.cat-chip i{width:12px;height:12px;border-radius:3px;display:inline-block}
+.conexion-casa{background:#E3F2E9;border-radius:10px;padding:8px 10px;margin-top:8px;font-size:13.5px}
+@media (max-width:760px){ .cat-fila{grid-template-columns:auto 1fr;}.cat-fila select,.cat-fila .acc{grid-column:1/-1} }
+.cat-punto{display:inline-block;width:14px;height:14px;border-radius:4px;flex:none}
+.campo>.color-fila{display:flex;align-items:center;gap:10px;margin:0;font-size:inherit;color:inherit}
+.campo>.color-fila select{flex:1}
+#formCategoria input[name=nombre]{width:100%}
+
+/* Girar formas */
+.asa-giro span{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;background:#fff;color:var(--azul-1);font-size:20px;font-weight:700;
+  border:3px solid var(--azul-1);box-shadow:0 4px 12px rgba(21,50,59,.35);cursor:grab;user-select:none}
+.asa-giro span:active{cursor:grabbing;background:var(--agua-claro)}
+.p-giro{display:flex;flex-wrap:wrap;align-items:center;gap:6px;background:var(--papel);border-radius:12px;padding:8px 10px;margin:0 0 10px}
+.p-giro .t{font-weight:700;font-size:13.5px;margin-right:4px}
+.p-giro .ang{display:inline-flex;align-items:center;gap:3px;font-weight:700}
+.p-giro .ang input{width:64px;border:1px solid var(--linea);border-radius:8px;padding:4px 6px;text-align:right}
+.p-giro .nota{flex-basis:100%;margin:2px 0 0}
+
+/* Botón «Detalles de tuberías» */
+.btn-detalles{background:#fff;border:2px solid rgba(0,0,0,.2);border-radius:10px;padding:7px 11px;font-weight:700;font-size:13px;cursor:pointer;color:var(--tinta);box-shadow:0 2px 8px rgba(21,50,59,.15)}
+.btn-detalles:hover{background:var(--agua-claro)}
+.btn-detalles.activo{background:var(--azul-1);border-color:var(--azul-1);color:#fff}
