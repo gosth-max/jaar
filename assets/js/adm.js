@@ -10,8 +10,6 @@ const PISTAS = {
   llave:'Toca el mapa donde está la llave.',
   sector:'Toca el mapa alrededor de la zona. Toca el primer punto para cerrar el sector.',
   acometida:'Empieza tocando sobre la tubería y termina tocando dentro de la casa. Toca el último punto otra vez para terminar.',
-  casaRect:'Toca una esquina de la casa y arrastra hasta la esquina opuesta. Después la agrandas o achicas desde sus esquinas.',
-  casaCuad:'Toca una esquina y arrastra hasta la opuesta: al soltar queda cuadrada. Siempre conserva lados iguales.',
   conectorT:'Toca sobre la tubería donde va la unión en T: se corta sola. Después asignas en el panel la entrada y las salidas.',
   conectorY:'Toca sobre la tubería donde va la unión en Y: se corta sola. Después asignas en el panel la entrada y las salidas.',
   conectorCruz:'Toca sobre la tubería donde va la cruz: se corta sola. Después asignas en el panel la entrada y las salidas.',
@@ -119,7 +117,6 @@ function fila(layer){
 }
 function guardarForma(id, rapido){
   pendientes.add(id); pintarSync();
-  if (typeof pintarDetallesPronto === 'function') pintarDetallesPronto();
   if (typeof edicion !== 'undefined' && edicion) pintarEdicion();
   clearTimeout(flushTimer); flushTimer = setTimeout(flush, rapido ? 50 : 700);
 }
@@ -179,7 +176,7 @@ function aplicarFilaConfig(r){
     });
   }
   state.settings = {nombre:r.nombre || 'Mi acueducto', cuota:num(r.cuota), moneda:r.moneda ?? 'B/.', colorPorPago:!!r.color_por_pago, tarifaDefecto:r.tarifa_defecto || 'estandar',
-    ajusteFondos:r.ajuste_fondos || {}, ocultarRed:!!r.ocultar_red_vecinos, casasEnlazadas:!!r.casas_enlazadas, mesesCorte:r.meses_para_corte ?? 2, diasAvisoCorte:r.dias_aviso_corte ?? 8, montoReconexion:num(r.monto_reconexion),
+    ajusteFondos:r.ajuste_fondos || {}, ocultarRed:!!r.ocultar_red_vecinos, mesesCorte:r.meses_para_corte ?? 2, diasAvisoCorte:r.dias_aviso_corte ?? 8, montoReconexion:num(r.monto_reconexion),
     politica:r.politica_privacidad || '', politicaFecha:r.politica_actualizada_en || null,
     whatsapp:r.whatsapp || '', whatsappMensaje:r.whatsapp_mensaje || '', whatsappActivo:!!r.whatsapp_activo, correoContacto:r.correo_contacto || ''};
   if (typeof map !== 'undefined' && map.ajustarFondos && !ajusteEdicion) map.ajustarFondos(state.settings.ajusteFondos);
@@ -203,7 +200,7 @@ async function cargarTodo(){
   cerrarPanel();
   capa.clearLayers(); capas.clear(); versionGeo++;
   formas.forEach(r => {
-    const layer = Acu.capaDesdeGeom(r.geometria, r.datos);
+    const layer = Acu.capaDesdeGeom(r.geometria);
     if (layer) agregarCapa(layer, aqDesdeFila(r));
   });
   ordenarSectores();
@@ -230,7 +227,6 @@ function suscribir(){
     .on('postgres_changes', {event:'*', schema:'public', table:'pagos'}, p => movimientoEnVivo(pagosDe, p))
     .on('postgres_changes', {event:'*', schema:'public', table:'cobros'}, p => movimientoEnVivo(cobrosDe, p))
     .on('postgres_changes', {event:'*', schema:'public', table:'tarifas'}, cargarTarifas)
-    .on('postgres_changes', {event:'*', schema:'public', table:'categorias_casa'}, cargarCategorias)
     .on('postgres_changes', {event:'*', schema:'public', table:'arreglos_pago'}, async p => { await cargarArreglos(); const r = p.new && p.new.forma_id ? p.new : p.old; if (r && r.forma_id) refrescarCobrosUI(r.forma_id); })
     .on('postgres_changes', {event:'*', schema:'public', table:'casas_vecino'}, cargarUsuariosPronto)
     .on('postgres_changes', {event:'*', schema:'public', table:'cortes'}, async p => { await cargarCortes(); const r = p.new && p.new.forma_id ? p.new : p.old; if (r && r.forma_id) refrescarCobrosUI(r.forma_id); actualizarBadgeCortes(); })
@@ -271,7 +267,7 @@ function suscribir(){
 }
 function aplicarFilaForma(r){
   const prev = capas.get(r.id);
-  const nueva = Acu.capaDesdeGeom(r.geometria, r.datos); if (!nueva) return;
+  const nueva = Acu.capaDesdeGeom(r.geometria); if (!nueva) return;
   const pagos = prev ? prev.aq.datos.pagos : [];
   const eraSel = prev && selected === prev;
   if (prev){
@@ -316,7 +312,6 @@ function colorDe(aq){
     const c = cuenta(aq);
     if (c.aplica) return ESTADO_COLOR[c.nivel];
   }
-  if (aq.tipo === 'casa' && !aq.colorManual){ const c = categoriaDe(aq.datos); if (c) return c.color; }
   return aq.color || TIPOS[aq.tipo].color;
 }
 function marcarClase(layer, cls, si){
@@ -433,13 +428,6 @@ function prepararCapa(layer, aq){
     if (layer.aq.tipo === 'conector' && layer._unidas){ moverUnidas(layer, layer._unidas); layer._unidas = null; aplicarEstilo(layer); }
   });
   layer.on('pm:edit pm:dragend', () => {
-    if (layer._cuadrando) return;
-    if (layer.aq.datos && layer.aq.datos.cuadrado && esPoligono(layer)){ layer._cuadrando = true; try { cuadrar(layer); } finally { layer._cuadrando = false; } }
-    else if (layer.aq.datos && layer.aq.datos.rectangulo && esPoligono(layer) && !(layer instanceof L.Rectangle)){
-      layer._cuadrando = true;
-      try { const m = medidasRect(layer); layer.setLatLngs(esquinasRect(m.centro, m.ancho, m.alto, m.ang));
-        if (layer.pm.enabled()){ layer.pm.disable(); layer.pm.enable({allowSelfIntersection:false}); } } finally { layer._cuadrando = false; }
-    }
     guardarForma(layer.aq.id); renderResumenPronto();
     geometriaCambio();
     if (selected === layer) renderPanel();
@@ -489,7 +477,7 @@ function redActual(){
   if (!redCache || redCache.v !== versionGeo) redCache = {v:versionGeo, red:Acu.construirRed(elementosMapa())};
   return redCache.red;
 }
-function geometriaCambio(){ versionGeo++; recalcularPronto(); flechasPronto(); if (typeof pintarDetallesPronto === 'function') pintarDetallesPronto(); }
+function geometriaCambio(){ versionGeo++; recalcularPronto(); flechasPronto(); }
 
 function redConectada(id){
   const l = capas.get(id);
@@ -1121,247 +1109,12 @@ function colocarConector(con){
    salida / entrada: desde o hacia una punta libre de un conector */
 let trazado = null;
 const PISTAS_TRAZADO = {
-  ramal:'Toca sobre la tubería donde nace el ramal (punto A) y ve tocando hasta el punto B. Si B está en una casa, se te preguntará si quieres conectarla. Toca el último punto otra vez para terminar.',
+  ramal:'Toca sobre la tubería donde nace el ramal y luego ve tocando hasta la casa. Toca el último punto otra vez para terminar.',
   casaCasa:'El trazo ya empieza en esta casa: ve tocando hasta la casa que recibe el agua y toca el último punto otra vez.',
   acometida:'Empieza tocando sobre la tubería y termina dentro de la casa. Toca el último punto otra vez para terminar.',
   salida:'El trazo empieza en el brazo de la unión: ve tocando el camino y toca el último punto otra vez para terminar.',
   entrada:'Empieza donde viene el agua y termina en la punta del brazo de entrada de la unión.'
 };
-/* =====================================================================
-   DETALLES DE TUBERÍA EN EL MAPA: diámetro y longitud de cada tubería,
-   y las medidas de cada buje reductor. Se activan con un botón.
-   ===================================================================== */
-const CLAVE_DETALLES = 'acu-detalles-tuberia', ZOOM_DETALLES = 16;
-map.createPane('detalles').style.zIndex = 640;          // por encima de las formas y las incidencias
-const capaDetalles = L.layerGroup().addTo(map);
-let verDetalles = (() => { try { return localStorage.getItem(CLAVE_DETALLES) === '1'; } catch (e){ return false; } })();
-const textoDiametro = v => { const t = String(v ?? '').trim().replace(/["”]/g, ''); return t ? t + '"' : ''; };
-const textoLargo = m => m >= 1000 ? (m / 1000).toFixed(2).replace('.', ',') + ' km' : m >= 10 ? Math.round(m) + ' m' : (Math.round(m * 10) / 10).toString().replace('.', ',') + ' m';
-/* Punto a una fracción del recorrido de una línea (0,5 = la mitad) y el ángulo del tramo donde cae (en pantalla) */
-function mitadDeLinea(pts, fraccion = 0.5){
-  let total = 0; const tramos = [];
-  for (let i = 1; i < pts.length; i++){ const d = map.distance(pts[i - 1], pts[i]); tramos.push(d); total += d; }
-  let falta = total * fraccion;
-  for (let i = 0; i < tramos.length; i++){
-    if (falta <= tramos[i] || i === tramos.length - 1){
-      const f = tramos[i] ? Math.min(1, falta / tramos[i]) : 0, a = pts[i], b = pts[i + 1];
-      const p = L.latLng(a.lat + (b.lat - a.lat) * f, a.lng + (b.lng - a.lng) * f);
-      const pa = map.project(a), pb = map.project(b);
-      let ang = Math.atan2(pb.y - pa.y, pb.x - pa.x) * 180 / Math.PI;
-      if (ang > 90) ang -= 180; if (ang < -90) ang += 180;           // que siempre se lea de izquierda a derecha
-      return {p, ang};
-    }
-    falta -= tramos[i];
-  }
-  return {p:pts[0], ang:0};
-}
-/* Coloca cada etiqueta en el primer lugar libre (para que no se tapen entre sí ni con los nombres de los sectores) */
-function acomodarEtiquetas(){
-  const ocupado = [...document.querySelectorAll('.etq-sector')].map(e => e.getBoundingClientRect());
-  const choca = r => ocupado.some(o => r.left < o.right + 3 && r.right > o.left - 3 && r.top < o.bottom + 3 && r.bottom > o.top - 3);
-  // primero los bujes (son pocos y van sobre las tuberías), después las tuberías más largas
-  const lista = [...capaDetalles.getLayers()].sort((a, b) => (b._prioridad || 0) - (a._prioridad || 0));
-  lista.forEach(m => {
-    const span = m.getElement() && m.getElement().querySelector('span'); if (!span) return;
-    let elegido = null;
-    const probar = lug => { if (lug.p) m.setLatLng(lug.p); span.style.transform = lug.t; return span.getBoundingClientRect(); };
-    for (const lug of m._lugares){ const r = probar(lug); if (!choca(r)){ elegido = r; break; } }
-    if (!elegido){ elegido = probar(m._lugares[0]); span.classList.add('apretada'); }
-    ocupado.push(elegido);
-  });
-}
-function pintarDetalles(){
-  capaDetalles.clearLayers();
-  const boton = document.getElementById('btnDetalles');
-  if (boton){ boton.setAttribute('aria-pressed', String(verDetalles)); boton.classList.toggle('activo', verDetalles); }
-  if (!verDetalles || map.getZoom() < ZOOM_DETALLES) return;
-  const vista = map.getBounds().pad(0.3);
-  capas.forEach(l => {
-    if (!l.aq) return;
-    if (l.aq.tipo === 'tuberia' && esLinea(l)){
-      const pts = puntosDe(l); if (pts.length < 2 || !pts.some(p => vista.contains(p))) return;
-      const {p, ang} = mitadDeLinea(pts), diam = textoDiametro(l.aq.datos.diametro);
-      const largo = longitud(l), txt = (diam ? `<b>${esc(diam)}</b> · ` : '<b class="sin" title="Sin diámetro">Ø ?</b> · ') + esc(textoLargo(largo));
-      const rot = `translate(-50%,-50%) rotate(${ang.toFixed(1)}deg)`;
-      const m = L.marker(p, {pane:'detalles', interactive:false, keyboard:false,
-        icon:L.divIcon({className:'det-tubo' + (l.aq.datos.clase === 'acometida' ? ' acometida' : ''), iconSize:null,
-          html:`<span style="transform:${rot} translateY(-15px)">${txt}</span>`})});
-      // Lugares posibles: a ambos lados de la línea, primero en la mitad y luego corriéndose hacia las puntas
-      m._lugares = [];
-      [0.5, 0.35, 0.65, 0.22, 0.78].forEach(f => {
-        const q = f === 0.5 ? {p, ang} : mitadDeLinea(pts, f), r2 = `translate(-50%,-50%) rotate(${q.ang.toFixed(1)}deg)`;
-        [-15, 15].forEach(dy => m._lugares.push({p:q.p, t:`${r2} translateY(${dy}px)`}));
-      });
-      m._lugares.push({p, t:`${rot} translateY(-32px)`}, {p, t:`${rot} translateY(32px)`});
-      m._prioridad = largo;
-      m.addTo(capaDetalles);
-    } else if (l.aq.tipo === 'conector' && l.aq.datos.forma === 'buje' && esPunto(l)){
-      const c = l.getLatLng(); if (!vista.contains(c)) return;
-      const t = Array.isArray(l.aq.datos.tamanos) ? l.aq.datos.tamanos : [];
-      const m = L.marker(c, {pane:'detalles', interactive:false, keyboard:false,
-        icon:L.divIcon({className:'det-tubo buje', iconSize:null,
-          html:`<span style="transform:translate(-50%,-50%) translate(48px,-22px)">Buje <b>${esc(textoDiametro(t[0]) || '?')} → ${esc(textoDiametro(t[1]) || '?')}</b></span>`})});
-      m._lugares = [[48, -22], [-48, -22], [48, 22], [-48, 22], [0, -34], [0, 34]].map(([x, y]) => ({t:`translate(-50%,-50%) translate(${x}px,${y}px)`}));
-      m._prioridad = 1e9;
-      m.addTo(capaDetalles);
-    }
-  });
-  acomodarEtiquetas();
-}
-const pintarDetallesPronto = debounce(pintarDetalles, 150);
-map.on('zoomend moveend', pintarDetallesPronto);
-/* Botón en el mapa */
-const ControlDetalles = L.Control.extend({
-  options:{position:'topright'},
-  onAdd(){
-    const b = L.DomUtil.create('button', 'btn-detalles');
-    b.id = 'btnDetalles'; b.type = 'button';
-    b.innerHTML = '<span aria-hidden="true">📏</span> Detalles de tuberías';
-    b.title = 'Mostrar u ocultar el diámetro y la longitud de cada tubería';
-    L.DomEvent.disableClickPropagation(b);
-    L.DomEvent.on(b, 'click', () => {
-      verDetalles = !verDetalles;
-      try { localStorage.setItem(CLAVE_DETALLES, verDetalles ? '1' : '0'); } catch (e){}
-      pintarDetalles();
-      if (verDetalles && map.getZoom() < ZOOM_DETALLES) aviso('Acércate un poco más al mapa para ver los detalles de las tuberías.', 4000);
-    });
-    return b;
-  }
-});
-new ControlDetalles().addTo(map);
-
-/* =====================================================================
-   GIRAR FORMAS: asa ⟳ en el mapa (de 5° en 5°) y botones en el panel.
-   Casas (también rectangulares y cuadradas), sectores, conectores y formas sin función.
-   Ángulos: positivo = antihorario (como la orientación de los conectores).
-   ===================================================================== */
-const normalGrados = g => { g = ((Math.round(g) % 360) + 360) % 360; return g > 180 ? g - 360 : g; };
-function puedeGirar(l){
-  if (!l || !l.aq || !['casa', 'sector', 'conector', 'sin'].includes(l.aq.tipo)) return false;
-  return l.aq.tipo === 'conector' ? esPunto(l) : esPoligono(l);
-}
-function anilloLL(l){ let a = l.getLatLngs(); while (Array.isArray(a[0])) a = a[0]; return a; }
-function centroForma(l){
-  if (esPunto(l)) return l.getLatLng();
-  const pts = anilloLL(l);
-  return L.latLng(pts.reduce((s, p) => s + p.lat, 0) / pts.length, pts.reduce((s, p) => s + p.lng, 0) / pts.length);
-}
-function rotarPuntos(pts, c, grados){
-  const [mLat, mLng] = metrosPorGrado(c), t = grados * Math.PI / 180, co = Math.cos(t), si = Math.sin(t);
-  return pts.map(p => { const x = (p.lng - c.lng) * mLng, y = (p.lat - c.lat) * mLat;
-    return L.latLng(c.lat + (x * si + y * co) / mLat, c.lng + (x * co - y * si) / mLng); });
-}
-/* Medidas de una casa rectangular girada: centro, ancho y alto en su propia orientación */
-function medidasRect(l){
-  const ang = num(l.aq.datos.rotacion), c0 = centroForma(l), [mLat, mLng] = metrosPorGrado(c0);
-  const loc = rotarPuntos(anilloLL(l), c0, -ang).map(p => [(p.lng - c0.lng) * mLng, (p.lat - c0.lat) * mLat]);
-  const xs = loc.map(p => p[0]), ys = loc.map(p => p[1]);
-  const cx = (Math.min(...xs) + Math.max(...xs)) / 2, cy = (Math.min(...ys) + Math.max(...ys)) / 2;
-  const cLoc = L.latLng(c0.lat + cy / mLat, c0.lng + cx / mLng), centro = rotarPuntos([cLoc], c0, ang)[0];
-  return {centro, ancho:Math.max(...xs) - Math.min(...xs), alto:Math.max(...ys) - Math.min(...ys), ang};
-}
-function esquinasRect(c, ancho, alto, ang){
-  const [mLat, mLng] = metrosPorGrado(c), w = ancho / 2, h = alto / 2;
-  return rotarPuntos([[-w, -h], [w, -h], [w, h], [-w, h]].map(([x, y]) => L.latLng(c.lat + y / mLat, c.lng + x / mLng)), c, ang);
-}
-/* Un rectángulo que se gira se vuelve polígono (misma forma, mismo id, sin cerrar el panel) */
-function aPoligono(l){
-  if (!(l instanceof L.Rectangle)) return l;
-  const aq = l.aq, nueva = L.polygon(anilloLL(l).map(p => L.latLng(p.lat, p.lng)));
-  capa.removeLayer(l); map.removeLayer(l); capas.delete(aq.id);
-  capa.addLayer(nueva); capas.set(aq.id, nueva); prepararCapa(nueva, aq);
-  if (selected === l){ selected = nueva; aplicarEstilo(nueva); }
-  return nueva;
-}
-/* Gira una forma "grados" (antihorario) alrededor de su centro */
-function girarForma(l, grados, vivo){
-  if (!grados) return l;
-  if (l.aq.tipo === 'conector'){ cambiarConector(l, {rotacion:(num(l.aq.datos.rotacion) + grados + 360) % 360}, vivo); return l; }
-  l = aPoligono(l);
-  l.setLatLngs(rotarPuntos(anilloLL(l), centroForma(l), grados));
-  l.aq.datos.rotacion = normalGrados(num(l.aq.datos.rotacion) + grados);
-  if (!vivo){ guardarForma(l.aq.id); geometriaCambio(); if (selected === l) renderPanel(); }
-  return l;
-}
-/* Asa de giro sobre la forma seleccionada (solo en «Editar mapa») */
-let asaGiro = null;
-function actualizarAsaGiro(){
-  if (asaGiro){ map.removeLayer(asaGiro); asaGiro = null; }
-  const l = selected;
-  if (typeof edicion === 'undefined' || !enEdicion() || !puedeGirar(l) || editando || !map.hasLayer(l)) return;
-  const c = centroForma(l), cp = map.latLngToLayerPoint(c);
-  let arriba;
-  if (l.aq.tipo === 'conector') arriba = cp.y - Math.max(34, Acu.tamanoConector(l.aq.datos) * 110540 / 40075016 * 256 * Math.pow(2, map.getZoom()) / 360 + 28);
-  else arriba = map.latLngToLayerPoint(L.latLng(l.getBounds().getNorth(), c.lng)).y - 30;
-  const pos = map.layerPointToLatLng(L.point(cp.x, arriba));
-  asaGiro = L.marker(pos, {draggable:true, zIndexOffset:3000, keyboard:false,
-    icon:L.divIcon({className:'asa-giro', html:'<span title="Arrastra para girar">⟳</span>', iconSize:[32, 32], iconAnchor:[16, 16]})}).addTo(map);
-  asaGiro.bindTooltip('Arrastra para girar', {direction:'top', offset:[0, -16]});
-  let base = null;
-  asaGiro.on('dragstart', () => {
-    let capaG = selected; if (capaG.aq.tipo !== 'conector') capaG = aPoligono(capaG);
-    const centro = centroForma(capaG), cpx = map.latLngToContainerPoint(centro), p0 = map.latLngToContainerPoint(asaGiro.getLatLng());
-    base = {capa:capaG, centro, cpx, a0:Math.atan2(-(p0.y - cpx.y), p0.x - cpx.x), rot0:num(capaG.aq.datos.rotacion),
-      pts:capaG.aq.tipo === 'conector' ? null : anilloLL(capaG).map(p => L.latLng(p.lat, p.lng))};
-  });
-  asaGiro.on('drag', e => {
-    if (!base) return;
-    const p = map.latLngToContainerPoint(e.latlng), a = Math.atan2(-(p.y - base.cpx.y), p.x - base.cpx.x);
-    let delta = Math.round(((a - base.a0) * 180 / Math.PI) / 5) * 5;
-    delta = normalGrados(delta);
-    base.delta = delta;
-    if (base.capa.aq.tipo === 'conector') cambiarConector(base.capa, {rotacion:(base.rot0 + delta + 360) % 360}, true);
-    else { base.capa.setLatLngs(rotarPuntos(base.pts, base.centro, delta)); base.capa.aq.datos.rotacion = normalGrados(base.rot0 + delta); }
-    asaGiro.setTooltipContent(`${delta > 0 ? '↺ ' : delta < 0 ? '↻ ' : ''}${Math.abs(delta)}°`);
-  });
-  asaGiro.on('dragend', () => {
-    if (!base) return;
-    const l2 = base.capa, d = base.delta || 0; base = null;
-    if (l2.aq.tipo === 'conector') cambiarConector(l2, {rotacion:num(l2.aq.datos.rotacion)});
-    else if (d){ guardarForma(l2.aq.id); geometriaCambio(); }
-    renderPanel();
-    if (d) aviso(`Forma girada ${Math.abs(d)}° ${d > 0 ? 'a la izquierda' : 'a la derecha'}.`);
-  });
-}
-map.on('zoomend', () => { if (asaGiro) actualizarAsaGiro(); });
-/* Controles de giro en el panel */
-function controlesGiro(l){
-  if (!enEdicion() || !puedeGirar(l) || l.aq.tipo === 'conector') return '';
-  const ang = normalGrados(num(l.aq.datos.rotacion));
-  return `<div class="p-giro"><span class="t">Girar</span>
-    <button class="btn chico" data-giro="90" title="90° a la izquierda">↺ 90°</button>
-    <button class="btn chico" data-giro="15" title="15° a la izquierda">↺ 15°</button>
-    <label class="ang"><input type="number" id="giroAng" min="-180" max="180" step="1" value="${ang}" aria-label="Ángulo">°</label>
-    <button class="btn chico" data-giro="-15" title="15° a la derecha">↻ 15°</button>
-    <button class="btn chico" data-giro="-90" title="90° a la derecha">↻ 90°</button>
-    <p class="nota">También puedes arrastrar el asa <b>⟳</b> que aparece sobre la forma.</p></div>`;
-}
-function enlazarGiro(l, cuerpo){
-  cuerpo.querySelectorAll('[data-giro]').forEach(b => b.addEventListener('click', () => girarForma(selected, Number(b.dataset.giro))));
-  const inp = cuerpo.querySelector('#giroAng');
-  if (inp) inp.addEventListener('change', () => girarForma(selected, normalGrados(num(inp.value) - num(selected.aq.datos.rotacion))));
-}
-
-/* Metros por grado de latitud y de longitud en un punto (medidos igual que el mapa) */
-function metrosPorGrado(c){
-  const p = L.latLng(c.lat, c.lng);
-  return [p.distanceTo(L.latLng(c.lat + 0.001, c.lng)) / 0.001, p.distanceTo(L.latLng(c.lat, c.lng + 0.001)) / 0.001];
-}
-/* Casa cuadrada: lados iguales alrededor de su centro (el lado más largo, o el indicado) */
-function cuadrar(layer, lado){
-  if (!(layer instanceof L.Rectangle)){
-    const m = medidasRect(layer), s = Math.max(1, lado || Math.max(m.ancho, m.alto));
-    layer.setLatLngs(esquinasRect(m.centro, s, s, m.ang));
-    if (layer.pm && layer.pm.enabled && layer.pm.enabled()){ layer.pm.disable(); layer.pm.enable({allowSelfIntersection:false}); }
-    return;
-  }
-  const b = layer.getBounds(), c = b.getCenter();
-  const ancho = b.getSouthWest().distanceTo(b.getSouthEast()), alto = b.getSouthWest().distanceTo(b.getNorthWest());
-  const s = Math.max(1, lado || Math.max(ancho, alto)), [mLat, mLng] = metrosPorGrado(c), dLat = s / 2 / mLat, dLng = s / 2 / mLng;
-  layer.setBounds([[c.lat - dLat, c.lng - dLng], [c.lat + dLat, c.lng + dLng]]);
-  // si se estaba editando, las esquinas se reacomodan a la nueva forma
-  if (layer.pm && layer.pm.enabled && layer.pm.enabled()){ layer.pm.disable(); layer.pm.enable({allowSelfIntersection:false}); }
-}
 function centroCasa(l){ return esPunto(l) ? l.getLatLng() : l.getBounds().getCenter(); }
 function dentroDe(ll, pol){
   let a = pol.getLatLngs(); while (Array.isArray(a[0])) a = a[0];
@@ -1410,15 +1163,9 @@ function completarTrazado(layer, tr){
     d.nombre = 'De ' + nombreCorto(origen) + (destino ? ' a ' + nombreCorto(destino) : '');
     msg = destino ? `Listo: el agua pasa de ${nombreCorto(origen)} a ${nombreCorto(destino)}.` : 'El trazo no termina dentro de otra casa: ajústalo con «Mover puntos».';
   }
-  // La ÚNICA forma de conectar una casa: un ramal que termina en ella, con confirmación
-  if (tr.tipo === 'ramal' && destino){
-    if (!confirm(`¿Desea conectar esta línea a ${titulo(destino.aq)}?\n\nSi aceptas, la casa recibirá el agua por este ramal. Si no, el ramal se cancela.`)) return {cancelar:true};
-    d.casaDestino = destino.aq.id;
-    d.clase = 'acometida'; d.diametro = d.diametro || '1/2';
-    d.nombre = 'Acometida de ' + nombreCorto(destino);
-    msg = `Listo: la línea quedó conectada a ${titulo(destino.aq)}.`;
-  }
-  if (destino && esPunto(destino) && d.casaDestino) pts[pts.length - 1] = destino.getLatLng();
+  if (tr.tipo === 'acometida') msg = destino ? 'Acometida creada y unida a la casa.' : 'Revisa que la acometida termine dentro de la casa.';
+  if (destino || tr.tipo === 'casaCasa' || tr.tipo === 'acometida'){ d.clase = 'acometida'; d.diametro = d.diametro || '1/2'; }
+  if (destino && esPunto(destino)) pts[pts.length - 1] = destino.getLatLng();
   d.flujo = 'adelante';
   ponerPuntos(layer, pts);
   return msg;
@@ -1433,7 +1180,7 @@ function iniciarDibujo(t){
   map.pm.disableDraw();
   pendingTipo = t;
   trazado = null;
-  map.pm.enableDraw(t.startsWith('conector') ? 'CircleMarker' : (t === 'casaRect' || t === 'casaCuad') ? 'Rectangle' : TIPOS[t].dibujo, {snappable:true});
+  map.pm.enableDraw(t.startsWith('conector') ? 'CircleMarker' : TIPOS[t].dibujo, {snappable:true});
   if (t === 'tuberia') map.pm.Draw.Line._otherSnapLayers = puertosParaUnir();
   marcarBotones();
   cerrarLateralMovil();
@@ -1452,15 +1199,10 @@ map.on('pm:create', e => {
   const tr = trazado; trazado = null;
   const formaConector = {conectorT:'T', conectorY:'Y', conectorCruz:'cruz', conectorCodo:'codo', conectorBuje:'buje'}[tipo] || null;
   if (formaConector) tipo = esPunto(layer) ? 'conector' : 'sin';
-  const cuadrada = tipo === 'casaCuad', rectangular = tipo === 'casaRect' || cuadrada;
-  if (rectangular) tipo = 'casa';
   if (tipo === 'sector' && !esPoligono(layer)) tipo = 'sin';
   if (tipo === 'tuberia' && !esLinea(layer)) tipo = 'sin';
   const aq = {id:uid(), tipo, color:TIPOS[tipo].color, colorManual:false, datos:datosBase(tipo)};
   if (tipo === 'tuberia') aq.datos.flujo = 'adelante';
-  if (rectangular){ aq.datos.rectangulo = true; aq.datos.categoria = 'casa'; }
-  if (cuadrada){ aq.datos.cuadrado = true; cuadrar(layer); }
-  if (tipo === 'casa' && !aq.datos.categoria) aq.datos.categoria = 'casa';
   if (tipo === 'conector'){
     aq.datos.forma = formaConector;
     aq.datos.puertos = Acu.rolesConector({forma:formaConector, puertos:[]});    // todas las puntas libres
@@ -1470,11 +1212,6 @@ map.on('pm:create', e => {
   let msg = '';
   if (tipo === 'tuberia'){
     if (tr) msg = completarTrazado(layer, tr);
-    if (msg && msg.cancelar){
-      quitarCapaLocal(layer); pendientes.delete(aq.id); pintarEdicion();
-      aviso('Conexión cancelada: el ramal no se creó.', 5000);
-      return;
-    }
     const union = ajustarAConectores(layer);
     if (union) msg = (msg ? msg + ' ' : '') + union;
     const cruza = redActual().sectoresQueCruza(layer);
@@ -1515,7 +1252,6 @@ function seleccionar(layer){
   cerrarLateralMovil();
 }
 function cerrarPanel(){
-  if (asaGiro){ map.removeLayer(asaGiro); asaGiro = null; }
   terminarEdicion();
   terminarModoPunto(false);
   formIncAbierto = false; borrador = null;
@@ -1719,7 +1455,6 @@ function salirEdicion(){
   pendingTipo = null; trazado = null; marcarBotones();
   document.body.classList.remove('mapa-en-edicion');
   $('#menuAnadir').hidden = true;
-  actualizarAsaGiro();
   pintarEdicion();
   if (selected) renderPanel();
 }
@@ -1779,117 +1514,6 @@ $('#btnAnadir').addEventListener('click', e => {
 document.addEventListener('click', e => { if (!e.target.closest('.menu-anadir')) $('#menuAnadir').hidden = true; });
 $('#menuAnadir').addEventListener('click', e => { if (e.target.closest('[data-dibujar]')) $('#menuAnadir').hidden = true; });
 window.addEventListener('beforeunload', e => { if (cambiosEdicion()){ e.preventDefault(); e.returnValue = ''; } });
-
-/* =====================================================================
-   CATEGORÍAS DE CASAS: color en el mapa y tarifa de cada una
-   ===================================================================== */
-let categorias = [];
-const categoriaDe = d => categorias.find(c => c.id === ((d && d.categoria) || 'casa')) || categorias.find(c => c.id === 'casa') || null;
-async function cargarCategorias(){
-  const {data, error} = await sb.from('categorias_casa').select('*').order('orden').order('nombre');
-  if (error) return;
-  categorias = data || [];
-  if (typeof capa !== 'undefined') capa.eachLayer(l => { if (l.aq && l.aq.tipo === 'casa') aplicarEstilo(l); });
-  if (/cobros\/tarifas/.test(vistaActual || '')) renderCobTarifas();
-  if (selected && selected.aq.tipo === 'casa') renderPanel();
-}
-const opcionesCategoria = sel => categorias.map(c => `<option value="${esc(c.id)}" ${c.id === (sel || 'casa') ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')
-  + (tienePermiso('tarifas') ? '<option value="__nueva">＋ Nueva categoría…</option>' : '');
-/* Ventana "Nueva categoría" (desde el panel de la casa o desde Tarifas) */
-let alCrearCategoria = null;
-function abrirNuevaCategoria(despues){
-  alCrearCategoria = despues || null;
-  const f = $('#formCategoria'); f.reset(); f.color.value = '#8E44AD';
-  $('#catTarifa').innerHTML = '<option value="__propia">Crear una tarifa propia para esta categoría</option>'
-    + tarifas.map(t => `<option value="${esc(t.id)}">Usar: ${esc(t.nombre)} (${esc(dinero(t.monto))})</option>`).join('');
-  pintarMuestraCat();
-  $('#catNuevaTarifa').hidden = false;
-  $('#dlgCategoria').showModal();
-  setTimeout(() => f.nombre.focus(), 0);
-}
-function pintarMuestraCat(){ const f = $('#formCategoria'); $('#catMuestra').style.background = f.color.value; $('#catMuestra').textContent = f.nombre.value || 'Así se verá'; }
-$('#formCategoria').color.addEventListener('input', pintarMuestraCat);
-$('#formCategoria').nombre.addEventListener('input', pintarMuestraCat);
-$('#catTarifa').addEventListener('change', () => { $('#catNuevaTarifa').hidden = $('#catTarifa').value !== '__propia'; });
-$('#formCategoria').addEventListener('submit', async e => {
-  e.preventDefault();
-  const f = e.target, nombre = f.nombre.value.trim();
-  if (nombre.length < 2){ aviso('Escribe el nombre de la categoría.'); return; }
-  const id = nombre.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || uid();
-  if (categorias.some(c => c.id === id)){ aviso('Ya existe una categoría con ese nombre.'); return; }
-  let tarifa = f.tarifa.value;
-  if (tarifa === '__propia'){
-    const tid = 'tarifa-' + id;
-    const t = await consultaConFila(sb.from('tarifas').upsert({id:tid, nombre:'Tarifa ' + nombre, monto:round2(f.monto.value), modo:f.modo.value, orden:tarifas.length + 1}).select().single(), 'No se pudo crear la tarifa');
-    if (!t) return;
-    if (!tarifas.some(x => x.id === t.id)) tarifas.push(t);
-    tarifa = t.id;
-  }
-  const c = await consultaConFila(sb.from('categorias_casa').insert({id, nombre, color:f.color.value, tarifa_id:tarifa, orden:categorias.length + 1}).select().single(), 'No se pudo crear la categoría');
-  if (!c) return;
-  if (!categorias.some(x => x.id === c.id)) categorias.push(c);
-  $('#dlgCategoria').close();
-  aviso(`Categoría «${nombre}» creada.`);
-  if (alCrearCategoria) alCrearCategoria(c.id);
-  if (/cobros\/tarifas/.test(vistaActual || '')) renderCobTarifas();
-});
-{ const dl = $('#dlgCategoria'); dl.querySelectorAll('[data-cerrar]').forEach(x => x.addEventListener('click', () => dl.close())); dl.addEventListener('click', e => { if (e.target === dl) dl.close(); }); }
-document.addEventListener('click', e => { if (e.target.closest('[data-nueva-categoria]')) abrirNuevaCategoria(); });
-/* Lista de categorías en Tarifas */
-function renderCategorias(){
-  const cont = $('#catLista'); if (!cont) return;
-  const casas = datosGenerales().casas;
-  cont.innerHTML = categorias.map(c => {
-    const n = casas.filter(l => (l.aq.datos.categoria || 'casa') === c.id).length;
-    return `<div class="cat-fila" data-cat="${esc(c.id)}">
-      <input type="color" value="${esc(c.color)}" data-cat-color aria-label="Color de ${esc(c.nombre)}">
-      <b>${esc(c.nombre)}<small>${n} ${n === 1 ? 'casa' : 'casas'}${c.predefinida ? ' · predefinida' : ''}</small></b>
-      <select data-cat-tarifa aria-label="Tarifa de ${esc(c.nombre)}">${tarifas.map(t => `<option value="${esc(t.id)}" ${t.id === c.tarifa_id ? 'selected' : ''}>${esc(t.nombre)} · ${esc(dinero(t.monto))}</option>`).join('')}</select>
-      <span class="acc">${c.predefinida ? '' : '<button class="btn chico peligro" data-cat-borrar>Quitar</button>'}</span><span></span></div>`;
-  }).join('') || '<p class="vacio">No hay categorías.</p>';
-  cont.querySelectorAll('[data-cat]').forEach(fila => {
-    const id = fila.dataset.cat, c = categorias.find(x => x.id === id);
-    fila.querySelector('[data-cat-color]').addEventListener('change', async e => {
-      if (await tarea(sb.from('categorias_casa').update({color:e.target.value}).eq('id', id), 'No se pudo cambiar el color')){ c.color = e.target.value; capa.eachLayer(l => { if (l.aq && l.aq.tipo === 'casa') aplicarEstilo(l); }); aviso('Color actualizado.'); }
-    });
-    fila.querySelector('[data-cat-tarifa]').addEventListener('change', async e => {
-      if (!await tarea(sb.from('categorias_casa').update({tarifa_id:e.target.value}).eq('id', id), 'No se pudo cambiar la tarifa')) return;
-      c.tarifa_id = e.target.value;
-      aviso(`Las casas de «${c.nombre}» usan ahora esta tarifa desde el próximo mes. Para aplicarla a este mes, usa «Corregir cuotas» en la ficha de cada casa.`, 7000);
-      renderCobTarifas();
-    });
-    const b = fila.querySelector('[data-cat-borrar]');
-    if (b) b.addEventListener('click', async () => {
-      const usan = casas.filter(l => (l.aq.datos.categoria || 'casa') === id);
-      if (!confirm(`¿Quitar la categoría «${c.nombre}»?${usan.length ? ` Sus ${usan.length} casas pasarán a la categoría «Casa».` : ''}`)) return;
-      usan.forEach(l => { delete l.aq.datos.categoria; guardarForma(l.aq.id); aplicarEstilo(l); });
-      await flush(true);
-      if (await tarea(sb.from('categorias_casa').delete().eq('id', id), 'No se pudo quitar la categoría')){ categorias = categorias.filter(x => x.id !== id); renderCobTarifas(); }
-    });
-  });
-}
-
-/* =====================================================================
-   CONEXIÓN DE CASAS: solo confirmada desde «Sacar ramal» (y una sola vez,
-   las acometidas que ya existían se convierten en conexiones confirmadas)
-   ===================================================================== */
-async function convertirConexionesAntiguas(){
-  if (state.settings.casasEnlazadas || !puedeEditarMapa()) return;
-  let n = 0;
-  capas.forEach(l => {
-    if (!l.aq || l.aq.tipo !== 'tuberia' || !esLinea(l)) return;
-    const d = l.aq.datos; if (d.casaOrigen || d.casaDestino) return;
-    const pts = puntosDe(l), ini = casaEn(pts[0], null), fin = casaEn(pts[pts.length - 1], ini ? ini.aq.id : null);
-    if (fin){ d.casaDestino = fin.aq.id; }
-    if (ini && (fin || d.clase === 'acometida')){ d.casaOrigen = ini.aq.id; }
-    if (d.casaOrigen || d.casaDestino){ guardarForma(l.aq.id); n++; }
-  });
-  if (n) await flush(true);
-  if (await tarea(sb.from('configuracion').update({casas_enlazadas:true, editado_por:CLIENTE_ID}).eq('id', 1), '')){
-    state.settings.casasEnlazadas = true;
-    if (n){ geometriaCambio(); aviso(`Se confirmaron ${n} ${n === 1 ? 'conexión' : 'conexiones'} de casas que ya estaban dibujadas.`, 6000); }
-  }
-}
 
 /* =====================================================================
    LLAVES CERRADAS: sin agua lo que está después, según el efecto elegido
@@ -1992,12 +1616,11 @@ function renderPanel(){
   /* --- Acciones rápidas --- */
   const editandoEsta = editando === layer;
   const dev = enEdicion();          // las acciones de edición solo en «Editar mapa»
-  let conexionTubo = '';
   let acciones = accion('pCentrar', '◎', 'Centrar');
   if (dev) acciones += accion('pEditar', editandoEsta ? '✓' : '✥',
     editandoEsta ? 'Listo' : (esPunto(layer) ? 'Mover' : 'Mover puntos'), editandoEsta ? 'class="p-acc on"' : '');
   if (dev && aq.tipo === 'tuberia') acciones += accion('pRamal', '⑂', 'Sacar ramal');
-
+  if (dev && aq.tipo === 'casa') acciones += accion('pCasaCasa', '➜', 'Llevar agua a otra casa');
 
   /* --- Estado resumido --- */
   let estado = '';
@@ -2012,10 +1635,9 @@ function renderPanel(){
     const r = redConectada(aq.id), est = textoEstado(cuenta(aq));
     estado = `<div class="p-estado ${r.tubos.size ? '' : 'aviso'}">
       <p>${r.tubos.size ? '🔗 Recibe agua: ' + esc(textoRed(r)) : '⚠ No está conectada a ninguna tubería.'}</p>
-      ${r.tubos.size ? '' : '<p class="nota">Para conectarla, selecciona la tubería, pulsa «Sacar ramal» y termina el trazo en esta casa.</p>'}
       <p>💵 Cuenta: <span class="pill ${est.cls}">${esc(est.txt)}</span></p>
       <div class="fila">${r.tubos.size ? '<button class="btn chico" id="verRed">Resaltar lo conectado</button>' : ''}
-      </div></div>`;
+        ${dev ? `<button class="btn chico ${r.tubos.size ? '' : 'primario'}" id="conectarCasa">${r.tubos.size ? 'Otra acometida' : 'Conectar a una tubería'}</button>` : ''}</div></div>`;
   } else if (aq.tipo === 'sector'){
     estado = `<div class="p-estado">
       <label class="interruptor grande"><input type="checkbox" id="secFlujo" ${d.activo ? 'checked' : ''}><span class="riel"></span><span>${d.activo ? 'Con agua ahora' : 'Sin agua ahora'}</span></label>
@@ -2060,18 +1682,7 @@ function renderPanel(){
   /* --- Pestañas --- */
   const pestañas = {};
   if (aq.tipo === 'casa'){
-    const cat = categoriaDe(d), b = esPoligono(layer) ? layer.getBounds() : null;
-    const med = d.rectangulo && b && !(layer instanceof L.Rectangle) ? medidasRect(layer) : null;
-    const ancho = med ? Math.round(med.ancho * 10) / 10 : b ? Math.round(b.getSouthWest().distanceTo(b.getSouthEast()) * 10) / 10 : 0;
-    const largo = med ? Math.round(med.alto * 10) / 10 : b ? Math.round(b.getSouthWest().distanceTo(b.getNorthWest()) * 10) / 10 : 0;
     pestañas.datos = `
-      <label class="campo"><span>Categoría</span><span class="color-fila"><i class="cat-punto" style="background:${esc(cat ? cat.color : '#3B6EA8')}"></i>
-        <select id="pCategoria">${opcionesCategoria(d.categoria)}</select></span></label>
-      ${dev && d.cuadrado ? `<label class="campo"><span>Lado (m)</span><input type="number" id="pLado" min="1" max="200" step="0.5" value="${ancho}"></label>
-        <p class="nota" style="margin-top:-4px">Casa cuadrada: siempre conserva los cuatro lados iguales.</p>` : ''}
-      ${dev && d.rectangulo && !d.cuadrado ? `<div class="dos"><label class="campo"><span>Ancho (m)</span><input type="number" id="pAncho" min="1" max="200" step="0.5" value="${ancho}"></label>
-        <label class="campo"><span>Largo (m)</span><input type="number" id="pLargo" min="1" max="200" step="0.5" value="${largo}"></label></div>
-        <p class="nota" style="margin-top:-4px">También puedes agrandarla desde sus esquinas con «Mover puntos».</p>` : ''}
       <div class="dos">${campo('Número de casa','numero',d.numero)}${campo('Teléfono','telefono',d.telefono,'tel')}</div>
       ${campo('Representante legal de la casa','responsable',d.responsable)}
       <div class="resumen-nucleos"><span>👪 <b>${nucleosDe(d)}</b> ${nucleosDe(d) === 1 ? 'núcleo familiar' : 'núcleos familiares'} · <b>${personasDe(d)}</b> ${personasDe(d) === 1 ? 'persona' : 'personas'}</span>
@@ -2083,9 +1694,6 @@ function renderPanel(){
       <p class="nota">En la ficha verás el estado de cuenta completo, los núcleos familiares, la tarifa y los recibos.</p>`;
   } else if (aq.tipo === 'tuberia'){
     const m = longitud(layer), materiales = ['PVC','PEAD / polietileno','Hierro galvanizado','Otro'];
-    const casaO = d.casaOrigen && capas.get(d.casaOrigen), casaD = d.casaDestino && capas.get(d.casaDestino);
-    conexionTubo = (casaO || casaD) ? `<div class="conexion-casa">🏠 ${casaO ? 'Sale de <b>' + esc(titulo(casaO.aq)) + '</b>' : ''}${casaO && casaD ? ' y ' : ''}${casaD ? 'Lleva agua a <b>' + esc(titulo(casaD.aq)) + '</b>' : ''}
-      ${dev ? '<button class="btn chico" id="pDesconectarCasa">Desconectar</button>' : ''}</div>` : '';
     pestañas.datos = `
       ${campo('Nombre o tramo','nombre',d.nombre,'text','placeholder="Ej. Línea principal"')}
       <label class="campo"><span>Clase</span><select data-k="clase">
@@ -2131,7 +1739,7 @@ function renderPanel(){
       <label class="campo"><span>Orientación: <output id="rotVal">${rot}°</output></span>
         <input type="range" id="rotRange" min="0" max="359" step="1" value="${rot}"></label>
       <div class="fila">
-        <button class="btn chico" data-girar="15">↺ 15°</button><button class="btn chico" data-girar="-15">↻ 15°</button>
+        <button class="btn chico" data-girar="-15">↺ 15°</button><button class="btn chico" data-girar="15">↻ 15°</button>
         <button class="btn chico" data-girar="180">Girar 180°</button>
         ${d.forma === 'T' || d.forma === 'codo' || !d.forma ? '<button class="btn chico" id="conEspejo">Cambiar lado del brazo lateral</button>' : ''}</div>
       <label class="campo"><span>Tamaño de los brazos: <output id="tamVal">${Acu.tamanoConector(d).toFixed(1)} m</output></span>
@@ -2160,15 +1768,7 @@ function renderPanel(){
     </details>`;
 
   const cuerpo = $('#pCuerpo');
-  cuerpo.innerHTML = `<div class="p-barra">${acciones}</div>${estado}${controlesGiro(layer)}${conexionTubo}${barraTabs}${cuerpoTabs}${dev ? mas : ''}`;
-  enlazarGiro(layer, cuerpo);
-  setTimeout(actualizarAsaGiro, 0);
-  if ($('#pDesconectarCasa')) $('#pDesconectarCasa').addEventListener('click', () => {
-    if (!confirm('¿Quitar la conexión de esta tubería con la casa? La casa dejará de recibir agua por ella.')) return;
-    delete aq.datos.casaOrigen; delete aq.datos.casaDestino;
-    cambio(); geometriaCambio(); renderPanel();
-    aviso('Conexión quitada.');
-  });
+  cuerpo.innerHTML = `<div class="p-barra">${acciones}</div>${estado}${barraTabs}${cuerpoTabs}${dev ? mas : ''}`;
   enlazarPanel(layer, cuerpo);
   if (!dev && (aq.tipo !== 'casa' || !tienePermiso('editar_casas'))){
     // Solo lectura: los datos se muestran como texto y los botones de edición no aparecen
@@ -2276,22 +1876,6 @@ function enlazarPanel(layer, cuerpo){
   formIncAbierto = false;
   renderIncidenciasPanel();
   if (aq.tipo === 'casa'){
-    $('#pCategoria').addEventListener('change', e => {
-      const v = e.target.value;
-      const aplicar = id => { aq.datos.categoria = id; cambio(); aplicarEstilo(layer); renderPanel(); refrescarCuenta();
-        const c = categoriaDe(aq.datos); aviso(`Categoría: ${c ? c.nombre : id}.`); };
-      if (v === '__nueva'){ e.target.value = aq.datos.categoria || 'casa'; abrirNuevaCategoria(aplicar); return; }
-      aplicar(v);
-    });
-    const cambiarTam = () => {
-      const a = num($('#pAncho').value), l = num($('#pLargo').value); if (a < 1 || l < 1) return;
-      if (!(layer instanceof L.Rectangle)){ const m = medidasRect(layer); layer.setLatLngs(esquinasRect(m.centro, a, l, m.ang)); cambio(); geometriaCambio(); return; }
-      const c = layer.getBounds().getCenter(), [mLat, mLng] = metrosPorGrado(c), dLat = l / 2 / mLat, dLng = a / 2 / mLng;
-      layer.setBounds([[c.lat - dLat, c.lng - dLng], [c.lat + dLat, c.lng + dLng]]);
-      cambio(); geometriaCambio();
-    };
-    if ($('#pAncho')){ $('#pAncho').addEventListener('change', cambiarTam); $('#pLargo').addEventListener('change', cambiarTam); }
-    if ($('#pLado')) $('#pLado').addEventListener('change', () => { const l = num($('#pLado').value); if (l >= 1){ cuadrar(layer, l); cambio(); geometriaCambio(); } });
     refrescarCuenta();
     $('#pPagar').addEventListener('click', () => abrirFicha(aq.id, 'pago'));
     $('#pFicha').addEventListener('click', () => abrirFicha(aq.id, 'cuenta'));
@@ -2307,15 +1891,12 @@ function alternarEdicion(layer){
   if (!requiereEdicion()) return;
   if (editando === layer){ terminarEdicion(); return; }
   terminarEdicion();
-  setTimeout(actualizarAsaGiro, 0);
   asegurarMapa();
   editando = layer;
   if (esLinea(layer)) layer.pm._otherSnapLayers = puertosParaUnir();
   layer.pm.enable({snappable:true, snapDistance:18, allowSelfIntersection:true, draggable:esPunto(layer)});
   $('#pista').textContent = esPunto(layer)
     ? 'Arrastra el punto a su nuevo lugar. Pulsa «Listo» al terminar.'
-    : layer.aq.datos && layer.aq.datos.cuadrado ? 'Arrastra una esquina para agrandar o achicar la casa: siempre queda cuadrada. Pulsa «Listo» al terminar.'
-    : layer.aq.datos && layer.aq.datos.rectangulo ? 'Arrastra una esquina para cambiar el ancho y el largo de la casa. Pulsa «Listo» al terminar.'
     : 'Arrastra los puntos blancos. Toca un punto pequeño intermedio para agregar uno nuevo; clic derecho sobre un punto lo borra. Pulsa «Listo» al terminar.';
   $('#pista').hidden = false;
   if (selected === layer) renderPanel();
@@ -2324,7 +1905,6 @@ function terminarEdicion(){
   const layer = editando;
   if (!layer) return;
   editando = null;
-  setTimeout(actualizarAsaGiro, 0);
   if (layer.pm && layer.pm.enabled()) layer.pm.disable();
   $('#pista').hidden = !pendingTipo;
   if (layer.aq && layer.aq.tipo === 'tuberia'){
@@ -3564,8 +3144,7 @@ function quitarMovimiento(mapa, id){
 const todosLosPagos = () => [...pagosDe.values()].flat();
 const nucleosDe = d => Array.isArray(d.nucleosLista) ? d.nucleosLista.length : Math.max(0, num(d.nucleos));
 const personasDe = d => Array.isArray(d.nucleosLista) ? d.nucleosLista.reduce((s, n) => s + Math.max(0, num(n.personas)), 0) : Math.max(0, num(d.personas));
-/* Tarifa de una casa: la suya propia, si no la de su categoría, si no la general */
-const tarifaDe = d => { const c = categoriaDe(d); return tarifas.find(t => t.id === (d.tarifa || (c && c.tarifa_id) || state.settings.tarifaDefecto)) || null; };
+const tarifaDe = d => tarifas.find(t => t.id === (d.tarifa || state.settings.tarifaDefecto)) || null;
 const tieneEspecial = d => d.cuotaEspecial !== '' && d.cuotaEspecial != null && isFinite(Number(d.cuotaEspecial));
 
 /* Cuota mensual de una casa (misma regla que la base de datos) */
@@ -3901,7 +3480,6 @@ async function cargarCobros(){
   cobrosListos = true;
   pag.forEach(p => ponerMovimiento(pagosDe, p));
   if (!tar.error) tarifas = tar.data || [];
-  await cargarCategorias();
 }
 async function recargarCobrosDe(id){
   const {data} = await sb.from('cobros').select('*').eq('forma_id', id);
@@ -4227,10 +3805,8 @@ function fichaDatos(aq, c){
     </section>
     <section>
       <h3 class="fc-sub">Cobro</h3>
-      <label class="campo"><span>Categoría</span><select id="fdCategoria">${categorias.map(c => `<option value="${esc(c.id)}" ${c.id === (d.categoria || 'casa') ? 'selected' : ''}>${esc(c.nombre)}</option>`).join('')}</select></label>
       <label class="campo"><span>Tarifa</span><select id="fdTarifa">
-        <option value="" ${!d.tarifa ? 'selected' : ''}>Según su categoría (${esc((tarifas.find(t => t.id === (categoriaDe(d) || {}).tarifa_id) || {}).nombre || 'tarifa general')})</option>
-        ${activas.map(t => `<option value="${esc(t.id)}" ${t.id === d.tarifa ? 'selected' : ''}>${esc(t.nombre)} · ${esc(dinero(t.monto))} ${t.modo === 'nucleo' ? 'por núcleo' : t.modo === 'persona' ? 'por persona' : 'por casa'}</option>`).join('')}
+        ${activas.map(t => `<option value="${esc(t.id)}" ${t.id === (d.tarifa || state.settings.tarifaDefecto) ? 'selected' : ''}>${esc(t.nombre)} · ${esc(dinero(t.monto))} ${t.modo === 'nucleo' ? 'por núcleo' : t.modo === 'persona' ? 'por persona' : 'por casa'}</option>`).join('')}
       </select></label>
       <label class="campo"><span>Cuota especial (opcional)</span><input id="fdEspecial" type="number" min="0" step="0.01" value="${esc(tieneEspecial(d) ? d.cuotaEspecial : '')}" placeholder="Vacío: se usa la tarifa"></label>
       <label class="campo"><span>Cobrar desde</span><input id="fdInicio" type="month" value="${esc(d.inicioCobro || '')}"></label>
@@ -4255,16 +3831,16 @@ function enlazarDatos(aq){
   enlazarChipsCasas($('#fcCuerpo'));
   if ($('#fdVincular')) $('#fdVincular').addEventListener('change', e => { if (e.target.value) vincularCasa(e.target.value, aq.id); });
   const previa = () => {
-    const tmp = {...d, categoria:$('#fdCategoria').value, tarifa:$('#fdTarifa').value, cuotaEspecial:$('#fdEspecial').value};
+    const tmp = {...d, tarifa:$('#fdTarifa').value, cuotaEspecial:$('#fdEspecial').value};
     const q = cuotaMensual(tmp);
     $('#fdCuota').innerHTML = `Cuota mensual con estos datos: <b>${esc(dinero(q.monto))}</b> (${esc(textoCuota(q))}).`;
   };
-  ['#fdTarifa', '#fdEspecial', '#fdCategoria'].forEach(s => $(s).addEventListener('input', previa));
+  ['#fdTarifa', '#fdEspecial'].forEach(s => $(s).addEventListener('input', previa));
   $('#fdActivo').addEventListener('change', () => { $('#fdMotivoBox').hidden = $('#fdActivo').value === '1'; });
   $('#fdGuardar').addEventListener('click', async () => {
     const antes = cuotaMensual(d).monto;
     Object.assign(d, {numero:$('#fdNumero').value.trim(), responsable:$('#fdResp').value.trim(), telefono:$('#fdTel').value.trim(),
-      categoria:$('#fdCategoria').value, tarifa:$('#fdTarifa').value, cuotaEspecial:$('#fdEspecial').value.trim(), inicioCobro:$('#fdInicio').value,
+      tarifa:$('#fdTarifa').value, cuotaEspecial:$('#fdEspecial').value.trim(), inicioCobro:$('#fdInicio').value,
       cobroActivo:$('#fdActivo').value === '1', motivoExoneracion:$('#fdActivo').value === '1' ? '' : $('#fdMotivo').value.trim()});
     actualizarTooltip(capas.get(aq.id));
     await guardarDatosCobro(aq, antes, 'Datos guardados.');
@@ -4546,9 +4122,8 @@ $('#cpCsv').addEventListener('click', () => {
 
 /* --- Tarifas --- */
 function renderCobTarifas(){
-  renderCategorias();
   const casas = datosGenerales().casas;
-  const uso = id => casas.filter(l => (tarifaDe(l.aq.datos) || {}).id === id && !tieneEspecial(l.aq.datos)).length;
+  const uso = id => casas.filter(l => (l.aq.datos.tarifa || state.settings.tarifaDefecto) === id && !tieneEspecial(l.aq.datos)).length;
   const especiales = casas.filter(l => tieneEspecial(l.aq.datos)).length;
   $('#ctLista').innerHTML = tarifas.map(t => `<article class="tarjeta tarifa ${t.activa ? '' : 'inactiva'}" data-tarifa="${esc(t.id)}">
       <div class="dos">
@@ -5048,7 +4623,6 @@ async function iniciarApp(session){
     verificarBaseDatos();
     cargarUsuarios();
     revisarAvisos().then(actualizarBadgeCortes);
-    convertirConexionesAntiguas();
     pintarSync();
     revisarDatosLocales();
   } catch (err){

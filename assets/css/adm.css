@@ -777,7 +777,7 @@ body{background:var(--fondo-app)}
 .notificado,.interruptor-flujo,.perm-panel{}
 
 /* =====================================================================
-   EDITAR MAPA
+  EDITAR MAPA
    ===================================================================== */
 .barra-edicion{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1050;display:flex;gap:8px;align-items:center}
 .barra-edicion .btn{box-shadow:0 6px 18px rgba(21,50,59,.22)}
@@ -809,6 +809,7 @@ body{background:var(--fondo-app)}
 /* Indicador de guardado legible en todos sus estados sobre la barra azul */
 .sync.trabajando,.sync.pendiente{background:#FFF4D6;color:#6B4D05}
 .sync.error{background:#FDECEA;color:#8C1D18}
+
 
 /* Categorías de casas */
 .cat-tarjeta{margin-bottom:16px}

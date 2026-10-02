@@ -142,7 +142,9 @@ function agregar(r){
 function ordenarSectores(){ grupos.sector.eachLayer(l => { if (l._map) l.bringToBack(); }); }
 
 /* Efectos publicados por la administración (sirven aunque la red esté oculta) */
+
 let efectos = [], categorias = [];
+let efectos = [];
 const redOculta = () => !!config.ocultar_red_vecinos;
 map.createPane('cierres').style.zIndex = 445;      // por encima de tuberías y casas
 const capaCierres = L.layerGroup().addTo(map);
@@ -1030,6 +1032,7 @@ function pintarConfig(){
    CARGA Y TIEMPO REAL
    ===================================================================== */
 async function cargar(){
+
   const [cfg, filas, lista, efs, cats] = await Promise.all([
     sb.from('configuracion').select('*').eq('id', 1).maybeSingle(),
     Acu.traerTodo(sb, 'mapa_publico'),
@@ -1038,6 +1041,7 @@ async function cargar(){
     sb.from('categorias_casa').select('id,nombre,color').then(r => r.data || [], () => [])
   ]);
   efectos = efs; categorias = cats;
+
   if (cfg.data){ config = cfg.data; pintarConfig(); pintarRedVisible(); map.ajustarFondos(config.ajuste_fondos || {}); if (mapaRep) mapaRep.ajustarFondos(config.ajuste_fondos || {}); }
   const vistos = new Set(filas.map(r => r.id));
   [...capas.keys()].forEach(id => { if (!vistos.has(id)) quitar(id); });
